@@ -1,32 +1,29 @@
 import React, { useState } from 'react';
 import { supabase } from '../../supabaseClient';
-import { Mail, Lock, UserPlus, LogIn, Dumbbell } from 'lucide-react';
+import { Mail, Lock, Dumbbell } from 'lucide-react';
 
 export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState(''); // Pour le profil
+  const [username, setUsername] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     if (isRegistering) {
-      // Inscription
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { username } // Ces données iront dans le trigger SQL qu'on a créé
+          data: { username }
         }
       });
       if (error) alert(error.message);
-      else alert("Compte créé ! Vérifiez vos emails pour confirmer (ou connectez-vous si désactivé)");
+      else alert("Compte créé ! Vérifiez vos emails pour confirmer.");
     } else {
-      // Connexion
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) alert(error.message);
     }
@@ -38,7 +35,7 @@ export const Auth: React.FC = () => {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 rotate-3">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 rotate-3 shadow-lg">
             <Dumbbell className="text-white w-10 h-10" />
           </div>
           <h1 className="text-3xl font-bold text-white">UltiPrepa</h1>
@@ -95,7 +92,7 @@ export const Auth: React.FC = () => {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {loading ? 'Chargement...' : isRegistering ? 'S\'inscrire' : 'Se connecter'}
           </button>

@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { WorkoutRow, SessionLog, User, ExerciseLog } from './types';
+import { WorkoutRow, SessionLog, User } from './types';
 import { Sidebar } from './src/components/Sidebar';
 import { Home } from './src/components/Home';
 import { ActiveSession } from './src/components/ActiveSession';
@@ -9,48 +8,24 @@ import { SettingsView } from './src/components/SettingsView';
 import { TeamView } from './src/components/TeamView';
 import { AdminUsersView } from './src/components/AdminUsersView';
 import { Menu } from 'lucide-react';
-const [authLoading, setAuthLoading] = useState(true);
 
-// --- NOUVEAUX IMPORTS SUPABASE ---
+// --- IMPORTS SUPABASE ---
 import { supabase } from './supabaseClient';
 import { Auth } from './src/components/Auth';
 import { Session } from '@supabase/supabase-js';
 
-// On garde DUMMY_DATA si besoin pour l'instant, mais on vire le script URL
+// Dummy data pour les tests
 import { DUMMY_DATA } from './src/utils/csv';
 
 // --- CONFIGURATION ---
-const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5NhofFraVLZXNTzevedDx7pSBTEaN4Uc_aGoHCMxQBgPwlD-dp1aeQrDm2tT9LEX_Iw/exec";
 const CONFIG_VERSION = 18; // V3.7
 
-// --- Security Utility ---
-/*const hashPassword = async (password: string): Promise<string> => {
-    if (window.crypto && window.crypto.subtle) {
-        try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(password);
-            const hash = await crypto.subtle.digest('SHA-256', data);
-            return Array.from(new Uint8Array(hash))
-                .map((b) => b.toString(16).padStart(2, '0'))
-                .join('');
-        } catch (e) {
-            console.warn("Native crypto failed, falling back to CryptoJS", e);
-        }
-    }
-    return CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
-};*/
-
-// Updated to return ISO format for DB Consistency
-const formatDateForDB = (date: Date): string => {
-    return date.toISOString();
-};
-
 const App: React.FC = () => {
-    // --- Gestion Session & Auth (Nouveau) ---
+    // --- Gestion Session & Auth ---
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
   
-    // --- États existants de ton app ---
+    // --- États existants de l'app ---
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [currentView, setCurrentView] = useState<string>('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -58,7 +33,7 @@ const App: React.FC = () => {
     // Data States
     const [activeSession, setActiveSession] = useState<WorkoutRow[] | null>(null);
     const [activeSessionLog, setActiveSessionLog] = useState<SessionLog | null>(null);
-    const [history, setHistory] = useState<SessionLog[]>([]); // À brancher sur DB plus tard
+    const [history, setHistory] = useState<SessionLog[]>([]);
   
     // --- EFFET : Initialisation & Écoute Supabase ---
     useEffect(() => {
@@ -95,12 +70,10 @@ const App: React.FC = () => {
         if (error) throw error;
   
         if (data) {
-          // On adapte les données de Supabase au format attendu par ton App
           setCurrentUser({
             username: data.username || data.email,
             role: data.role || 'athlete',
             firstName: data.first_name || '',
-            // On garde les autres champs optionnels vides pour l'instant
           });
         }
       } catch (error) {
@@ -110,18 +83,18 @@ const App: React.FC = () => {
       }
     };
   
-    // --- Handlers (Simplifiés) ---
+    // --- Handlers ---
     const handleSignOut = async () => {
       await supabase.auth.signOut();
       setCurrentView('home');
-      setIsSidebarOpen(false); // Reset sidebar on logout logic if needed
+      setIsSidebarOpen(false);
     };
   
     const getGreeting = () => {
       const hour = new Date().getHours();
-      if (hour < 12) return "Good morning";
-      if (hour < 18) return "Good afternoon";
-      return "Good evening";
+      if (hour < 12) return "Bonjour";
+      if (hour < 18) return "Bon après-midi";
+      return "Bonsoir";
     };
   
     // --- RENDU : Protection de l'accès ---
@@ -138,12 +111,12 @@ const App: React.FC = () => {
       );
     }
   
-    // 2. Si pas connecté -> Écran Auth (Remplace ton ancien LoginView)
+    // 2. Si pas connecté -> Écran Auth
     if (!session || !currentUser) {
       return <Auth />;
     }
   
-    // 3. Application Principale (Ton code existant, nettoyé du login)
+    // 3. Application Principale
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'coach';
   
     return (
@@ -194,7 +167,7 @@ const App: React.FC = () => {
                     <h1 className="text-3xl font-bold text-white mb-1">
                       {getGreeting()}, <span className="text-blue-400">{currentUser.firstName || currentUser.username}</span>
                     </h1>
-                    <p className="text-slate-400">Ready to crush your goals today?</p>
+                    <p className="text-slate-400">Prêt à atteindre tes objectifs aujourd'hui ?</p>
                  </header>
               )}
   
@@ -202,11 +175,10 @@ const App: React.FC = () => {
               {currentView === 'home' && (
                 <Home 
                    onStartSession={() => {
-                      // Pour l'instant on utilise des dummy data en attendant la connexion DB
                       setActiveSession(DUMMY_DATA); 
                       setCurrentView('active');
                    }}
-                   lastSession={null} // À connecter plus tard
+                   lastSession={null}
                    weeklyFrequency={0}
                 />
               )}
@@ -241,8 +213,8 @@ const App: React.FC = () => {
               
               {currentView === 'admin' && isAdmin && (
                   <AdminUsersView 
-                      fetchAllUsers={async () => []} // Placeholder
-                      onUpdateCoach={async () => {}} // Placeholder
+                      fetchAllUsers={async () => []}
+                      onUpdateCoach={async () => {}}
                   />
               )}
               
@@ -253,6 +225,6 @@ const App: React.FC = () => {
         </div>
       </div>
     );
-  };
+};
   
-  export default App;
+export default App;
