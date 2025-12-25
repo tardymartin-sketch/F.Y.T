@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { WorkoutRow, FilterState, User, SessionLog } from '../../types';
+import React, { useMemo, useState } from 'react';
+import { WorkoutRow, FilterState, User, SessionLog, WeekOrganizerLog } from '../../types';
 import { SessionSelector } from './SessionSelector';
 import { SessionPreview } from './SessionPreview';
 import { 
@@ -10,7 +10,10 @@ import {
   Flame,
   Target,
   ChevronRight,
-  Dumbbell
+  ChevronDown,
+  ChevronUp,
+  Dumbbell,
+  MessageSquare
 } from 'lucide-react';
 
 interface Props {
@@ -20,6 +23,8 @@ interface Props {
   onStartSession: () => void;
   user: User;
   history: SessionLog[];
+  activeWeekOrganizer?: WeekOrganizerLog | null;
+  pastWeekOrganizers?: WeekOrganizerLog[];
 }
 
 export const Home: React.FC<Props> = ({ 
@@ -28,8 +33,11 @@ export const Home: React.FC<Props> = ({
   setFilters, 
   onStartSession, 
   user,
-  history 
+  history,
+  activeWeekOrganizer,
+  pastWeekOrganizers = []
 }) => {
+  const [showPastOrganizers, setShowPastOrganizers] = useState(false);
   // Données de la session sélectionnée
   const currentSessionData = useMemo(() => {
     return data.filter(d => 
@@ -130,6 +138,65 @@ export const Home: React.FC<Props> = ({
           </button>
         )}
       </div>
+
+      {/* Week Organizer Message */}
+      {activeWeekOrganizer && (
+        <div className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/30 rounded-2xl overflow-hidden">
+          <div className="p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white">{activeWeekOrganizer.title}</h3>
+                <p className="text-xs text-slate-400">
+                  {new Date(activeWeekOrganizer.startDate).toLocaleDateString('fr-FR')} — {new Date(activeWeekOrganizer.endDate).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+            </div>
+            <div 
+              className="text-slate-300 rich-text-display"
+              dangerouslySetInnerHTML={{ __html: activeWeekOrganizer.message }}
+            />
+          </div>
+          
+          {/* Past messages accordion */}
+          {pastWeekOrganizers.length > 0 && (
+            <div className="border-t border-slate-800">
+              <button
+                onClick={() => setShowPastOrganizers(!showPastOrganizers)}
+                className="w-full flex items-center justify-between px-5 py-3 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                <span>Messages précédents ({pastWeekOrganizers.length})</span>
+                {showPastOrganizers ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+              
+              {showPastOrganizers && (
+                <div className="px-5 pb-4 space-y-3">
+                  {pastWeekOrganizers.slice(0, 5).map((log) => (
+                    <div key={log.id} className="bg-slate-900/50 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-white text-sm">{log.title}</h4>
+                        <span className="text-xs text-slate-500">
+                          {new Date(log.startDate).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                      <div 
+                        className="text-slate-400 text-sm rich-text-display"
+                        dangerouslySetInnerHTML={{ __html: log.message }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -15,7 +15,8 @@ import {
   Check,
   MessageSquare,
   Pause,
-  Play
+  Play,
+  Send
 } from 'lucide-react';
 
 interface Props {
@@ -24,6 +25,9 @@ interface Props {
   onSave: (log: SessionLog) => Promise<void>;
   onCancel: () => void;
   initialLog?: SessionLog | null;
+  // New props for comments
+  userId?: string;
+  onSaveComment?: (exerciseName: string, comment: string, sessionId: string) => Promise<void>;
 }
 
 export const ActiveSession: React.FC<Props> = ({ 
@@ -31,7 +35,9 @@ export const ActiveSession: React.FC<Props> = ({
   history, 
   onSave, 
   onCancel, 
-  initialLog 
+  initialLog,
+  userId,
+  onSaveComment
 }) => {
   const [logs, setLogs] = useState<ExerciseLog[]>([]);
   const [startTime] = useState<number>(Date.now());
@@ -46,6 +52,11 @@ export const ActiveSession: React.FC<Props> = ({
   
   // Modal historique
   const [historyModalExercise, setHistoryModalExercise] = useState<string | null>(null);
+
+  // Comments state
+  const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
+  const [commentSending, setCommentSending] = useState<string | null>(null);
+  const [sentComments, setSentComments] = useState<Set<string>>(new Set());
 
   const isEditMode = !!(initialLog && initialLog.id && initialLog.id !== 'temp');
 
@@ -214,6 +225,27 @@ export const ActiveSession: React.FC<Props> = ({
       acc + ex.sets.filter(s => s.completed).length, 0
     );
     return totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
+  };
+
+  const handleSendComment = async (exerciseName: string) => {
+    const comment = exerciseComments[exerciseName]?.trim();
+    if (!comment || !onSaveComment) return;
+    
+    setCommentSending(exerciseName);
+    try {
+      // Use current session ID or a temp one
+      const sessionId = initialLog?.id || 'pending-session';
+      await onSaveComment(exerciseName, comment, sessionId);
+      
+      // Mark as sent and clear input
+      setSentComments(prev => new Set([...prev, exerciseName]));
+      setExerciseComments(prev => ({ ...prev, [exerciseName]: '' }));
+    } catch (e) {
+      console.error("Erreur envoi commentaire:", e);
+      alert("Erreur lors de l'envoi du commentaire");
+    } finally {
+      setCommentSending(null);
+    }
   };
 
   const sessionTitle = Array.from(new Set(sessionData.map(d => d.seance))).join(' + ');
@@ -466,6 +498,50 @@ export const ActiveSession: React.FC<Props> = ({
                       Ajouter une série
                     </button>
                   </div>
+
+                  {/* Feedback to Coach */}
+                  {onSaveComment && (
+                    <div className="pt-4 border-t border-slate-800">
+                      <div className="flex items-center gap-2 mb-3">
+                        <MessageSquare className="w-4 h-4 text-blue-400" />
+                        <span className="text-sm font-medium text-slate-300">Message au coach</span>
+                        {sentComments.has(exLog.exerciseName) && (
+                          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
+                            Envoyé ✓
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Une question ? Un ressenti ? Dites-le à votre coach..."
+                          value={exerciseComments[exLog.exerciseName] || ''}
+                          onChange={(e) => setExerciseComments(prev => ({
+                            ...prev,
+                            [exLog.exerciseName]: e.target.value
+                          }))}
+                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendComment(exLog.exerciseName);
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => handleSendComment(exLog.exerciseName)}
+                          disabled={!exerciseComments[exLog.exerciseName]?.trim() || commentSending === exLog.exerciseName}
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          {commentSending === exLog.exerciseName ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <Send className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -204,19 +204,107 @@ export interface WeekOrganizerLog {
   createdAt: string;
 }
 
+// Type brut depuis Supabase week_organizer
+export interface WeekOrganizerRow {
+  id: string;
+  coach_id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  message: string;
+  created_at: string;
+}
+
+// Mapping WeekOrganizer DB -> App
+export function mapWeekOrganizerRowToLog(row: WeekOrganizerRow): WeekOrganizerLog {
+  return {
+    id: row.id,
+    coachId: row.coach_id,
+    title: row.title,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    message: row.message,
+    createdAt: row.created_at,
+  };
+}
+
+// Mapping WeekOrganizer App -> DB
+export function mapWeekOrganizerLogToRow(log: WeekOrganizerLog): Omit<WeekOrganizerRow, 'created_at'> {
+  return {
+    id: log.id,
+    coach_id: log.coachId,
+    title: log.title,
+    start_date: log.startDate,
+    end_date: log.endDate,
+    message: log.message,
+  };
+}
+
 // ===========================================
 // TYPES COMMENTAIRES (Feedback Athlète → Coach)
 // ===========================================
 export interface AthleteComment {
-  id?: string;
-  date: string;
+  id: string;
   oderId: string;
-  username: string;
-  year: string;
-  month: string;
-  week: string;
-  session: string;
-  exercise: string;
+  sessionId?: string;
+  exerciseName: string;
   comment: string;
-  isRead?: boolean;
+  isRead: boolean;
+  createdAt: string;
+  // Enriched fields (joined)
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  sessionName?: string;
+}
+
+// Type brut depuis Supabase athlete_comments
+export interface AthleteCommentRow {
+  id: string;
+  user_id: string;
+  session_id: string | null;
+  exercise_name: string;
+  comment: string;
+  is_read: boolean;
+  created_at: string;
+  // Joined fields from profiles
+  profiles?: {
+    username: string | null;
+    first_name: string | null;
+    last_name: string | null;
+  };
+  // Joined fields from session_logs
+  session_logs?: {
+    session_key_name: string | null;
+  };
+}
+
+// Mapping AthleteComment DB -> App
+export function mapAthleteCommentRowToComment(row: AthleteCommentRow): AthleteComment {
+  return {
+    id: row.id,
+    oderId: row.user_id,
+    sessionId: row.session_id ?? undefined,
+    exerciseName: row.exercise_name,
+    comment: row.comment,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+    username: row.profiles?.username ?? undefined,
+    firstName: row.profiles?.first_name ?? undefined,
+    lastName: row.profiles?.last_name ?? undefined,
+    sessionName: row.session_logs?.session_key_name ?? undefined,
+  };
+}
+
+// Mapping AthleteComment App -> DB (pour insert)
+export function mapAthleteCommentToRow(
+  comment: Omit<AthleteComment, 'id' | 'createdAt' | 'username' | 'firstName' | 'lastName' | 'sessionName'>
+): Omit<AthleteCommentRow, 'id' | 'created_at' | 'profiles' | 'session_logs'> {
+  return {
+    user_id: comment.oderId,
+    session_id: comment.sessionId ?? null,
+    exercise_name: comment.exerciseName,
+    comment: comment.comment,
+    is_read: comment.isRead,
+  };
 }

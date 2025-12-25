@@ -10,7 +10,15 @@ import {
   fetchAllUsers,
   updateUserCoach,
   fetchCurrentUserProfile,
-  updateUserProfile
+  updateUserProfile,
+  // New imports for Week Organizer and Comments
+  fetchWeekOrganizerLogs,
+  fetchActiveWeekOrganizer,
+  saveWeekOrganizerLog,
+  deleteWeekOrganizerLog,
+  fetchTeamComments,
+  saveAthleteComment,
+  markCommentsAsRead
 } from './src/services/supabaseService';
 
 import { 
@@ -18,7 +26,9 @@ import {
   SessionLog, 
   User, 
   FilterState,
-  ProfileRow
+  ProfileRow,
+  WeekOrganizerLog,
+  AthleteComment
 } from './types';
 
 // Components
@@ -61,6 +71,10 @@ const App: React.FC = () => {
     selectedSemaine: null,
     selectedSeances: []
   });
+
+  // Week Organizer State
+  const [activeWeekOrganizer, setActiveWeekOrganizer] = useState<WeekOrganizerLog | null>(null);
+  const [pastWeekOrganizers, setPastWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
 
   // ===========================================
   // AUTHENTICATION EFFECTS
@@ -125,6 +139,31 @@ const App: React.FC = () => {
       setDataLoading(false);
     }
   };
+
+  // Load week organizer for athletes (when they have a coach)
+  useEffect(() => {
+    const loadWeekOrganizer = async () => {
+      if (!currentUser || !currentUser.coachId) return;
+      
+      try {
+        // Load active organizer
+        const active = await fetchActiveWeekOrganizer(currentUser.coachId);
+        setActiveWeekOrganizer(active);
+        
+        // Load past organizers
+        const all = await fetchWeekOrganizerLogs(currentUser.coachId);
+        const past = all.filter(o => {
+          const endDate = new Date(o.endDate);
+          return endDate < new Date() || o.id !== active?.id;
+        }).slice(0, 5);
+        setPastWeekOrganizers(past);
+      } catch (error) {
+        console.error("Erreur chargement week organizer:", error);
+      }
+    };
+    
+    loadWeekOrganizer();
+  }, [currentUser]);
 
   // ===========================================
   // HANDLERS
@@ -255,6 +294,39 @@ const App: React.FC = () => {
   };
 
   // ===========================================
+  // WEEK ORGANIZER HANDLERS
+  // ===========================================
+
+  const handleFetchWeekOrganizerLogs = async (coachId: string) => {
+    return await fetchWeekOrganizerLogs(coachId);
+  };
+
+  const handleSaveWeekOrganizerLog = async (log: WeekOrganizerLog) => {
+    return await saveWeekOrganizerLog(log);
+  };
+
+  const handleDeleteWeekOrganizerLog = async (logId: string) => {
+    await deleteWeekOrganizerLog(logId);
+  };
+
+  // ===========================================
+  // ATHLETE COMMENTS HANDLERS
+  // ===========================================
+
+  const handleFetchTeamComments = async (coachId: string, onlyUnread?: boolean) => {
+    return await fetchTeamComments(coachId, onlyUnread);
+  };
+
+  const handleMarkCommentsAsRead = async (commentIds: string[]) => {
+    await markCommentsAsRead(commentIds);
+  };
+
+  const handleSaveAthleteComment = async (exerciseName: string, comment: string, sessionId: string) => {
+    if (!currentUser) return;
+    await saveAthleteComment(currentUser.id, sessionId, exerciseName, comment);
+  };
+
+  // ===========================================
   // RENDER
   // ===========================================
 
@@ -319,6 +391,8 @@ const App: React.FC = () => {
                     onStartSession={handleStartSession}
                     user={currentUser}
                     history={history}
+                    activeWeekOrganizer={activeWeekOrganizer}
+                    pastWeekOrganizers={pastWeekOrganizers}
                   />
                 )}
 
@@ -329,6 +403,8 @@ const App: React.FC = () => {
                     onSave={handleSaveSession}
                     onCancel={handleCancelSession}
                     initialLog={editingSession}
+                    userId={currentUser.id}
+                    onSaveComment={handleSaveAthleteComment}
                   />
                 )}
 
@@ -345,6 +421,11 @@ const App: React.FC = () => {
                     coachId={currentUser.id}
                     fetchTeam={handleFetchTeam}
                     fetchAthleteHistory={handleFetchAthleteHistory}
+                    fetchTeamComments={handleFetchTeamComments}
+                    markCommentsAsRead={handleMarkCommentsAsRead}
+                    fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
+                    saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
+                    deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
                   />
                 )}
 
