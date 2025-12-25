@@ -1,230 +1,374 @@
 import React, { useState, useEffect } from 'react';
-import { WorkoutRow, SessionLog, User } from './types';
+import { Session } from '@supabase/supabase-js';
+import { supabase } from './src/supabaseClient';
+import {
+  fetchTrainingPlans,
+  fetchSessionLogs,
+  saveSessionLog,
+  deleteSessionLog,
+  fetchTeamAthletes,
+  fetchAllUsers,
+  updateUserCoach,
+  fetchCurrentUserProfile,
+  updateUserProfile
+} from './src/services/supabaseService';
+
+import { 
+  WorkoutRow, 
+  SessionLog, 
+  User, 
+  FilterState,
+  ProfileRow
+} from './types';
+
+// Components
+import { Auth } from './src/components/Auth';
+import { LoadingScreen } from './src/components/LoadingScreen';
 import { Sidebar } from './src/components/Sidebar';
 import { Home } from './src/components/Home';
 import { ActiveSession } from './src/components/ActiveSession';
 import { History } from './src/components/History';
-import { SettingsView } from './src/components/SettingsView';
 import { TeamView } from './src/components/TeamView';
 import { AdminUsersView } from './src/components/AdminUsersView';
+import { SettingsView } from './src/components/SettingsView';
 import { Menu } from 'lucide-react';
 
-// --- IMPORTS SUPABASE ---
-import { supabase } from './supabaseClient';
-import { Auth } from './src/components/Auth';
-import { Session } from '@supabase/supabase-js';
-
-// Dummy data pour les tests
-import { DUMMY_DATA } from './src/utils/csv';
-
-// --- CONFIGURATION ---
-const CONFIG_VERSION = 18; // V3.7
-
 const App: React.FC = () => {
-    // --- Gestion Session & Auth ---
-    const [session, setSession] = useState<Session | null>(null);
-    const [authLoading, setAuthLoading] = useState(true);
-  
-    // --- États existants de l'app ---
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [currentView, setCurrentView] = useState<string>('home');
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    
-    // Data States
-    const [activeSession, setActiveSession] = useState<WorkoutRow[] | null>(null);
-    const [activeSessionLog, setActiveSessionLog] = useState<SessionLog | null>(null);
-    const [history, setHistory] = useState<SessionLog[]>([]);
-  
-    // --- EFFET : Initialisation & Écoute Supabase ---
-    useEffect(() => {
-      // 1. Vérifier la session active
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        if (session) fetchUserProfile(session.user.id);
-        else setAuthLoading(false);
-      });
-  
-      // 2. Écouter les changements de session
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-        if (session) {
-          fetchUserProfile(session.user.id);
-        } else {
-          setCurrentUser(null);
-          setAuthLoading(false);
-        }
-      });
-  
-      return () => subscription.unsubscribe();
-    }, []);
-  
-    // --- Fonction pour récupérer le profil utilisateur depuis la table 'profiles' ---
-    const fetchUserProfile = async (userId: string) => {
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-  
-        if (error) throw error;
-  
-        if (data) {
-          setCurrentUser({
-            username: data.username || data.email,
-            role: data.role || 'athlete',
-            firstName: data.first_name || '',
-          });
-        }
-      } catch (error) {
-        console.error("Erreur chargement profil:", error);
-      } finally {
+  // Auth State
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // User State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Navigation
+  const [currentView, setCurrentView] = useState<string>('home');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Data States
+  const [trainingData, setTrainingData] = useState<WorkoutRow[]>([]);
+  const [history, setHistory] = useState<SessionLog[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  // Session State
+  const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
+  const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
+
+  // Filters
+  const [filters, setFilters] = useState<FilterState>({
+    selectedAnnee: null,
+    selectedMois: null,
+    selectedSemaine: null,
+    selectedSeances: []
+  });
+
+  // ===========================================
+  // AUTHENTICATION EFFECTS
+  // ===========================================
+
+  useEffect(() => {
+    // Check existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        loadUserProfile(session.user.id);
+      } else {
         setAuthLoading(false);
       }
-    };
-  
-    // --- Handlers ---
-    const handleSignOut = async () => {
-      await supabase.auth.signOut();
-      setCurrentView('home');
-      setIsSidebarOpen(false);
-    };
-  
-    const getGreeting = () => {
-      const hour = new Date().getHours();
-      if (hour < 12) return "Bonjour";
-      if (hour < 18) return "Bon après-midi";
-      return "Bonsoir";
-    };
-  
-    // --- RENDU : Protection de l'accès ---
-  
-    // 1. Chargement initial
-    if (authLoading) {
-      return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-          <div className="animate-pulse flex flex-col items-center">
-            <div className="h-8 w-8 bg-blue-600 rounded mb-4"></div>
-            Chargement UltiPrepa...
-          </div>
-        </div>
-      );
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        loadUserProfile(session.user.id);
+      } else {
+        setCurrentUser(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ===========================================
+  // DATA LOADING
+  // ===========================================
+
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const profile = await fetchCurrentUserProfile();
+      if (profile) {
+        setCurrentUser(profile);
+        await loadInitialData(profile.id);
+      }
+    } catch (error) {
+      console.error("Erreur chargement profil:", error);
+    } finally {
+      setAuthLoading(false);
     }
-  
-    // 2. Si pas connecté -> Écran Auth
-    if (!session || !currentUser) {
-      return <Auth />;
+  };
+
+  const loadInitialData = async (userId: string) => {
+    setDataLoading(true);
+    try {
+      // Load training plans
+      const plans = await fetchTrainingPlans();
+      setTrainingData(plans);
+
+      // Load user history
+      const logs = await fetchSessionLogs(userId);
+      setHistory(logs);
+    } catch (error) {
+      console.error("Erreur chargement données:", error);
+    } finally {
+      setDataLoading(false);
     }
-  
-    // 3. Application Principale
-    const isAdmin = currentUser.role === 'admin' || currentUser.role === 'coach';
-  
-    return (
-      <div className="flex min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-emerald-500/30">
-        
-        {/* Mobile Menu Overlay */}
-        {isSidebarOpen && (
-          <div 
-            className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-        )}
-  
-        {/* Sidebar */}
-        <div className={`fixed lg:static inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-          <Sidebar 
-            currentView={currentView}
-            setCurrentView={(view) => { setCurrentView(view); setIsSidebarOpen(false); }}
-            isAdmin={isAdmin}
-            onLogout={handleSignOut}
-            user={currentUser}
-          />
-        </div>
-  
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col h-screen overflow-hidden relative w-full">
-          
-          {/* Mobile Header */}
-          <div className="lg:hidden flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">
-                  UP
-               </div>
-               <span className="font-bold text-white">UltiPrepa</span>
-            </div>
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400">
-              <Menu size={24} />
-            </button>
-          </div>
-  
-          {/* Scrollable Area */}
-          <div className="flex-1 overflow-y-auto p-4 lg:p-8 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-            <div className="max-w-7xl mx-auto space-y-6">
-              
-              {/* Header (Greeting) */}
-              {currentView === 'home' && (
-                 <header className="mb-8">
-                    <h1 className="text-3xl font-bold text-white mb-1">
-                      {getGreeting()}, <span className="text-blue-400">{currentUser.firstName || currentUser.username}</span>
-                    </h1>
-                    <p className="text-slate-400">Prêt à atteindre tes objectifs aujourd'hui ?</p>
-                 </header>
-              )}
-  
-              {/* View Routing */}
-              {currentView === 'home' && (
-                <Home 
-                   onStartSession={() => {
-                      setActiveSession(DUMMY_DATA); 
-                      setCurrentView('active');
-                   }}
-                   lastSession={null}
-                   weeklyFrequency={0}
-                />
-              )}
-  
-              {currentView === 'active' && activeSession && (
-                <ActiveSession 
-                  sessionData={activeSession}
-                  history={history}
-                  onSave={async (log) => {
-                     console.log("Sauvegarde locale (DB bientôt)...", log);
-                     setHistory([log, ...history]);
-                     setActiveSession(null);
-                     setCurrentView('history');
-                  }}
-                  onCancel={() => {
-                     setActiveSession(null);
-                     setCurrentView('home');
-                  }}
-                  initialLog={activeSessionLog}
-                />
-              )}
-  
-              {currentView === 'history' && (
-                <History 
-                  history={history}
-                  onDelete={(id) => console.log("Delete", id)}
-                  onEdit={(log) => console.log("Edit", log)}
-                />
-              )}
-              
-              {currentView === 'team' && <TeamView />}
-              
-              {currentView === 'admin' && isAdmin && (
-                  <AdminUsersView 
-                      fetchAllUsers={async () => []}
-                      onUpdateCoach={async () => {}}
-                  />
-              )}
-              
-              {currentView === 'settings' && <SettingsView user={currentUser} />}
-  
-            </div>
-          </div>
-        </div>
-      </div>
+  };
+
+  // ===========================================
+  // HANDLERS
+  // ===========================================
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentView('home');
+    setIsSidebarOpen(false);
+    setTrainingData([]);
+    setHistory([]);
+  };
+
+  const handleStartSession = () => {
+    const sessionData = trainingData.filter(d =>
+      d.annee === filters.selectedAnnee &&
+      d.moisNum === filters.selectedMois &&
+      d.semaine === filters.selectedSemaine &&
+      filters.selectedSeances.includes(d.seance)
     );
+
+    if (sessionData.length > 0) {
+      setActiveSessionData(sessionData);
+      setEditingSession(null);
+      setCurrentView('active');
+    }
+  };
+
+  const handleSaveSession = async (log: SessionLog) => {
+    if (!currentUser) return;
+
+    try {
+      const savedLog = await saveSessionLog(log, currentUser.id);
+      
+      // Update local state
+      setHistory(prev => {
+        const filtered = prev.filter(h => h.id !== savedLog.id);
+        return [savedLog, ...filtered].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+      });
+
+      setActiveSessionData(null);
+      setEditingSession(null);
+      setCurrentView('history');
+    } catch (error) {
+      console.error("Erreur sauvegarde:", error);
+      throw error;
+    }
+  };
+
+  const handleCancelSession = () => {
+    setActiveSessionData(null);
+    setEditingSession(null);
+    setCurrentView('home');
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await deleteSessionLog(sessionId);
+      setHistory(prev => prev.filter(h => h.id !== sessionId));
+    } catch (error) {
+      console.error("Erreur suppression:", error);
+    }
+  };
+
+  const handleEditSession = (log: SessionLog) => {
+    // Reconstruct session data from training plans
+    const sessionData = trainingData.filter(d =>
+      d.annee === log.sessionKey.annee &&
+      d.semaine === log.sessionKey.semaine &&
+      log.sessionKey.seance.split('+').includes(d.seance)
+    );
+
+    if (sessionData.length > 0) {
+      setActiveSessionData(sessionData);
+      setEditingSession(log);
+      setCurrentView('active');
+    } else {
+      // Fallback: create minimal session data from log
+      const minimalData: WorkoutRow[] = log.exercises.map((ex, idx) => ({
+        id: idx,
+        annee: log.sessionKey.annee,
+        moisNom: '',
+        moisNum: log.sessionKey.moisNum,
+        semaine: log.sessionKey.semaine,
+        seance: log.sessionKey.seance,
+        ordre: idx + 1,
+        exercice: ex.exerciseName,
+        series: ex.sets.length.toString(),
+        repsDuree: '',
+        repos: '',
+        tempoRpe: '',
+        notes: '',
+        video: ''
+      }));
+      setActiveSessionData(minimalData);
+      setEditingSession(log);
+      setCurrentView('active');
+    }
+  };
+
+  const handleFetchTeam = async (coachId: string) => {
+    return await fetchTeamAthletes(coachId);
+  };
+
+  const handleFetchAthleteHistory = async (athleteId: string) => {
+    return await fetchSessionLogs(athleteId);
+  };
+
+  const handleFetchAllUsers = async () => {
+    return await fetchAllUsers();
+  };
+
+  const handleUpdateCoach = async (userId: string, coachId: string | null) => {
+    await updateUserCoach(userId, coachId);
+  };
+
+  const handleUpdateProfile = async (updates: Partial<User>) => {
+    if (!currentUser) return;
+    
+    const dbUpdates: Partial<ProfileRow> = {};
+    if (updates.firstName) dbUpdates.first_name = updates.firstName;
+    if (updates.lastName) dbUpdates.last_name = updates.lastName;
+    
+    await updateUserProfile(currentUser.id, dbUpdates);
+    setCurrentUser({ ...currentUser, ...updates });
+  };
+
+  // ===========================================
+  // RENDER
+  // ===========================================
+
+  // Loading state
+  if (authLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Not authenticated
+  if (!session || !currentUser) {
+    return <Auth />;
+  }
+
+  // Main app
+  const isAdmin = currentUser.role === 'admin';
+  const isCoach = currentUser.role === 'coach';
+
+  return (
+    <div className="flex min-h-screen bg-slate-950 text-slate-200">
+      {/* Sidebar */}
+      <Sidebar
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        isAdmin={isAdmin}
+        isCoach={isCoach}
+        onLogout={handleSignOut}
+        user={currentUser}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+        {/* Mobile Header */}
+        <header className="lg:hidden sticky top-0 z-20 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <h1 className="font-bold text-white">UltiPrepa</h1>
+            <div className="w-10" /> {/* Spacer for centering */}
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            {dataLoading && currentView === 'home' ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+              </div>
+            ) : (
+              <>
+                {currentView === 'home' && (
+                  <Home
+                    data={trainingData}
+                    filters={filters}
+                    setFilters={setFilters}
+                    onStartSession={handleStartSession}
+                    user={currentUser}
+                    history={history}
+                  />
+                )}
+
+                {currentView === 'active' && activeSessionData && (
+                  <ActiveSession
+                    sessionData={activeSessionData}
+                    history={history}
+                    onSave={handleSaveSession}
+                    onCancel={handleCancelSession}
+                    initialLog={editingSession}
+                  />
+                )}
+
+                {currentView === 'history' && (
+                  <History
+                    history={history}
+                    onDelete={handleDeleteSession}
+                    onEdit={handleEditSession}
+                  />
+                )}
+
+                {currentView === 'team' && (isCoach || isAdmin) && (
+                  <TeamView
+                    coachId={currentUser.id}
+                    fetchTeam={handleFetchTeam}
+                    fetchAthleteHistory={handleFetchAthleteHistory}
+                  />
+                )}
+
+                {currentView === 'admin' && isAdmin && (
+                  <AdminUsersView
+                    fetchAllUsers={handleFetchAllUsers}
+                    onUpdateCoach={handleUpdateCoach}
+                  />
+                )}
+
+                {currentView === 'settings' && (
+                  <SettingsView
+                    user={currentUser}
+                    onUpdateProfile={handleUpdateProfile}
+                    onLogout={handleSignOut}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
 };
-  
+
 export default App;

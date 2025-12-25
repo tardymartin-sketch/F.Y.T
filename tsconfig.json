@@ -4,29 +4,21 @@
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "module": "ESNext",
     "skipLibCheck": true,
-
-    /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-
-    /* Linting */
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-
-    /* Paths */
+    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
-    },
-
-    /* Types */
-    "types": ["vite/client"]
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src", "*.tsx", "*.ts", "components"]
+  "include": ["src", "*.ts", "*.tsx"]
 }

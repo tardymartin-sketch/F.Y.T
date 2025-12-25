@@ -1,17 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
-import { Users, Shield, User as UserIcon, Dumbbell, Edit2, Check, X } from 'lucide-react';
+import { 
+  Users, 
+  Shield, 
+  User as UserIcon, 
+  Dumbbell, 
+  Save, 
+  Edit2, 
+  Check, 
+  X,
+  Search,
+  ChevronDown,
+  AlertCircle
+} from 'lucide-react';
 
 interface Props {
   fetchAllUsers: () => Promise<User[]>;
-  onUpdateCoach: (userId: string, newCoachId: string) => Promise<void>;
+  onUpdateCoach: (userId: string, newCoachId: string | null) => Promise<void>;
 }
 
 export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [selectedCoachMap, setSelectedCoachMap] = useState<Record<string, string>>({});
+  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterRole, setFilterRole] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -23,133 +37,255 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
       const data = await fetchAllUsers();
       setUsers(data);
     } catch (e) {
-      console.error(e);
+      console.error("Erreur chargement utilisateurs:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const availableCoaches = users.filter(u => u.role === 'coach');
+  const coaches = users.filter(u => u.role === 'coach');
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'admin': return <Shield className="w-4 h-4 text-purple-400" />;
-      case 'coach': return <Dumbbell className="w-4 h-4 text-emerald-400" />;
-      default: return <UserIcon className="w-4 h-4 text-blue-400" />;
+  const filteredUsers = users.filter(u => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = 
+      u.firstName?.toLowerCase().includes(term) ||
+      u.lastName?.toLowerCase().includes(term) ||
+      u.username.toLowerCase().includes(term) ||
+      u.email?.toLowerCase().includes(term);
+    
+    const matchesRole = !filterRole || u.role === filterRole;
+    
+    return matchesSearch && matchesRole;
+  });
+
+  const startEditing = (user: User) => {
+    setEditingUserId(user.id);
+    setSelectedCoachId(user.coachId || null);
+  };
+
+  const cancelEditing = () => {
+    setEditingUserId(null);
+    setSelectedCoachId(null);
+  };
+
+  const saveCoach = async (userId: string) => {
+    setLoading(true);
+    try {
+      await onUpdateCoach(userId, selectedCoachId);
+      setUsers(prev => prev.map(u => 
+        u.id === userId ? { ...u, coachId: selectedCoachId || undefined } : u
+      ));
+      setEditingUserId(null);
+    } catch (e) {
+      alert("Erreur lors de la mise à jour");
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-slate-400">Chargement...</div>
-      </div>
-    );
-  }
+  const getRoleConfig = (role: string) => {
+    switch (role) {
+      case 'admin':
+        return { 
+          icon: Shield, 
+          color: 'text-purple-400', 
+          bg: 'bg-purple-500/20',
+          label: 'Admin'
+        };
+      case 'coach':
+        return { 
+          icon: Dumbbell, 
+          color: 'text-emerald-400', 
+          bg: 'bg-emerald-500/20',
+          label: 'Coach'
+        };
+      default:
+        return { 
+          icon: UserIcon, 
+          color: 'text-blue-400', 
+          bg: 'bg-blue-500/20',
+          label: 'Athlète'
+        };
+    }
+  };
+
+  const stats = {
+    total: users.length,
+    admins: users.filter(u => u.role === 'admin').length,
+    coaches: users.filter(u => u.role === 'coach').length,
+    athletes: users.filter(u => u.role === 'athlete').length,
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-white">Gestion des utilisateurs</h2>
-        <span className="text-sm text-slate-400">{users.length} utilisateurs</span>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-white">Administration</h1>
+        <p className="text-slate-400 mt-1">Gérer les utilisateurs et leurs permissions</p>
       </div>
 
-      {users.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-900/30">
-          <Users className="w-16 h-16 mb-4 opacity-20" />
-          <p className="text-lg font-medium">Aucun utilisateur trouvé</p>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-2xl font-bold text-white">{stats.total}</p>
+          <p className="text-sm text-slate-400">Total utilisateurs</p>
         </div>
-      ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-slate-950 border-b border-slate-800 text-slate-400 uppercase tracking-wider text-xs font-semibold">
-                <th className="p-4">Utilisateur</th>
-                <th className="p-4">Rôle</th>
-                <th className="p-4">Coach</th>
-                <th className="p-4">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {users.map(u => {
-                const currentCoach = users.find(c => c.id === u.coachId);
-                const isEditing = editingUserId === u.id;
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-2xl font-bold text-purple-400">{stats.admins}</p>
+          <p className="text-sm text-slate-400">Administrateurs</p>
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-2xl font-bold text-emerald-400">{stats.coaches}</p>
+          <p className="text-sm text-slate-400">Coachs</p>
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-2xl font-bold text-blue-400">{stats.athletes}</p>
+          <p className="text-sm text-slate-400">Athlètes</p>
+        </div>
+      </div>
 
-                return (
-                  <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
-                    <td className="p-4">
-                      <div className="font-bold text-white">{u.firstName} {u.lastName}</div>
-                      <div className="text-xs text-slate-500">@{u.username}</div>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2 bg-slate-950 w-fit px-3 py-1 rounded-full border border-slate-800">
-                        {getRoleIcon(u.role)}
-                        <span className="capitalize text-slate-300">{u.role}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-slate-400">
-                      {isEditing ? (
-                        <select 
-                          className="bg-slate-950 border border-slate-700 rounded p-2 text-white w-full outline-none focus:border-emerald-500"
-                          value={selectedCoachMap[u.id || ''] || ''}
-                          onChange={(e) => setSelectedCoachMap({...selectedCoachMap, [u.id || '']: e.target.value})}
-                        >
-                          <option value="">Aucun coach</option>
-                          {availableCoaches.map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.firstName} {c.lastName}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className={currentCoach ? 'text-emerald-400 font-medium' : 'text-slate-600 italic'}>
-                          {currentCoach ? `${currentCoach.firstName} ${currentCoach.lastName}` : 'Non assigné'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      {u.role !== 'admin' && (
-                        isEditing ? (
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={async () => {
-                                if (u.id) {
-                                  await onUpdateCoach(u.id, selectedCoachMap[u.id] || '');
-                                  setEditingUserId(null);
-                                  loadUsers();
-                                }
-                              }}
-                              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => setEditingUserId(null)}
-                              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => {
-                              setEditingUserId(u.id || null);
-                              setSelectedCoachMap({...selectedCoachMap, [u.id || '']: u.coachId || ''});
-                            }}
-                            className="p-2 hover:bg-slate-800 text-slate-500 hover:text-white rounded-lg transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                        )
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Filtres */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+          <input
+            type="text"
+            placeholder="Rechercher un utilisateur..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
-      )}
+
+        <div className="flex gap-2">
+          {['Tous', 'admin', 'coach', 'athlete'].map((role) => (
+            <button
+              key={role}
+              onClick={() => setFilterRole(role === 'Tous' ? null : role)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                (role === 'Tous' && !filterRole) || filterRole === role
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {role === 'Tous' ? 'Tous' : getRoleConfig(role).label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        {loading && users.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+            <p className="text-slate-400">Chargement...</p>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-12 text-center">
+            <Users className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500">Aucun utilisateur trouvé</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-800/50">
+                <tr className="text-left text-sm text-slate-400">
+                  <th className="px-6 py-4 font-medium">Utilisateur</th>
+                  <th className="px-6 py-4 font-medium">Rôle</th>
+                  <th className="px-6 py-4 font-medium">Coach assigné</th>
+                  <th className="px-6 py-4 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {filteredUsers.map((user) => {
+                  const roleConfig = getRoleConfig(user.role);
+                  const Icon = roleConfig.icon;
+                  const assignedCoach = coaches.find(c => c.id === user.coachId);
+                  const isEditing = editingUserId === user.id;
+
+                  return (
+                    <tr key={user.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 font-medium">
+                            {user.firstName?.[0]}{user.lastName?.[0] || user.username[0]}
+                          </div>
+                          <div>
+                            <p className="font-medium text-white">
+                              {user.firstName} {user.lastName}
+                            </p>
+                            <p className="text-sm text-slate-500">@{user.username}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${roleConfig.bg}`}>
+                          <Icon className={`w-4 h-4 ${roleConfig.color}`} />
+                          <span className={`text-sm font-medium ${roleConfig.color}`}>
+                            {roleConfig.label}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {isEditing ? (
+                          <select
+                            value={selectedCoachId || ''}
+                            onChange={(e) => setSelectedCoachId(e.target.value || null)}
+                            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Aucun coach</option>
+                            {coaches.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.firstName} {c.lastName}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-slate-400">
+                            {assignedCoach 
+                              ? `${assignedCoach.firstName} ${assignedCoach.lastName}`
+                              : '—'
+                            }
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.role !== 'admin' && (
+                          isEditing ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => saveCoach(user.id)}
+                                disabled={loading}
+                                className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => startEditing(user)}
+                              className="p-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
