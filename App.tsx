@@ -41,6 +41,7 @@ import { History } from './src/components/History';
 import { TeamView } from './src/components/TeamView';
 import { AdminUsersView } from './src/components/AdminUsersView';
 import { SettingsView } from './src/components/SettingsView';
+import { StravaImport } from './src/components/StravaImport';
 import { Menu } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -413,6 +414,7 @@ const App: React.FC = () => {
                     history={history}
                     onDelete={handleDeleteSession}
                     onEdit={handleEditSession}
+                    userId={currentUser.id}
                   />
                 )}
 
@@ -442,6 +444,10 @@ const App: React.FC = () => {
                     onUpdateProfile={handleUpdateProfile}
                     onLogout={handleSignOut}
                   />
+                )}
+
+                {currentView === 'import' && (
+                  <StravaImport user={currentUser} />
                 )}
               </>
             )}

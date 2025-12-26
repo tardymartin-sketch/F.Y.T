@@ -14,14 +14,21 @@ import {
   Search,
   Filter
 } from 'lucide-react';
+import { StravaHistoryCard } from './StravaHistoryCard';
 
 interface Props {
   history: SessionLog[];
   onDelete: (id: string) => void;
   onEdit: (log: SessionLog) => void;
+  userId?: string;
 }
 
-export const History: React.FC<Props> = ({ history, onDelete, onEdit }) => {
+// Helper pour détecter si une session vient de Strava
+const isStravaSession = (log: SessionLog): boolean => {
+  return log.sessionKey.seance.toLowerCase().includes('strava');
+};
+
+export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -181,6 +188,19 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit }) => {
       ) : (
         <div className="space-y-4">
           {filteredHistory.map((log) => {
+            // Utiliser un affichage dédié pour les sessions Strava
+            if (isStravaSession(log) && userId) {
+              return (
+                <StravaHistoryCard
+                  key={log.id}
+                  log={log}
+                  onDelete={onDelete}
+                  userId={userId}
+                />
+              );
+            }
+
+            // Affichage standard pour les autres sessions
             const isExpanded = expandedId === log.id;
             const dateInfo = formatDate(log.date);
             const totalSets = log.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);

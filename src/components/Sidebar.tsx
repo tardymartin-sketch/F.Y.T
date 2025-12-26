@@ -9,7 +9,8 @@ import {
   Shield,
   Dumbbell,
   ChevronRight,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { User } from '../../types';
 
@@ -45,6 +46,7 @@ export const Sidebar: React.FC<Props> = ({
     const items: MenuItem[] = [
       { id: 'home', label: 'Accueil', icon: Home },
       { id: 'history', label: 'Historique', icon: History },
+      { id: 'import', label: 'Importer', icon: Download },
     ];
 
     if (isCoach || isAdmin) {
