@@ -4,7 +4,7 @@
 // ============================================================
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPin, Loader2, Maximize2 } from 'lucide-react';
+import { MapPin, Loader2, Crosshair, Maximize2, Minimize2, X } from 'lucide-react';
 
 interface StravaActivityMapProps {
   polyline: string;
@@ -107,10 +107,11 @@ export const StravaActivityMap: React.FC<StravaActivityMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const tileLayerRef = useRef<any>(null);
   const boundsRef = useRef<any>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState<string>('');
-
+  const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
     if (!polyline) {
       setStatus('error');
@@ -159,10 +160,12 @@ export const StravaActivityMap: React.FC<StravaActivityMapProps> = ({
         map.zoomControl.setPosition('topright');
 
         // Ajouter les tuiles (OpenStreetMap comme fallback)
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           attribution: '© OpenStreetMap'
         }).addTo(map);
+
+        tileLayerRef.current = tileLayer;
 
         // Ajouter la polyline
         const polylineLayer = L.polyline(points, {
@@ -239,9 +242,85 @@ export const StravaActivityMap: React.FC<StravaActivityMapProps> = ({
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
+      tileLayerRef.current = null;
       boundsRef.current = null;
     };
   }, [polyline, sportColor]);
+
+  // Fonction pour recentrer la carte
+  const handleRecenter = () => {
+    if (mapInstanceRef.current && boundsRef.current) {
+      mapInstanceRef.current.fitBounds(boundsRef.current, { padding: [30, 30] });
+    }
+  };
+
+  // Fonction pour forcer le rafraîchissement de la carte
+  const forceMapRefresh = () => {
+    if (mapInstanceRef.current) {
+      const map = mapInstanceRef.current;
+      
+      // Invalider la taille
+      map.invalidateSize({ animate: false });
+      
+      // Forcer le rechargement des tuiles
+      if (tileLayerRef.current) {
+        tileLayerRef.current.redraw();
+      }
+      
+      // Réajuster la vue aux bounds
+      setTimeout(() => {
+        if (mapInstanceRef.current && boundsRef.current) {
+          mapInstanceRef.current.invalidateSize({ animate: false });
+          mapInstanceRef.current.fitBounds(boundsRef.current, { 
+            padding: [30, 30],
+            animate: false 
+          });
+        }
+      }, 100);
+    }
+  };
+
+  // Fonction pour basculer le mode plein écran
+  const toggleFullscreen = () => {
+    setIsFullscreen(prev => {
+      const newValue = !prev;
+      
+      // Multiple refreshes pour s'assurer que tout se charge
+      setTimeout(forceMapRefresh, 100);
+      setTimeout(forceMapRefresh, 300);
+      setTimeout(forceMapRefresh, 600);
+      
+      return newValue;
+    });
+  };
+
+  // Fermer avec Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        setTimeout(forceMapRefresh, 100);
+        setTimeout(forceMapRefresh, 300);
+      }
+    };
+    
+    if (isFullscreen) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden';
+      
+      // Refresh la carte quand on entre en plein écran
+      setTimeout(forceMapRefresh, 150);
+      setTimeout(forceMapRefresh, 400);
+      setTimeout(forceMapRefresh, 800);
+    } else {
+      document.body.style.overflow = '';
+    }
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
 
   if (status === 'error') {
     return (
@@ -253,57 +332,103 @@ export const StravaActivityMap: React.FC<StravaActivityMapProps> = ({
   }
 
   return (
-    <div className={`relative h-full min-h-[150px] ${className}`}>
+    <>
+      {/* Overlay sombre en arrière-plan quand plein écran */}
+      {isFullscreen && (
+        <div 
+          className="fixed inset-0 z-[9998] bg-black/80"
+          onClick={toggleFullscreen}
+        />
+      )}
+      
+      {/* Conteneur unique de la carte - les styles changent selon le mode */}
       <div 
-        ref={mapContainerRef} 
-        className="w-full h-full rounded-xl"
-        style={{ minHeight: '150px', background: '#1e293b' }}
-      />
-      {status === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-800/90 rounded-xl">
-          <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
-          <span className="ml-2 text-slate-400 text-sm">Chargement de la carte...</span>
-        </div>
-      )}
-      {status === 'ready' && (
-        <button
-          onClick={() => {
-            if (mapInstanceRef.current && boundsRef.current) {
-              mapInstanceRef.current.fitBounds(boundsRef.current, { padding: [30, 30] });
-            }
+        className={
+          isFullscreen 
+            ? 'fixed inset-4 z-[9999] rounded-2xl shadow-2xl overflow-hidden' 
+            : `relative h-full min-h-[150px] ${className}`
+        }
+      >
+        {/* Le conteneur Leaflet - toujours le même élément DOM */}
+        <div 
+          ref={mapContainerRef} 
+          className="w-full h-full rounded-xl"
+          style={{ 
+            minHeight: isFullscreen ? '100%' : '150px', 
+            background: '#1e293b',
+            height: '100%'
           }}
-          className="absolute bottom-3 right-3 z-[1000] bg-slate-800 hover:bg-slate-700 text-white p-2 rounded-lg shadow-lg transition-colors"
-          title="Recentrer la vue"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-      )}
-      {/* Style pour les contrôles Leaflet */}
-      <style>{`
-        .leaflet-control-zoom {
-          border: none !important;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
-        }
-        .leaflet-control-zoom a {
-          background-color: #1e293b !important;
-          color: white !important;
-          border: none !important;
-          width: 32px !important;
-          height: 32px !important;
-          line-height: 32px !important;
-          font-size: 18px !important;
-        }
-        .leaflet-control-zoom a:hover {
-          background-color: #334155 !important;
-        }
-        .leaflet-control-zoom-in {
-          border-radius: 8px 8px 0 0 !important;
-        }
-        .leaflet-control-zoom-out {
-          border-radius: 0 0 8px 8px !important;
-        }
-      `}</style>
-    </div>
+        />
+        
+        {/* Loading */}
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-800/90 rounded-xl">
+            <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+            <span className="ml-2 text-slate-400 text-sm">Chargement de la carte...</span>
+          </div>
+        )}
+        
+        {/* Bouton fermer en mode plein écran - en haut à gauche */}
+        {isFullscreen && status === 'ready' && (
+          <button
+            onClick={toggleFullscreen}
+            className="absolute top-3 left-3 z-[1001] flex items-center gap-2 px-3 py-2 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg shadow-lg transition-colors backdrop-blur-sm"
+            title="Fermer (Échap)"
+          >
+            <X className="w-4 h-4" />
+            <span className="text-sm font-medium">Fermer</span>
+          </button>
+        )}
+        
+        {/* Boutons de contrôle */}
+        {status === 'ready' && (
+          <div className={`absolute ${isFullscreen ? 'bottom-4 right-4' : 'bottom-3 right-3'} z-[1000] flex gap-2`}>
+            {/* Bouton recentrer */}
+            <button
+              onClick={handleRecenter}
+              className="bg-slate-800 hover:bg-slate-700 text-white p-2 rounded-lg shadow-lg transition-colors"
+              title="Recentrer la vue"
+            >
+              <Crosshair className="w-4 h-4" />
+            </button>
+            {/* Bouton agrandir/réduire */}
+            <button
+              onClick={toggleFullscreen}
+              className="bg-slate-800 hover:bg-slate-700 text-white p-2 rounded-lg shadow-lg transition-colors"
+              title={isFullscreen ? "Réduire" : "Agrandir la carte"}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
+        
+        {/* Style pour les contrôles Leaflet */}
+        <style>{`
+          .leaflet-control-zoom {
+            border: none !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+          }
+          .leaflet-control-zoom a {
+            background-color: #1e293b !important;
+            color: white !important;
+            border: none !important;
+            width: 32px !important;
+            height: 32px !important;
+            line-height: 32px !important;
+            font-size: 18px !important;
+          }
+          .leaflet-control-zoom a:hover {
+            background-color: #334155 !important;
+          }
+          .leaflet-control-zoom-in {
+            border-radius: 8px 8px 0 0 !important;
+          }
+          .leaflet-control-zoom-out {
+            border-radius: 0 0 8px 8px !important;
+          }
+        `}</style>
+      </div>
+    </>
   );
 };
 
