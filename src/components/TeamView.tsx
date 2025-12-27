@@ -10,10 +10,13 @@ import type { AthleteGroupWithCount, VisibilityType } from '../../types';
 import { RichTextEditor } from './RichTextEditor';
 import { AthleteGroupsManager } from './AthleteGroupsManager';
 import { VisibilitySelector } from './VisibilitySelector';
+import { StravaHistoryCard } from './StravaHistoryCard';
 import { 
   Users, 
   ChevronRight, 
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Search,
   Dumbbell,
   MessageSquare,
@@ -27,6 +30,11 @@ import {
   Trash2,
   Layers
 } from 'lucide-react';
+
+// Helper pour détecter si une session vient de Strava
+const isStravaSession = (log: SessionLog): boolean => {
+  return log.sessionKey.seance.toLowerCase().includes('strava');
+};
 
 interface Props {
   coachId: string;
@@ -73,6 +81,7 @@ export const TeamView: React.FC<Props> = ({
   const [athleteHistory, setAthleteHistory] = useState<SessionLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   // Feedbacks state
   const [comments, setComments] = useState<AthleteComment[]>([]);
@@ -404,27 +413,156 @@ export const TeamView: React.FC<Props> = ({
           ) : (
             <div className="divide-y divide-slate-800">
               {athleteHistory.slice(0, 10).map((log) => {
+                // Affichage spécial pour les sessions Strava
+                if (isStravaSession(log) && selectedAthlete) {
+                  return (
+                    <StravaHistoryCard
+                      key={log.id}
+                      log={log}
+                      onDelete={() => {}} // Pas de suppression depuis la vue coach
+                      userId={selectedAthlete.id}
+                      readOnly={true} // Mode lecture seule pour le coach
+                    />
+                  );
+                }
+
                 const date = new Date(log.date);
+                const isExpanded = expandedSessionId === log.id;
+                const totalSets = log.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+                const completedSets = log.exercises.reduce((acc, ex) => 
+                  acc + ex.sets.filter(s => s.completed).length, 0
+                );
+                const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
+
                 return (
-                  <div key={log.id} className="p-4 hover:bg-slate-800/50 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-slate-800 rounded-xl flex flex-col items-center justify-center">
-                          <span className="text-xs text-slate-500">
-                            {date.toLocaleDateString('fr-FR', { month: 'short' })}
-                          </span>
-                          <span className="text-lg font-bold text-white">{date.getDate()}</span>
+                  <div key={log.id} className="overflow-hidden">
+                    {/* Header cliquable */}
+                    <button
+                      onClick={() => setExpandedSessionId(isExpanded ? null : log.id)}
+                      className="w-full p-4 hover:bg-slate-800/50 transition-colors text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-slate-800 rounded-xl flex flex-col items-center justify-center">
+                            <span className="text-xs text-slate-500">
+                              {date.toLocaleDateString('fr-FR', { month: 'short' })}
+                            </span>
+                            <span className="text-lg font-bold text-white">{date.getDate()}</span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-white">Session {log.sessionKey.seance}</p>
+                            <p className="text-sm text-slate-400">
+                              {log.exercises.length} exercices
+                              {log.durationMinutes && ` • ${log.durationMinutes} min`}
+                              {` • ${completedSets}/${totalSets} séries`}
+                            </p>
+                            {/* Barre de progression */}
+                            <div className="mt-2 w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 rounded-full transition-all"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-white">Session {log.sessionKey.seance}</p>
-                          <p className="text-sm text-slate-400">
-                            {log.exercises.length} exercices
-                            {log.durationMinutes && ` • ${log.durationMinutes} min`}
-                          </p>
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-slate-600" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Contenu expansé - Détails des exercices */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-3 border-t border-slate-800 bg-slate-800/30">
+                        <div className="pt-4">
+                          {log.exercises.map((exercise, exIdx) => {
+                            const exerciseCompleted = exercise.sets.filter(s => s.completed).length;
+                            const exerciseTotal = exercise.sets.length;
+                            
+                            return (
+                              <div 
+                                key={exIdx} 
+                                className="bg-slate-900 border border-slate-700 rounded-xl p-4 mb-3 last:mb-0"
+                              >
+                                {/* Nom de l'exercice */}
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-medium text-white">{exercise.exerciseName}</h4>
+                                  <span className={`text-xs px-2 py-1 rounded-full ${
+                                    exerciseCompleted === exerciseTotal 
+                                      ? 'bg-emerald-500/20 text-emerald-400' 
+                                      : 'bg-slate-700 text-slate-400'
+                                  }`}>
+                                    {exerciseCompleted}/{exerciseTotal} séries
+                                  </span>
+                                </div>
+
+                                {/* Tableau des séries */}
+                                <div className="space-y-2">
+                                  {/* Header du tableau */}
+                                  <div className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider px-2">
+                                    <div>Série</div>
+                                    <div>Reps</div>
+                                    <div>Poids</div>
+                                    <div className="text-center">✓</div>
+                                  </div>
+
+                                  {/* Lignes des séries */}
+                                  {exercise.sets.map((set, setIdx) => (
+                                    <div 
+                                      key={setIdx}
+                                      className={`grid grid-cols-4 gap-2 items-center p-2 rounded-lg ${
+                                        set.completed 
+                                          ? 'bg-emerald-500/10' 
+                                          : 'bg-slate-800/50'
+                                      }`}
+                                    >
+                                      <span className="font-mono text-sm text-slate-400">
+                                        #{set.setNumber}
+                                      </span>
+                                      <span className="font-mono text-sm text-white">
+                                        {set.reps || '—'}
+                                      </span>
+                                      <span className="font-mono text-sm text-white">
+                                        {set.weight ? `${set.weight} kg` : '—'}
+                                      </span>
+                                      <div className="text-center">
+                                        <span className={`text-sm ${
+                                          set.completed ? 'text-emerald-400' : 'text-slate-600'
+                                        }`}>
+                                          {set.completed ? '✓' : '○'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Notes si présentes */}
+                                {exercise.notes && (
+                                  <div className="mt-3 p-3 bg-slate-800/50 rounded-lg">
+                                    <p className="text-sm text-slate-400">
+                                      <span className="text-slate-500">Notes: </span>
+                                      {exercise.notes}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {/* Commentaires de la session si présents */}
+                          {log.comments && (
+                            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                              <p className="text-sm text-blue-200">
+                                <span className="font-medium text-blue-400">Commentaires: </span>
+                                {log.comments}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-slate-600" />
-                    </div>
+                    )}
                   </div>
                 );
               })}

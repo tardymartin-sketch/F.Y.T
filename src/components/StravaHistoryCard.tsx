@@ -2,6 +2,7 @@
 // F.Y.T - STRAVA HISTORY CARD
 // src/components/StravaHistoryCard.tsx
 // Affichage dédié pour les activités Strava dans l'historique
+// Avec support du mode readOnly pour les coachs
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -20,9 +21,16 @@ interface StravaHistoryCardProps {
   log: SessionLog;
   onDelete: (id: string) => void;
   userId: string;
+  /** Mode lecture seule (pour les coachs) - ne tente pas de sync avec l'API Strava */
+  readOnly?: boolean;
 }
 
-export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDelete, userId }) => {
+export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ 
+  log, 
+  onDelete, 
+  userId,
+  readOnly = false 
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showCharts, setShowCharts] = useState(false);
   const [stravaData, setStravaData] = useState<StravaActivityDB | null>(null);
@@ -53,16 +61,27 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
           const linked = activities.find(a => a.session_log_id === log.id);
           
           if (linked) {
-            // Charger les détails si nécessaire
-            if (!linked.streams_data) {
-              const updated = await stravaService.syncSingleActivity(userId, linked.strava_activity_id);
-              if (updated) {
-                setStravaData(updated);
+            // En mode readOnly (coach), on ne tente pas de sync
+            // On utilise simplement les données déjà stockées
+            if (readOnly) {
+              setStravaData(linked);
+            } else {
+              // Mode normal (athlète) - on peut sync si nécessaire
+              if (!linked.streams_data) {
+                try {
+                  const updated = await stravaService.syncSingleActivity(userId, linked.strava_activity_id);
+                  if (updated) {
+                    setStravaData(updated);
+                  } else {
+                    setStravaData(linked);
+                  }
+                } catch (syncErr) {
+                  console.warn('Could not sync activity, using cached data:', syncErr);
+                  setStravaData(linked);
+                }
               } else {
                 setStravaData(linked);
               }
-            } else {
-              setStravaData(linked);
             }
           }
         } catch (err) {
@@ -74,7 +93,7 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
     };
 
     loadStravaData();
-  }, [isExpanded, stravaData, userId, log.id]);
+  }, [isExpanded, stravaData, userId, log.id, readOnly]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -142,15 +161,18 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(log.id);
-              }}
-              className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {/* Bouton supprimer seulement si pas readOnly */}
+            {!readOnly && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(log.id);
+                }}
+                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             {isExpanded ? (
               <ChevronUp className="w-5 h-5 text-slate-400" />
             ) : (
@@ -160,56 +182,51 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
         </div>
       </button>
 
-      {/* Expanded Content */}
+      {/* Expanded content */}
       {isExpanded && (
-        <div className="px-5 pb-5 border-t border-slate-800">
-          <div className="pt-4 space-y-4">
-            {/* Métriques détaillées */}
+        <div className="border-t border-slate-800">
+          <div className="p-5 space-y-4">
+            {/* Metrics grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {log.durationMinutes && (
                 <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Durée</span>
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <Clock className="w-4 h-4" />
+                    <span className="text-xs">Durée</span>
                   </div>
-                  <p className="font-mono text-lg text-white">
-                    {Math.floor(log.durationMinutes / 60)}h {log.durationMinutes % 60}min
-                  </p>
+                  <p className="text-white font-semibold">{log.durationMinutes} min</p>
                 </div>
               )}
-
               {distance && (
                 <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>Distance</span>
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <MapPin className="w-4 h-4" />
+                    <span className="text-xs">Distance</span>
                   </div>
-                  <p className="font-mono text-lg text-white">{distance}</p>
+                  <p className="text-white font-semibold">{distance}</p>
                 </div>
               )}
-
               {elevation && (
                 <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>Dénivelé</span>
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <TrendingUp className="w-4 h-4" />
+                    <span className="text-xs">Dénivelé</span>
                   </div>
-                  <p className="font-mono text-lg text-white">{elevation}</p>
+                  <p className="text-white font-semibold">{elevation}</p>
                 </div>
               )}
-
               {avgHr && (
                 <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-                    <Heart className="w-3.5 h-3.5" />
-                    <span>FC moyenne</span>
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <Heart className="w-4 h-4" />
+                    <span className="text-xs">FC moy</span>
                   </div>
-                  <p className="font-mono text-lg text-white">{avgHr}</p>
+                  <p className="text-white font-semibold">{avgHr}</p>
                 </div>
               )}
             </div>
 
-            {/* Toggle Carte / Graphiques */}
+            {/* Toggle buttons */}
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCharts(false)}
@@ -258,12 +275,19 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
 
             {/* Graphiques */}
             {showCharts && !isLoading && (
-              <StravaActivityCharts
-                streams={stravaData?.streams_data || null}
-                segments={stravaData?.segment_efforts || undefined}
-                sportType={sportType}
-                compact={false}
-              />
+              stravaData?.streams_data ? (
+                <StravaActivityCharts
+                  streams={stravaData.streams_data}
+                  segments={stravaData?.segment_efforts || undefined}
+                  sportType={sportType}
+                  compact={false}
+                />
+              ) : (
+                <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
+                  <BarChart3 className="w-5 h-5 mr-2 opacity-50" />
+                  Pas de données détaillées disponibles
+                </div>
+              )
             )}
 
             {/* Lien Strava */}
@@ -295,4 +319,3 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
 };
 
 export default StravaHistoryCard;
-
