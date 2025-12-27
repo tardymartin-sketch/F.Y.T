@@ -107,7 +107,7 @@ export const Sidebar: React.FC<Props> = ({
                 <Dumbbell className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="font-bold text-white text-lg">UltiPrepa</h1>
+                <h1 className="font-bold text-white text-lg">F.Y.T</h1>
                 <div className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 mt-0.5 ${getRoleBadge()}`}>
                   {user?.role === 'admin' && <Shield className="w-3 h-3" />}
                   {user?.role?.charAt(0).toUpperCase()}{user?.role?.slice(1)}
@@ -190,3 +190,4 @@ export const Sidebar: React.FC<Props> = ({
     </>
   );
 };
+

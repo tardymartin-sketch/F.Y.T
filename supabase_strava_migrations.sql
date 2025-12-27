@@ -1,12 +1,12 @@
 -- ============================================================
--- ULTIPREPA - STRAVA INTEGRATION
+-- F.Y.T - STRAVA INTEGRATION
 -- Instructions SQL pour Supabase
 -- Exécuter dans : Supabase Dashboard > SQL Editor
 -- ============================================================
 
 -- ============================================================
 -- 1. TABLE: strava_connections
--- Stocke la liaison entre un user UltiPrepa et son compte Strava
+-- Stocke la liaison entre un user F.Y.T et son compte Strava
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS strava_connections (
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS strava_activities (
     -- Segments Strava
     segment_efforts JSONB,
     
-    -- Statut d'import dans l'historique UltiPrepa
+    -- Statut d'import dans l'historique F.Y.T
     is_imported_to_history BOOLEAN DEFAULT FALSE,
     imported_at TIMESTAMP WITH TIME ZONE,
     session_log_id UUID REFERENCES session_logs(id),
@@ -222,3 +222,4 @@ CREATE TRIGGER trigger_update_strava_sync_timestamp
 -- VITE_STRAVA_CLIENT_SECRET=xxx
 -- VITE_STRAVA_REDIRECT_URI=http://localhost:5173
 -- ============================================================
+

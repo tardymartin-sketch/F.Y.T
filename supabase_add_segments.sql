@@ -1,5 +1,5 @@
 -- ============================================================
--- ULTIPREPA - STRAVA INTEGRATION UPDATE
+-- F.Y.T - STRAVA INTEGRATION UPDATE
 -- Ajouter la colonne segment_efforts si elle n'existe pas
 -- Exécuter dans : Supabase Dashboard > SQL Editor
 -- ============================================================
@@ -21,3 +21,4 @@ SELECT column_name, data_type
 FROM information_schema.columns 
 WHERE table_name = 'strava_activities' 
 AND column_name IN ('streams_data', 'segment_efforts');
+

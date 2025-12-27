@@ -59,7 +59,7 @@ export const Auth: React.FC = () => {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-600 to-emerald-600 rounded-2xl shadow-2xl shadow-blue-600/25 mb-6 rotate-3 hover:rotate-0 transition-transform duration-300">
             <Dumbbell className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">UltiPrepa</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">F.Y.T</h1>
           <p className="text-slate-400">
             {isRegistering ? 'Créez votre compte pour commencer' : 'Content de vous revoir !'}
           </p>
@@ -191,9 +191,10 @@ export const Auth: React.FC = () => {
 
         {/* Footer */}
         <p className="text-center text-slate-600 text-sm mt-8">
-          © 2024 UltiPrepa — Votre coach numérique
+          © 2024 F.Y.T — Votre coach numérique
         </p>
       </div>
     </div>
   );
 };
+

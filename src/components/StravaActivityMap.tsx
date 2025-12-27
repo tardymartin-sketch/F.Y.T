@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA ACTIVITY MAP
+// F.Y.T - STRAVA ACTIVITY MAP
 // src/components/StravaActivityMap.tsx
 // ============================================================
 
@@ -433,3 +433,4 @@ export const StravaActivityMap: React.FC<StravaActivityMapProps> = ({
 };
 
 export default StravaActivityMap;
+

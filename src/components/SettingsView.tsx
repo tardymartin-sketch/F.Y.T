@@ -202,8 +202,9 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
 
       {/* Version */}
       <p className="text-center text-slate-600 text-sm">
-        UltiPrepa v2.0.0
+        F.Y.T v2.0.0
       </p>
     </div>
   );
 };
+

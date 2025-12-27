@@ -270,3 +270,4 @@ export const SessionSelector: React.FC<Props> = ({ data, filters, onChange }) =>
     </div>
   );
 };
+

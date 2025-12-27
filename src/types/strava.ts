@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA TYPES
+// F.Y.T - STRAVA TYPES
 // src/types/strava.ts
 // ============================================================
 
@@ -318,3 +318,4 @@ export const DEFAULT_SPORT_CONFIG = {
   showPace: false,
   showSpeed: false,
 };
+

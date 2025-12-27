@@ -308,3 +308,4 @@ export function mapAthleteCommentToRow(
     is_read: comment.isRead,
   };
 }
+

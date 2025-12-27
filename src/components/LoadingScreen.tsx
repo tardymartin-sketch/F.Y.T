@@ -11,7 +11,7 @@ export const LoadingScreen: React.FC = () => {
           </div>
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-emerald-600 rounded-2xl blur-xl opacity-50 animate-pulse" />
         </div>
-        <h1 className="text-2xl font-bold text-white mt-6">UltiPrepa</h1>
+        <h1 className="text-2xl font-bold text-white mt-6">F.Y.T</h1>
         <div className="flex items-center gap-2 mt-4">
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -22,3 +22,4 @@ export const LoadingScreen: React.FC = () => {
     </div>
   );
 };
+

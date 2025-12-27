@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA IMPORT PAGE
+// F.Y.T - STRAVA IMPORT PAGE
 // src/components/StravaImport.tsx
 // ============================================================
 
@@ -61,7 +61,7 @@ const InstructionsPanel: React.FC<{ isConnected: boolean }> = ({ isConnected }) 
           <p className="text-slate-400 text-xs mt-1">
             {isConnected 
               ? "✅ Ton compte Strava est connecté !" 
-              : "Clique sur le bouton ci-dessous pour autoriser UltiPrepa à accéder à tes activités."}
+              : "Clique sur le bouton ci-dessous pour autoriser F.Y.T à accéder à tes activités."}
           </p>
         </div>
       </div>
@@ -85,7 +85,7 @@ const InstructionsPanel: React.FC<{ isConnected: boolean }> = ({ isConnected }) 
         <div>
           <h3 className="font-medium text-white text-sm">Importe tes activités</h3>
           <p className="text-slate-400 text-xs mt-1">
-            Sélectionne les activités que tu veux ajouter à ton historique UltiPrepa.
+            Sélectionne les activités que tu veux ajouter à ton historique F.Y.T.
           </p>
         </div>
       </div>
@@ -603,7 +603,7 @@ export const StravaImport: React.FC<StravaImportProps> = ({ user }) => {
           Importer mes activités
         </h1>
         <p className="text-slate-400 mt-2">
-          Synchronise tes entraînements depuis Strava vers ton historique UltiPrepa.
+          Synchronise tes entraînements depuis Strava vers ton historique F.Y.T.
         </p>
       </div>
 
@@ -819,3 +819,4 @@ export const StravaImport: React.FC<StravaImportProps> = ({ user }) => {
 };
 
 export default StravaImport;
+

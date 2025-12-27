@@ -1,4 +1,4 @@
-# UltiPrepa v2.0
+# F.Y.T v2.0
 
 Application de suivi d'entraînement sportif avec interface moderne et backend Supabase.
 
@@ -201,7 +201,7 @@ N'oubliez pas d'activer le RLS et de créer les politiques appropriées pour cha
 ## 📁 Structure du projet
 
 ```
-ultiprepa/
+F.Y.T/
 ├── src/
 │   ├── components/        # Composants React
 │   │   ├── ActiveSession.tsx
@@ -228,3 +228,4 @@ ultiprepa/
 ## 📄 Licence
 
 MIT
+

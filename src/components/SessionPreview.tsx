@@ -121,3 +121,4 @@ export const SessionPreview: React.FC<Props> = ({ exercises, selectedOrder }) =>
     </div>
   );
 };
+

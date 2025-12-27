@@ -123,7 +123,7 @@ export const ActiveSession: React.FC<Props> = ({
     setLogs(newLogs);
     
     // Sauvegarde locale
-    localStorage.setItem('ultiprepa_active_session', JSON.stringify({
+    localStorage.setItem('F.Y.T_active_session', JSON.stringify({
       logs: newLogs,
       sessionData: sessionData.map(s => ({ seance: s.seance, annee: s.annee, moisNum: s.moisNum, semaine: s.semaine })),
       startTime
@@ -191,7 +191,7 @@ export const ActiveSession: React.FC<Props> = ({
 
     try {
       await onSave(finalLog);
-      localStorage.removeItem('ultiprepa_active_session');
+      localStorage.removeItem('F.Y.T_active_session');
     } catch (e) {
       console.error("Erreur sauvegarde:", e);
       alert("Erreur lors de la sauvegarde. Veuillez réessayer.");
@@ -626,3 +626,4 @@ export const ActiveSession: React.FC<Props> = ({
     </div>
   );
 };
+

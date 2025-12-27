@@ -370,7 +370,7 @@ const App: React.FC = () => {
             >
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="font-bold text-white">UltiPrepa</h1>
+            <h1 className="font-bold text-white">F.Y.T</h1>
             <div className="w-10" /> {/* Spacer for centering */}
           </div>
         </header>
@@ -459,3 +459,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

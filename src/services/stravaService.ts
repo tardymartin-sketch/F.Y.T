@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA SERVICE
+// F.Y.T - STRAVA SERVICE
 // src/services/stravaService.ts
 // ============================================================
 
@@ -688,3 +688,4 @@ class StravaService {
 
 export const stravaService = new StravaService();
 export default stravaService;
+

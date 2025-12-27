@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA HISTORY CARD
+// F.Y.T - STRAVA HISTORY CARD
 // src/components/StravaHistoryCard.tsx
 // Affichage dédié pour les activités Strava dans l'historique
 // ============================================================
@@ -295,3 +295,4 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({ log, onDel
 };
 
 export default StravaHistoryCard;
+

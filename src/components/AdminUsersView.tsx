@@ -289,3 +289,4 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
     </div>
   );
 };
+

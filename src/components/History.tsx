@@ -337,3 +337,4 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
     </div>
   );
 };
+

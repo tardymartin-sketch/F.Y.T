@@ -1,5 +1,5 @@
 {
-  "name": "ultiprepa",
+  "name": "F.Y.T",
   "private": true,
   "version": "2.0.0",
   "type": "module",
@@ -33,3 +33,4 @@
     "vite": "^6.2.0"
   }
 }
+

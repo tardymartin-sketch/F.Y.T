@@ -1,5 +1,5 @@
 // ============================================================
-// ULTIPREPA - STRAVA ACTIVITY CHARTS
+// F.Y.T - STRAVA ACTIVITY CHARTS
 // src/components/StravaActivityCharts.tsx
 // Graphiques détaillés pour une activité Strava
 // ============================================================
@@ -450,3 +450,4 @@ export const StravaActivityCharts: React.FC<StravaActivityChartsProps> = ({
 };
 
 export default StravaActivityCharts;
+
