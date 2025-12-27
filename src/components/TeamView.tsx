@@ -1,8 +1,18 @@
+// ============================================================
+// F.Y.T - TEAM VIEW (VERSION ÉTENDUE AVEC GROUPES)
+// src/components/TeamView.tsx
+// Vue équipe avec gestion des groupes et Week Organizer ciblé
+// ============================================================
+
 import React, { useState, useEffect } from 'react';
 import { User, SessionLog, AthleteComment, WeekOrganizerLog } from '../../types';
+import type { AthleteGroupWithCount, VisibilityType } from '../../types';
 import { RichTextEditor } from './RichTextEditor';
+import { AthleteGroupsManager } from './AthleteGroupsManager';
+import { VisibilitySelector } from './VisibilitySelector';
 import { 
   Users, 
+  ChevronRight, 
   ChevronLeft,
   Search,
   Dumbbell,
@@ -14,7 +24,8 @@ import {
   X,
   Send,
   Clock,
-  Trash2
+  Trash2,
+  Layers
 } from 'lucide-react';
 
 interface Props {
@@ -26,9 +37,16 @@ interface Props {
   fetchWeekOrganizerLogs?: (coachId: string) => Promise<WeekOrganizerLog[]>;
   saveWeekOrganizerLog?: (log: WeekOrganizerLog) => Promise<WeekOrganizerLog>;
   deleteWeekOrganizerLog?: (logId: string) => Promise<void>;
+  // Nouvelles props pour les groupes
+  fetchAthleteGroups?: (coachId: string) => Promise<AthleteGroupWithCount[]>;
+  createAthleteGroup?: (name: string, description: string, color: string) => Promise<void>;
+  updateAthleteGroup?: (groupId: string, name: string, description: string, color: string) => Promise<void>;
+  deleteAthleteGroup?: (groupId: string) => Promise<void>;
+  updateGroupMembers?: (groupId: string, athleteIds: string[]) => Promise<void>;
+  loadGroupMembers?: (groupId: string) => Promise<User[]>;
 }
 
-type TabType = 'team' | 'feedbacks' | 'organizer';
+type TabType = 'team' | 'feedbacks' | 'organizer' | 'groups';
 
 export const TeamView: React.FC<Props> = ({ 
   coachId, 
@@ -38,7 +56,13 @@ export const TeamView: React.FC<Props> = ({
   markCommentsAsRead,
   fetchWeekOrganizerLogs,
   saveWeekOrganizerLog,
-  deleteWeekOrganizerLog
+  deleteWeekOrganizerLog,
+  fetchAthleteGroups,
+  createAthleteGroup,
+  updateAthleteGroup,
+  deleteAthleteGroup,
+  updateGroupMembers,
+  loadGroupMembers,
 }) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('team');
@@ -63,9 +87,16 @@ export const TeamView: React.FC<Props> = ({
     title: '',
     message: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    visibilityType: 'all' as VisibilityType,
+    selectedGroupIds: [] as string[],
+    selectedAthleteIds: [] as string[],
   });
   const [organizerLoading, setOrganizerLoading] = useState(false);
+
+  // Groups state
+  const [groups, setGroups] = useState<AthleteGroupWithCount[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   // Load team on mount
   useEffect(() => {
@@ -78,6 +109,8 @@ export const TeamView: React.FC<Props> = ({
       loadComments();
     } else if (activeTab === 'organizer' && fetchWeekOrganizerLogs) {
       loadOrganizerLogs();
+    } else if (activeTab === 'groups' && fetchAthleteGroups) {
+      loadGroups();
     }
   }, [activeTab]);
 
@@ -116,6 +149,19 @@ export const TeamView: React.FC<Props> = ({
       console.error("Erreur chargement week organizer:", e);
     } finally {
       setOrganizerLoading(false);
+    }
+  };
+
+  const loadGroups = async () => {
+    if (!fetchAthleteGroups) return;
+    setGroupsLoading(true);
+    try {
+      const data = await fetchAthleteGroups(coachId);
+      setGroups(data);
+    } catch (e) {
+      console.error("Erreur chargement groupes:", e);
+    } finally {
+      setGroupsLoading(false);
     }
   };
 
@@ -161,7 +207,17 @@ export const TeamView: React.FC<Props> = ({
   const handleSaveOrganizer = async () => {
     if (!saveWeekOrganizerLog) return;
     if (!organizerForm.title || !organizerForm.message || !organizerForm.startDate || !organizerForm.endDate) {
-      alert("Veuillez remplir tous les champs");
+      alert("Veuillez remplir tous les champs obligatoires");
+      return;
+    }
+
+    // Validation de la visibilité
+    if (organizerForm.visibilityType === 'groups' && organizerForm.selectedGroupIds.length === 0) {
+      alert("Veuillez sélectionner au moins un groupe");
+      return;
+    }
+    if (organizerForm.visibilityType === 'athletes' && organizerForm.selectedAthleteIds.length === 0) {
+      alert("Veuillez sélectionner au moins un athlète");
       return;
     }
 
@@ -174,12 +230,23 @@ export const TeamView: React.FC<Props> = ({
         message: organizerForm.message,
         startDate: organizerForm.startDate,
         endDate: organizerForm.endDate,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        visibilityType: organizerForm.visibilityType,
+        visibleToGroupIds: organizerForm.visibilityType === 'groups' ? organizerForm.selectedGroupIds : undefined,
+        visibleToAthleteIds: organizerForm.visibilityType === 'athletes' ? organizerForm.selectedAthleteIds : undefined,
       };
       
       const saved = await saveWeekOrganizerLog(newLog);
       setOrganizerLogs(prev => [saved, ...prev]);
-      setOrganizerForm({ title: '', message: '', startDate: '', endDate: '' });
+      setOrganizerForm({ 
+        title: '', 
+        message: '', 
+        startDate: '', 
+        endDate: '',
+        visibilityType: 'all',
+        selectedGroupIds: [],
+        selectedAthleteIds: [],
+      });
       setShowOrganizerForm(false);
     } catch (e) {
       console.error("Erreur sauvegarde organizer:", e);
@@ -199,6 +266,36 @@ export const TeamView: React.FC<Props> = ({
     } catch (e) {
       console.error("Erreur suppression organizer:", e);
     }
+  };
+
+  // Groups handlers
+  const handleCreateGroup = async (name: string, description: string, color: string) => {
+    if (!createAthleteGroup) return;
+    await createAthleteGroup(name, description, color);
+    await loadGroups();
+  };
+
+  const handleUpdateGroup = async (groupId: string, name: string, description: string, color: string) => {
+    if (!updateAthleteGroup) return;
+    await updateAthleteGroup(groupId, name, description, color);
+    await loadGroups();
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!deleteAthleteGroup) return;
+    await deleteAthleteGroup(groupId);
+    await loadGroups();
+  };
+
+  const handleUpdateMembers = async (groupId: string, athleteIds: string[]) => {
+    if (!updateGroupMembers) return;
+    await updateGroupMembers(groupId, athleteIds);
+    await loadGroups();
+  };
+
+  const handleLoadGroupMembers = async (groupId: string): Promise<User[]> => {
+    if (!loadGroupMembers) return [];
+    return await loadGroupMembers(groupId);
   };
 
   const filteredAthletes = athletes.filter(a => {
@@ -231,6 +328,20 @@ export const TeamView: React.FC<Props> = ({
 
   const unreadCount = comments.filter(c => !c.isRead).length;
 
+  // Visibility selector helper
+  const getVisibilityLabel = (log: WeekOrganizerLog): string => {
+    if (log.visibilityType === 'all') return 'Tous les athlètes';
+    if (log.visibilityType === 'groups') {
+      const count = log.visibleToGroupIds?.length || 0;
+      return `${count} groupe${count > 1 ? 's' : ''}`;
+    }
+    if (log.visibilityType === 'athletes') {
+      const count = log.visibleToAthleteIds?.length || 0;
+      return `${count} athlète${count > 1 ? 's' : ''}`;
+    }
+    return '';
+  };
+
   // =============================================
   // ATHLETE DETAIL VIEW
   // =============================================
@@ -238,84 +349,81 @@ export const TeamView: React.FC<Props> = ({
     const stats = getAthleteStats(athleteHistory);
     
     return (
-      <div className="space-y-4 animate-fade-in">
-        {/* Back button */}
+      <div className="space-y-6 animate-fade-in">
         <button 
           onClick={() => setSelectedAthlete(null)}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors -ml-1"
+          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
         >
           <ChevronLeft className="w-5 h-5" />
-          <span className="text-sm">Retour</span>
+          <span>Retour à l'équipe</span>
         </button>
 
-        {/* Athlete header - compact */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
               {selectedAthlete.firstName?.[0]}{selectedAthlete.lastName?.[0]}
             </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+            <div>
+              <h1 className="text-2xl font-bold text-white">
                 {selectedAthlete.firstName} {selectedAthlete.lastName}
               </h1>
-              <p className="text-slate-400 text-sm">@{selectedAthlete.username}</p>
+              <p className="text-slate-400">@{selectedAthlete.username}</p>
             </div>
           </div>
 
-          {/* Stats - inline on mobile */}
-          <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
-            <div className="flex-1 min-w-[80px] bg-slate-800/50 rounded-lg p-2 sm:p-3 text-center">
-              <p className="text-xl sm:text-2xl font-bold text-white">{stats.totalSessions}</p>
-              <p className="text-xs text-slate-400">Total</p>
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+              <p className="text-3xl font-bold text-white">{stats.totalSessions}</p>
+              <p className="text-sm text-slate-400">Séances totales</p>
             </div>
-            <div className="flex-1 min-w-[80px] bg-slate-800/50 rounded-lg p-2 sm:p-3 text-center">
-              <p className="text-xl sm:text-2xl font-bold text-emerald-400">{stats.monthSessions}</p>
-              <p className="text-xs text-slate-400">Ce mois</p>
+            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+              <p className="text-3xl font-bold text-emerald-400">{stats.monthSessions}</p>
+              <p className="text-sm text-slate-400">Ce mois</p>
             </div>
-            <div className="flex-1 min-w-[80px] bg-slate-800/50 rounded-lg p-2 sm:p-3 text-center">
-              <p className="text-xl sm:text-2xl font-bold text-blue-400">
+            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+              <p className="text-3xl font-bold text-blue-400">
                 {stats.daysSinceLastSession !== null ? `${stats.daysSinceLastSession}j` : '—'}
               </p>
-              <p className="text-xs text-slate-400">Dernier</p>
+              <p className="text-sm text-slate-400">Dernière séance</p>
             </div>
           </div>
         </div>
 
-        {/* History */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="p-3 sm:p-4 border-b border-slate-800">
-            <h2 className="font-bold text-white">Historique</h2>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl">
+          <div className="p-6 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-white">Historique des séances</h2>
           </div>
           
           {loading ? (
-            <div className="p-8 text-center text-slate-500">
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              Chargement...
-            </div>
+            <div className="p-12 text-center text-slate-500">Chargement...</div>
           ) : athleteHistory.length === 0 ? (
-            <div className="p-8 text-center">
-              <Dumbbell className="w-10 h-10 text-slate-700 mx-auto mb-2" />
-              <p className="text-slate-500 text-sm">Aucune séance</p>
+            <div className="p-12 text-center">
+              <Dumbbell className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+              <p className="text-slate-500">Aucune séance enregistrée</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-800">
               {athleteHistory.slice(0, 10).map((log) => {
                 const date = new Date(log.date);
                 return (
-                  <div key={log.id} className="p-3 hover:bg-slate-800/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-slate-800 rounded-lg flex flex-col items-center justify-center flex-shrink-0">
-                        <span className="text-[10px] text-slate-500 uppercase">
-                          {date.toLocaleDateString('fr-FR', { month: 'short' })}
-                        </span>
-                        <span className="text-sm font-bold text-white leading-none">{date.getDate()}</span>
+                  <div key={log.id} className="p-4 hover:bg-slate-800/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-slate-800 rounded-xl flex flex-col items-center justify-center">
+                          <span className="text-xs text-slate-500">
+                            {date.toLocaleDateString('fr-FR', { month: 'short' })}
+                          </span>
+                          <span className="text-lg font-bold text-white">{date.getDate()}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Session {log.sessionKey.seance}</p>
+                          <p className="text-sm text-slate-400">
+                            {log.exercises.length} exercices
+                            {log.durationMinutes && ` • ${log.durationMinutes} min`}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-white text-sm truncate">Session {log.sessionKey.seance}</p>
-                        <p className="text-xs text-slate-400">
-                          {log.exercises.length} exos{log.durationMinutes && ` · ${log.durationMinutes}min`}
-                        </p>
-                      </div>
+                      <ChevronRight className="w-5 h-5 text-slate-600" />
                     </div>
                   </div>
                 );
@@ -331,117 +439,149 @@ export const TeamView: React.FC<Props> = ({
   // MAIN VIEW WITH TABS
   // =============================================
   return (
-    <div className="space-y-4 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Mes Athlètes</h1>
-        <p className="text-slate-400 text-sm">{athletes.length} athlète{athletes.length > 1 ? 's' : ''}</p>
+        <h1 className="text-3xl font-bold text-white">Mon Équipe</h1>
+        <p className="text-slate-400 mt-1">{athletes.length} athlètes</p>
       </div>
 
-      {/* iOS-style Segmented Control */}
-      <div className="bg-slate-800/50 p-1 rounded-xl flex">
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('team')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
             activeTab === 'team' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-400'
+              ? 'bg-blue-600 text-white' 
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <Users className="w-4 h-4" />
-          <span className="hidden sm:inline">Athlètes</span>
+          Athlètes
         </button>
+        
+        {fetchAthleteGroups && (
+          <button
+            onClick={() => setActiveTab('groups')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+              activeTab === 'groups' 
+                ? 'bg-blue-600 text-white' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Groupes
+          </button>
+        )}
+        
         <button
           onClick={() => setActiveTab('feedbacks')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all relative ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors relative whitespace-nowrap ${
             activeTab === 'feedbacks' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-400'
+              ? 'bg-blue-600 text-white' 
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          <span className="hidden sm:inline">Feedbacks</span>
+          Feedbacks
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 sm:static sm:ml-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </button>
+        
         <button
           onClick={() => setActiveTab('organizer')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
             activeTab === 'organizer' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-400'
+              ? 'bg-blue-600 text-white' 
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span className="hidden sm:inline">Messages</span>
+          Week Organizer
         </button>
       </div>
 
       {/* TAB: Team */}
       {activeTab === 'team' && (
-        <div className="space-y-3">
-          {/* Search */}
+        <>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
             <input
               type="text"
-              placeholder="Rechercher..."
+              placeholder="Rechercher un athlète..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           {loading ? (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center">
-              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">Chargement...</p>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+              <p className="text-slate-400">Chargement de l'équipe...</p>
             </div>
           ) : filteredAthletes.length === 0 ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-              <Users className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <h3 className="font-medium text-slate-400 mb-1">
+            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
+              <Users className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-slate-400 mb-2">
                 {searchTerm ? "Aucun résultat" : "Aucun athlète"}
               </h3>
               <p className="text-slate-500 text-sm">
-                {searchTerm ? "Essayez une autre recherche" : "Invitez des athlètes"}
+                {searchTerm 
+                  ? "Essayez une autre recherche" 
+                  : "Invitez des athlètes à rejoindre votre équipe"
+                }
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredAthletes.map((athlete) => (
                 <button
                   key={athlete.id}
                   onClick={() => handleSelectAthlete(athlete)}
-                  className="w-full bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-xl p-3 text-left transition-all group"
+                  className="bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-2xl p-5 text-left transition-all duration-200 group"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500/20 to-emerald-500/20 group-hover:from-blue-500/30 group-hover:to-emerald-500/30 rounded-lg flex items-center justify-center text-blue-400 font-bold text-sm transition-colors flex-shrink-0">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-gradient-to-br from-blue-500/20 to-emerald-500/20 group-hover:from-blue-500/30 group-hover:to-emerald-500/30 rounded-xl flex items-center justify-center text-blue-400 font-bold text-lg transition-colors">
                       {athlete.firstName?.[0]}{athlete.lastName?.[0]}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-white group-hover:text-blue-400 transition-colors text-sm truncate">
+                      <h3 className="font-semibold text-white group-hover:text-blue-400 transition-colors truncate">
                         {athlete.firstName} {athlete.lastName}
                       </h3>
-                      <p className="text-xs text-slate-500 truncate">@{athlete.username}</p>
+                      <p className="text-sm text-slate-500 truncate">@{athlete.username}</p>
                     </div>
+                    <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
                   </div>
                 </button>
               ))}
             </div>
           )}
-        </div>
+        </>
+      )}
+
+      {/* TAB: Groups */}
+      {activeTab === 'groups' && fetchAthleteGroups && (
+        <AthleteGroupsManager
+          coachId={coachId}
+          athletes={athletes}
+          groups={groups}
+          onCreateGroup={handleCreateGroup}
+          onUpdateGroup={handleUpdateGroup}
+          onDeleteGroup={handleDeleteGroup}
+          onUpdateMembers={handleUpdateMembers}
+          onLoadGroupMembers={handleLoadGroupMembers}
+        />
       )}
 
       {/* TAB: Feedbacks */}
       {activeTab === 'feedbacks' && (
-        <div className="space-y-3">
-          {/* Filter bar */}
-          <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-slate-400">
               <input
                 type="checkbox"
                 checked={showAllComments}
@@ -449,84 +589,84 @@ export const TeamView: React.FC<Props> = ({
                   setShowAllComments(e.target.checked);
                   setTimeout(loadComments, 0);
                 }}
-                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+                className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
               />
-              Afficher les lus
+              Afficher les commentaires lus
             </label>
 
             {selectedComments.size > 0 && (
               <button
                 onClick={handleMarkAsRead}
-                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
-                Lu ({selectedComments.size})
+                <CheckCheck className="w-4 h-4" />
+                Marquer comme lu ({selectedComments.size})
               </button>
             )}
           </div>
 
           {commentsLoading ? (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center">
-              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">Chargement...</p>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+              <p className="text-slate-400">Chargement des feedbacks...</p>
             </div>
           ) : comments.length === 0 ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-              <MessageSquare className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <h3 className="font-medium text-slate-400 mb-1">Aucun feedback</h3>
-              <p className="text-slate-500 text-sm">Les commentaires apparaîtront ici</p>
+            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
+              <MessageSquare className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-slate-400 mb-2">Aucun feedback</h3>
+              <p className="text-slate-500 text-sm">
+                Les commentaires de vos athlètes apparaîtront ici
+              </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {comments.map((comment) => (
                 <div
                   key={comment.id}
-                  className={`bg-slate-900 border rounded-xl p-3 transition-colors ${
+                  className={`bg-slate-900 border rounded-xl p-4 transition-colors ${
                     comment.isRead 
                       ? 'border-slate-800 opacity-60' 
                       : 'border-blue-500/30 bg-blue-500/5'
                   }`}
                 >
-                  <div className="flex items-start gap-2.5">
-                    {/* Checkbox */}
+                  <div className="flex items-start gap-3">
                     <button
                       onClick={() => handleToggleComment(comment.id)}
-                      className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                      className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
                         selectedComments.has(comment.id)
                           ? 'bg-blue-500 border-blue-500 text-white'
                           : 'border-slate-600 hover:border-blue-500'
                       }`}
                     >
-                      {selectedComments.has(comment.id) && <Check className="w-2.5 h-2.5" />}
+                      {selectedComments.has(comment.id) && <Check className="w-3 h-3" />}
                     </button>
 
                     <div className="flex-1 min-w-0">
-                      {/* Header */}
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-medium text-white text-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-white">
                           {comment.firstName} {comment.lastName}
                         </span>
+                        <span className="text-slate-500">@{comment.username}</span>
                         {!comment.isRead && (
-                          <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] rounded-full">
+                          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded-full">
                             Nouveau
                           </span>
                         )}
                       </div>
                       
-                      {/* Exercise info */}
-                      <p className="text-xs text-slate-400 mb-1.5">
+                      <p className="text-sm text-slate-400 mb-2">
                         <span className="text-emerald-400">{comment.exerciseName}</span>
-                        {comment.sessionName && <span> · {comment.sessionName}</span>}
+                        {comment.sessionName && (
+                          <span> • Session {comment.sessionName}</span>
+                        )}
                       </p>
                       
-                      {/* Comment */}
-                      <p className="text-slate-200 text-sm">{comment.comment}</p>
+                      <p className="text-slate-200">{comment.comment}</p>
                       
-                      {/* Date */}
-                      <p className="text-[10px] text-slate-500 mt-1.5">
+                      <p className="text-xs text-slate-500 mt-2">
                         {new Date(comment.createdAt).toLocaleDateString('fr-FR', {
                           day: 'numeric',
-                          month: 'short',
+                          month: 'long',
                           hour: '2-digit',
                           minute: '2-digit'
                         })}
@@ -542,85 +682,97 @@ export const TeamView: React.FC<Props> = ({
 
       {/* TAB: Week Organizer */}
       {activeTab === 'organizer' && (
-        <div className="space-y-3">
-          {/* Add button */}
+        <div className="space-y-4">
           {!showOrganizerForm && (
             <button
               onClick={() => setShowOrganizerForm(true)}
-              className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-700 hover:border-blue-500 text-slate-400 hover:text-blue-400 rounded-xl transition-colors text-sm"
+              className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-slate-700 hover:border-blue-500 text-slate-400 hover:text-blue-400 rounded-xl transition-colors"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
               Nouveau message
             </button>
           )}
 
-          {/* Form */}
           {showOrganizerForm && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-white">Nouveau message</h3>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-white">Nouveau message</h3>
                 <button
                   onClick={() => setShowOrganizerForm(false)}
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Title */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Titre</label>
+                <label className="block text-sm font-medium text-slate-400 mb-2">Titre</label>
                 <input
                   type="text"
                   value={organizerForm.title}
                   onChange={(e) => setOrganizerForm(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="Ex: Programme semaine 12"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              {/* Date range - compact inline layout */}
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Période</label>
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Date de début</label>
                   <input
                     type="date"
                     value={organizerForm.startDate}
                     onChange={(e) => setOrganizerForm(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-slate-500 text-sm">→</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Date de fin</label>
                   <input
                     type="date"
                     value={organizerForm.endDate}
                     onChange={(e) => setOrganizerForm(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
-              {/* Message */}
+              <VisibilitySelector
+                visibilityType={organizerForm.visibilityType}
+                selectedGroupIds={organizerForm.selectedGroupIds}
+                selectedAthleteIds={organizerForm.selectedAthleteIds}
+                availableGroups={groups}
+                availableAthletes={athletes}
+                onChange={(type, groupIds, athleteIds) => {
+                  setOrganizerForm(prev => ({
+                    ...prev,
+                    visibilityType: type,
+                    selectedGroupIds: groupIds,
+                    selectedAthleteIds: athleteIds,
+                  }));
+                }}
+              />
+
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Message</label>
+                <label className="block text-sm font-medium text-slate-400 mb-2">Message</label>
                 <RichTextEditor
                   value={organizerForm.message}
                   onChange={(html) => setOrganizerForm(prev => ({ ...prev, message: html }))}
-                  placeholder="Écrivez votre message..."
+                  placeholder="Écrivez votre message ici..."
                 />
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   onClick={() => setShowOrganizerForm(false)}
-                  className="flex-1 px-4 py-2 text-slate-400 hover:text-white text-sm transition-colors"
+                  className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
                 >
                   Annuler
                 </button>
                 <button
                   onClick={handleSaveOrganizer}
                   disabled={organizerLoading}
-                  className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-colors disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                   Publier
@@ -629,59 +781,59 @@ export const TeamView: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Messages list */}
           {organizerLoading && organizerLogs.length === 0 ? (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center">
-              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">Chargement...</p>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+              <p className="text-slate-400">Chargement...</p>
             </div>
           ) : organizerLogs.length === 0 && !showOrganizerForm ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-              <Calendar className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <h3 className="font-medium text-slate-400 mb-1">Aucun message</h3>
-              <p className="text-slate-500 text-sm">Créez des messages pour vos athlètes</p>
+            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
+              <Calendar className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-slate-400 mb-2">Aucun message</h3>
+              <p className="text-slate-500 text-sm">
+                Créez des messages pour communiquer avec vos athlètes
+              </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {organizerLogs.map((log) => {
                 const isActive = new Date(log.startDate) <= new Date() && new Date(log.endDate) >= new Date();
                 return (
                   <div
                     key={log.id}
-                    className={`bg-slate-900 border rounded-xl overflow-hidden ${
+                    className={`bg-slate-900 border rounded-2xl overflow-hidden ${
                       isActive ? 'border-emerald-500/50' : 'border-slate-800'
                     }`}
                   >
-                    <div className="p-4">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="flex-1 min-w-0">
+                    <div className="p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-bold text-white text-sm truncate">{log.title}</h3>
+                            <h3 className="font-bold text-white">{log.title}</h3>
                             {isActive && (
-                              <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] rounded-full flex-shrink-0">
+                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded-full">
                                 Actif
                               </span>
                             )}
+                            <span className="px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded-full">
+                              {getVisibilityLabel(log)}
+                            </span>
                           </div>
-                          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                          <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
                             <Clock className="w-3 h-3" />
-                            {new Date(log.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                            {' → '}
-                            {new Date(log.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                            {new Date(log.startDate).toLocaleDateString('fr-FR')} — {new Date(log.endDate).toLocaleDateString('fr-FR')}
                           </p>
                         </div>
                         <button
                           onClick={() => handleDeleteOrganizer(log.id)}
-                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
+                          className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                       
-                      {/* Content */}
                       <div 
-                        className="text-slate-300 text-sm rich-text-display"
+                        className="text-slate-300 rich-text-display"
                         dangerouslySetInnerHTML={{ __html: log.message }}
                       />
                     </div>
@@ -695,3 +847,5 @@ export const TeamView: React.FC<Props> = ({
     </div>
   );
 };
+
+export default TeamView;

@@ -87,8 +87,8 @@ export const SessionPreview: React.FC<Props> = ({ exercises, selectedOrder }) =>
               {/* Contenu principal */}
               <div className="flex-1 min-w-0">
                 {/* Titre + Vidéo sur même ligne */}
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-semibold text-white text-sm sm:text-base truncate flex-1">
+                <div className="flex items-start gap-2 mb-1">
+                  <h4 className="font-semibold text-white text-sm sm:text-base flex-1 line-clamp-2 leading-tight">
                     {exercise.exercice}
                   </h4>
                   {hasVideo && (

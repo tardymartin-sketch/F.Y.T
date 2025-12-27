@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Global mobile overflow fix */
+html, body, #root {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 @theme {
      --animate-fade-in: fadeIn 0.3s ease-out;
      --animate-slide-up: slideUp 0.3s ease-out;

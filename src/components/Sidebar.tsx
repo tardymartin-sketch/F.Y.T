@@ -50,7 +50,7 @@ export const Sidebar: React.FC<Props> = ({
     ];
 
     if (isCoach || isAdmin) {
-      items.push({ id: 'team', label: 'Mon Équipe', icon: Users });
+      items.push({ id: 'team', label: 'Mes Athlètes', icon: Users });
     }
 
     if (isAdmin) {

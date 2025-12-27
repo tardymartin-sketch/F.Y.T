@@ -202,6 +202,10 @@ export interface WeekOrganizerLog {
   endDate: string;
   message: string;
   createdAt: string;
+  // Nouveaux champs pour la visibilité
+  visibilityType?: 'all' | 'groups' | 'athletes';
+  visibleToGroupIds?: string[];
+  visibleToAthleteIds?: string[];
 }
 
 // Type brut depuis Supabase week_organizer
@@ -213,6 +217,9 @@ export interface WeekOrganizerRow {
   end_date: string;
   message: string;
   created_at: string;
+  visibility_type?: string;
+  visible_to_group_ids?: string[];
+  visible_to_athlete_ids?: string[];
 }
 
 // Mapping WeekOrganizer DB -> App
@@ -225,6 +232,9 @@ export function mapWeekOrganizerRowToLog(row: WeekOrganizerRow): WeekOrganizerLo
     endDate: row.end_date,
     message: row.message,
     createdAt: row.created_at,
+    visibilityType: row.visibility_type as 'all' | 'groups' | 'athletes' | undefined,
+    visibleToGroupIds: row.visible_to_group_ids,
+    visibleToAthleteIds: row.visible_to_athlete_ids,
   };
 }
 
@@ -237,6 +247,9 @@ export function mapWeekOrganizerLogToRow(log: WeekOrganizerLog): Omit<WeekOrgani
     start_date: log.startDate,
     end_date: log.endDate,
     message: log.message,
+    visibility_type: log.visibilityType,
+    visible_to_group_ids: log.visibleToGroupIds,
+    visible_to_athlete_ids: log.visibleToAthleteIds,
   };
 }
 
@@ -309,3 +322,106 @@ export function mapAthleteCommentToRow(
   };
 }
 
+// ===========================================
+// TYPES GROUPES D'ATHLÈTES & VISIBILITÉ
+// ===========================================
+
+export interface AthleteGroup {
+  id: string;
+  coachId: string;
+  name: string;
+  description: string;
+  color: string;
+  createdAt: string;
+}
+
+export interface AthleteGroupMember {
+  groupId: string;
+  athleteId: string;
+  joinedAt: string;
+}
+
+export interface AthleteGroupWithCount extends AthleteGroup {
+  memberCount: number;
+}
+
+export type VisibilityType = 'all' | 'groups' | 'athletes';
+
+// Types DB pour groupes
+export interface AthleteGroupRow {
+  id: string;
+  coach_id: string;
+  name: string;
+  description: string;
+  color: string;
+  created_at: string;
+}
+
+export interface AthleteGroupMemberRow {
+  group_id: string;
+  athlete_id: string;
+  joined_at: string;
+}
+
+// Mapping fonctions pour groupes
+export function mapAthleteGroupRowToGroup(row: AthleteGroupRow): AthleteGroup {
+  return {
+    id: row.id,
+    coachId: row.coach_id,
+    name: row.name,
+    description: row.description,
+    color: row.color,
+    createdAt: row.created_at,
+  };
+}
+
+export function mapAthleteGroupToRow(group: AthleteGroup): Omit<AthleteGroupRow, 'created_at'> {
+  return {
+    id: group.id,
+    coach_id: group.coachId,
+    name: group.name,
+    description: group.description,
+    color: group.color,
+  };
+}
+
+// Couleurs prédéfinies pour les groupes
+export const GROUP_COLORS = [
+  { name: 'Bleu', value: '#3b82f6' },
+  { name: 'Vert', value: '#10b981' },
+  { name: 'Violet', value: '#8b5cf6' },
+  { name: 'Rose', value: '#ec4899' },
+  { name: 'Orange', value: '#f97316' },
+  { name: 'Rouge', value: '#ef4444' },
+  { name: 'Jaune', value: '#eab308' },
+  { name: 'Cyan', value: '#06b6d4' },
+  { name: 'Indigo', value: '#6366f1' },
+  { name: 'Emeraude', value: '#059669' },
+];
+
+// Helper functions pour la visibilité
+export function canAthleteViewMessage(
+  log: WeekOrganizerLog,
+  athleteId: string,
+  athleteGroupIds: string[]
+): boolean {
+  if (!log.visibilityType || log.visibilityType === 'all') return true;
+  
+  if (log.visibilityType === 'groups') {
+    return athleteGroupIds.some(gid => log.visibleToGroupIds?.includes(gid));
+  }
+  
+  if (log.visibilityType === 'athletes') {
+    return log.visibleToAthleteIds?.includes(athleteId) || false;
+  }
+  
+  return false;
+}
+
+export function filterVisibleMessages(
+  logs: WeekOrganizerLog[],
+  athleteId: string,
+  athleteGroupIds: string[]
+): WeekOrganizerLog[] {
+  return logs.filter(log => canAthleteViewMessage(log, athleteId, athleteGroupIds));
+}

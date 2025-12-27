@@ -18,9 +18,22 @@ import {
   deleteWeekOrganizerLog,
   fetchTeamComments,
   saveAthleteComment,
-  markCommentsAsRead
+  markCommentsAsRead,
+  fetchAthleteGroups,
+  createAthleteGroup,
+  updateAthleteGroup,
+  deleteAthleteGroup,
+  updateGroupMembers,
+  fetchAthleteGroupWithMembers,
+  fetchAthleteGroupsForAthlete,
+  fetchActiveWeekOrganizerForAthlete,
 } from './src/services/supabaseService';
 
+import type { AthleteGroupWithCount } from './types';
+import { 
+  canAthleteViewMessage,
+  filterVisibleMessages 
+} from './types';
 import { 
   WorkoutRow, 
   SessionLog, 
@@ -141,23 +154,64 @@ const App: React.FC = () => {
     }
   };
 
+  // ===========================================
+  // ATHLETE GROUPS HANDLERS
+  // ===========================================
+
+  const handleFetchAthleteGroups = async (coachId: string) => {
+    return await fetchAthleteGroups(coachId);
+  };
+
+  const handleCreateAthleteGroup = async (name: string, description: string, color: string) => {
+    if (!currentUser) return;
+    await createAthleteGroup(currentUser.id, name, description, color);
+  };
+
+  const handleUpdateAthleteGroup = async (
+    groupId: string, 
+    name: string, 
+    description: string, 
+    color: string
+  ) => {
+    await updateAthleteGroup(groupId, name, description, color);
+  };
+
+  const handleDeleteAthleteGroup = async (groupId: string) => {
+    await deleteAthleteGroup(groupId);
+  };
+
+  const handleUpdateGroupMembers = async (groupId: string, athleteIds: string[]) => {
+    await updateGroupMembers(groupId, athleteIds);
+  };
+
+  const handleLoadGroupMembers = async (groupId: string) => {
+    return await fetchAthleteGroupWithMembers(groupId);
+  };
+
   // Load week organizer for athletes (when they have a coach)
   useEffect(() => {
     const loadWeekOrganizer = async () => {
       if (!currentUser || !currentUser.coachId) return;
       
       try {
-        // Load active organizer
-        const active = await fetchActiveWeekOrganizer(currentUser.coachId);
+        // Utiliser la nouvelle fonction qui filtre par visibilité
+        const active = await fetchActiveWeekOrganizerForAthlete(
+          currentUser.coachId,
+          currentUser.id
+        );
         setActiveWeekOrganizer(active);
         
-        // Load past organizers
+        // Charger les messages passés visibles
+        const athleteGroupIds = await fetchAthleteGroupsForAthlete(currentUser.id);
         const all = await fetchWeekOrganizerLogs(currentUser.coachId);
-        const past = all.filter(o => {
-          const endDate = new Date(o.endDate);
-          return endDate < new Date() || o.id !== active?.id;
-        }).slice(0, 5);
-        setPastWeekOrganizers(past);
+        
+        const visible = all.filter(log => {
+          const endDate = new Date(log.endDate);
+          const isVisible = canAthleteViewMessage(log, currentUser.id, athleteGroupIds);
+          return endDate < new Date() && isVisible && log.id !== active?.id;
+        });
+        
+        setPastWeekOrganizers(visible.slice(0, 5));
       } catch (error) {
         console.error("Erreur chargement week organizer:", error);
       }
@@ -346,7 +400,7 @@ const App: React.FC = () => {
   const isCoach = currentUser.role === 'coach';
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-200">
+    <div className="flex min-h-screen bg-slate-950 text-slate-200 overflow-x-hidden max-w-[100vw]">
       {/* Sidebar */}
       <Sidebar
         currentView={currentView}
@@ -360,7 +414,7 @@ const App: React.FC = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+      <div className="flex-1 flex flex-col min-h-screen lg:ml-0 overflow-x-hidden">
         {/* Mobile Header */}
         <header className="lg:hidden sticky top-0 z-20 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
           <div className="flex items-center justify-between">
@@ -376,8 +430,8 @@ const App: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto w-full">
             {dataLoading && currentView === 'home' ? (
               <div className="flex items-center justify-center h-64">
                 <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -428,6 +482,12 @@ const App: React.FC = () => {
                     fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
                     saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
                     deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
+                    fetchAthleteGroups={handleFetchAthleteGroups}
+                    createAthleteGroup={handleCreateAthleteGroup}
+                    updateAthleteGroup={handleUpdateAthleteGroup}
+                    deleteAthleteGroup={handleDeleteAthleteGroup}
+                    updateGroupMembers={handleUpdateGroupMembers}
+                    loadGroupMembers={handleLoadGroupMembers}
                   />
                 )}
 
@@ -459,4 +519,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
