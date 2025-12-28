@@ -1,3 +1,9 @@
+// ============================================================
+// F.Y.T - ACTIVE SESSION (Version avec RPE)
+// src/components/ActiveSession.tsx
+// Séance d'entraînement active avec suivi RPE par exercice
+// ============================================================
+
 import React, { useState, useEffect } from 'react';
 import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey } from '../../types';
 import { 
@@ -14,10 +20,9 @@ import {
   Minus,
   Check,
   MessageSquare,
-  Pause,
-  Play,
   Send
 } from 'lucide-react';
+import { RpeSelector, SessionRpeModal, RpeBadge } from './RpeSelector';
 
 interface Props {
   sessionData: WorkoutRow[];
@@ -25,7 +30,6 @@ interface Props {
   onSave: (log: SessionLog) => Promise<void>;
   onCancel: () => void;
   initialLog?: SessionLog | null;
-  // New props for comments
   userId?: string;
   onSaveComment?: (exerciseName: string, comment: string, sessionId: string) => Promise<void>;
 }
@@ -57,6 +61,10 @@ export const ActiveSession: React.FC<Props> = ({
   const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
+
+  // ← NOUVEAU: État pour le modal RPE de fin de séance
+  const [showSessionRpeModal, setShowSessionRpeModal] = useState(false);
+  const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(null);
 
   const isEditMode = !!(initialLog && initialLog.id && initialLog.id !== 'temp');
 
@@ -92,7 +100,8 @@ export const ActiveSession: React.FC<Props> = ({
           reps: '',
           weight: '',
           completed: false
-        }))
+        })),
+        rpe: undefined // ← NOUVEAU: Initialiser le RPE
       };
     });
     setLogs(newLogs);
@@ -121,10 +130,23 @@ export const ActiveSession: React.FC<Props> = ({
     }
     
     setLogs(newLogs);
-    
-    // Sauvegarde locale
+    saveToLocalStorage(newLogs);
+  };
+
+  // ← NOUVEAU: Mettre à jour le RPE d'un exercice
+  const updateExerciseRpe = (exerciseIndex: number, rpe: number | undefined) => {
+    const newLogs = [...logs];
+    newLogs[exerciseIndex] = {
+      ...newLogs[exerciseIndex],
+      rpe
+    };
+    setLogs(newLogs);
+    saveToLocalStorage(newLogs);
+  };
+
+  const saveToLocalStorage = (logsToSave: ExerciseLog[]) => {
     localStorage.setItem('F.Y.T_active_session', JSON.stringify({
-      logs: newLogs,
+      logs: logsToSave,
       sessionData: sessionData.map(s => ({ seance: s.seance, annee: s.annee, moisNum: s.moisNum, semaine: s.semaine })),
       startTime
     }));
@@ -145,19 +167,17 @@ export const ActiveSession: React.FC<Props> = ({
   const removeSet = (exerciseIndex: number, setIndex: number) => {
     const newLogs = [...logs];
     newLogs[exerciseIndex].sets.splice(setIndex, 1);
-    // Renuméroter
     newLogs[exerciseIndex].sets.forEach((s, i) => s.setNumber = i + 1);
     setLogs(newLogs);
   };
 
+  // ← MODIFIÉ: handleFinish prépare maintenant le log et affiche le modal RPE
   const handleFinish = async () => {
     if (isRetroMode && (!retroDate.year || !retroDate.month || !retroDate.day)) {
       alert("Veuillez remplir la date complète pour enregistrer une séance passée.");
       return;
     }
 
-    setSaving(true);
-    
     const sessionKey: SessionKey = {
       annee: sessionData[0]?.annee || '',
       moisNum: sessionData[0]?.moisNum || '',
@@ -186,12 +206,44 @@ export const ActiveSession: React.FC<Props> = ({
       date: finalDate,
       sessionKey,
       exercises: logs,
-      durationMinutes: isRetroMode ? 60 : Math.round(elapsedTime / 60)
+      durationMinutes: isRetroMode ? 60 : Math.round(elapsedTime / 60),
+      sessionRpe: undefined // Sera défini via le modal
     };
+
+    // Afficher le modal RPE de séance
+    setPendingSessionLog(finalLog);
+    setShowSessionRpeModal(true);
+  };
+
+  // ← NOUVEAU: Soumettre avec le RPE de séance
+  const handleSessionRpeSubmit = async (sessionRpe: number) => {
+    if (!pendingSessionLog) return;
+    
+    setSaving(true);
+    const finalLog = { ...pendingSessionLog, sessionRpe };
 
     try {
       await onSave(finalLog);
       localStorage.removeItem('F.Y.T_active_session');
+      setShowSessionRpeModal(false);
+    } catch (e) {
+      console.error("Erreur sauvegarde:", e);
+      alert("Erreur lors de la sauvegarde. Veuillez réessayer.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ← NOUVEAU: Passer le RPE de séance
+  const handleSkipSessionRpe = async () => {
+    if (!pendingSessionLog) return;
+    
+    setSaving(true);
+
+    try {
+      await onSave(pendingSessionLog);
+      localStorage.removeItem('F.Y.T_active_session');
+      setShowSessionRpeModal(false);
     } catch (e) {
       console.error("Erreur sauvegarde:", e);
       alert("Erreur lors de la sauvegarde. Veuillez réessayer.");
@@ -213,7 +265,7 @@ export const ActiveSession: React.FC<Props> = ({
     for (const session of history) {
       const ex = session.exercises.find(e => e.exerciseName === name);
       if (ex) {
-        return { date: session.date, sets: ex.sets };
+        return { date: session.date, sets: ex.sets, rpe: ex.rpe };
       }
     }
     return null;
@@ -233,11 +285,8 @@ export const ActiveSession: React.FC<Props> = ({
     
     setCommentSending(exerciseName);
     try {
-      // Use current session ID or a temp one
       const sessionId = initialLog?.id || 'pending-session';
       await onSaveComment(exerciseName, comment, sessionId);
-      
-      // Mark as sent and clear input
       setSentComments(prev => new Set([...prev, exerciseName]));
       setExerciseComments(prev => ({ ...prev, [exerciseName]: '' }));
     } catch (e) {
@@ -376,30 +425,22 @@ export const ActiveSession: React.FC<Props> = ({
                       ? 'bg-emerald-500/20 text-emerald-400' 
                       : 'bg-slate-800 text-slate-400'
                   }`}>
-                    {completedSets === exLog.sets.length ? (
-                      <Check className="w-6 h-6" />
-                    ) : (
-                      exIdx + 1
-                    )}
+                    {completedSets}/{exLog.sets.length}
                   </div>
                   <div>
                     <h3 className="font-semibold text-white text-lg">{exLog.exerciseName}</h3>
-                    <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
-                      {originalData && (
-                        <>
-                          <span>{originalData.series} × {originalData.repsDuree}</span>
-                          <span className="text-slate-600">•</span>
-                          <span>{originalData.repos}s repos</span>
-                        </>
+                    <div className="flex items-center gap-2 text-sm text-slate-400">
+                      {originalData?.series && <span>{originalData.series} séries</span>}
+                      {originalData?.repsDuree && <span>• {originalData.repsDuree}</span>}
+                      {/* ← NOUVEAU: Afficher le RPE si défini */}
+                      {exLog.rpe && (
+                        <RpeBadge rpe={exLog.rpe} size="sm" showLabel={false} />
                       )}
                     </div>
                   </div>
                 </div>
-                
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-500">
-                    {completedSets}/{exLog.sets.length}
-                  </span>
+                  {hasVideo && <Video className="w-5 h-5 text-blue-400" />}
                   <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
               </button>
@@ -460,78 +501,94 @@ export const ActiveSession: React.FC<Props> = ({
                           </span>
                         </div>
                         <div className="col-span-4">
-                          <input 
+                          <input
                             type="text"
                             inputMode="numeric"
-                            placeholder="—"
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-center text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             value={set.reps}
                             onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value)}
+                            placeholder={originalData?.repsDuree || '—'}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                           />
                         </div>
                         <div className="col-span-4">
-                          <input 
+                          <input
                             type="text"
                             inputMode="decimal"
-                            placeholder="—"
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-center text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             value={set.weight}
                             onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value)}
+                            placeholder="—"
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                           />
                         </div>
-                        <div className="col-span-2 flex justify-end">
+                        <div className="col-span-2 flex items-center justify-center gap-1">
                           <button
-                            onClick={() => removeSet(exIdx, setIdx)}
-                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            onClick={() => updateSet(exIdx, setIdx, 'completed', !set.completed)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              set.completed 
+                                ? 'bg-emerald-500 text-white' 
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                            }`}
                           >
-                            <Minus className="w-4 h-4" />
+                            <Check className="w-4 h-4" />
                           </button>
+                          {exLog.sets.length > 1 && (
+                            <button
+                              onClick={() => removeSet(exIdx, setIdx)}
+                              className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
 
                     <button
                       onClick={() => addSet(exIdx)}
-                      className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-700 hover:border-slate-600 text-slate-400 hover:text-white rounded-xl transition-colors"
+                      className="w-full py-2 border border-dashed border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-slate-600 transition-colors flex items-center justify-center gap-2"
                     >
                       <Plus className="w-4 h-4" />
                       Ajouter une série
                     </button>
                   </div>
 
-                  {/* Feedback to Coach */}
+                  {/* ← NOUVEAU: Sélecteur RPE pour l'exercice */}
+                  <div className="pt-4 border-t border-slate-800">
+                    <RpeSelector
+                      value={exLog.rpe}
+                      onChange={(rpe) => updateExerciseRpe(exIdx, rpe)}
+                      label="Difficulté ressentie (RPE)"
+                      size="md"
+                    />
+                  </div>
+
+                  {/* Section commentaires */}
                   {onSaveComment && (
                     <div className="pt-4 border-t border-slate-800">
-                      <div className="flex items-center gap-2 mb-3">
-                        <MessageSquare className="w-4 h-4 text-blue-400" />
+                      <div className="flex items-center gap-2 mb-2">
+                        <MessageSquare className="w-4 h-4 text-slate-400" />
                         <span className="text-sm font-medium text-slate-300">Message au coach</span>
                         {sentComments.has(exLog.exerciseName) && (
-                          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
-                            Envoyé ✓
+                          <span className="text-xs text-emerald-400 flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Envoyé
                           </span>
                         )}
                       </div>
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="Une question ? Un ressenti ? Dites-le à votre coach..."
                           value={exerciseComments[exLog.exerciseName] || ''}
                           onChange={(e) => setExerciseComments(prev => ({
                             ...prev,
                             [exLog.exerciseName]: e.target.value
                           }))}
-                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendComment(exLog.exerciseName);
-                            }
-                          }}
+                          placeholder="Ex: Douleur à l'épaule, poids trop léger..."
+                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                         />
                         <button
                           onClick={() => handleSendComment(exLog.exerciseName)}
                           disabled={!exerciseComments[exLog.exerciseName]?.trim() || commentSending === exLog.exerciseName}
-                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors"
                         >
                           {commentSending === exLog.exerciseName ? (
                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -564,28 +621,30 @@ export const ActiveSession: React.FC<Props> = ({
             </div>
             
             {currentHistoryData ? (
-              <div className="space-y-4">
-                <p className="text-sm text-slate-400">
-                  Dernière fois le <span className="text-white font-medium">
-                    {new Date(currentHistoryData.date).toLocaleDateString('fr-FR')}
-                  </span>
+              <div>
+                <p className="text-sm text-slate-400 mb-3">
+                  Dernière séance : {new Date(currentHistoryData.date).toLocaleDateString('fr-FR')}
+                  {/* ← NOUVEAU: Afficher le RPE historique */}
+                  {currentHistoryData.rpe && (
+                    <span className="ml-2">
+                      <RpeBadge rpe={currentHistoryData.rpe} size="sm" />
+                    </span>
+                  )}
                 </p>
-                <div className="bg-slate-800 rounded-xl p-4 space-y-2">
-                  {currentHistoryData.sets.map((set, i) => (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span className="text-slate-400">Série {set.setNumber}</span>
-                      <span className="font-mono text-white">
-                        {set.reps || '—'} × {set.weight || '—'} kg
-                      </span>
+                <div className="space-y-2">
+                  {currentHistoryData.sets.map((set, idx) => (
+                    <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-lg p-3">
+                      <span className="text-sm text-slate-400">Série {set.setNumber}</span>
+                      <span className="text-white font-medium">{set.reps} reps</span>
+                      <span className="text-emerald-400">{set.weight} kg</span>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-slate-500">
-                <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p>Aucun historique pour cet exercice</p>
-              </div>
+              <p className="text-slate-500 text-center py-8">
+                Aucun historique pour cet exercice
+              </p>
             )}
           </div>
         </div>
@@ -595,27 +654,20 @@ export const ActiveSession: React.FC<Props> = ({
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-16 h-16 bg-red-500/20 rounded-2xl flex items-center justify-center mb-4">
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">
-                Abandonner la séance ?
-              </h3>
-              <p className="text-slate-400">
-                Toute progression sera perdue.
-              </p>
-            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Abandonner la séance ?</h3>
+            <p className="text-slate-400 text-sm mb-6">
+              Votre progression ne sera pas sauvegardée.
+            </p>
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => setShowCancelModal(false)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-medium transition-colors"
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
               >
                 Continuer
               </button>
-              <button 
-                onClick={() => { setShowCancelModal(false); onCancel(); }}
-                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition-colors"
+              <button
+                onClick={onCancel}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-colors"
               >
                 Abandonner
               </button>
@@ -623,7 +675,19 @@ export const ActiveSession: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* ← NOUVEAU: Modal RPE de séance */}
+      {showSessionRpeModal && pendingSessionLog && (
+        <SessionRpeModal
+          onSubmit={handleSessionRpeSubmit}
+          onSkip={handleSkipSessionRpe}
+          sessionName={sessionTitle}
+          durationMinutes={pendingSessionLog.durationMinutes || 0}
+          exerciseCount={logs.length}
+        />
+      )}
     </div>
   );
 };
 
+export default ActiveSession;

@@ -1,4 +1,9 @@
 // ===========================================
+// F.Y.T - TYPES COMPLET (avec RPE)
+// types.ts
+// ===========================================
+
+// ===========================================
 // TYPES UTILISATEURS
 // ===========================================
 export interface User {
@@ -109,7 +114,7 @@ export interface FilterState {
 }
 
 // ===========================================
-// TYPES HISTORIQUE & LOGS
+// TYPES HISTORIQUE & LOGS (avec RPE)
 // ===========================================
 export interface SetLog {
   setNumber: number;
@@ -123,6 +128,7 @@ export interface ExerciseLog {
   originalSession?: string;
   sets: SetLog[];
   notes?: string;
+  rpe?: number; // ← NOUVEAU: RPE par exercice (1-10)
 }
 
 export interface SessionKey {
@@ -142,6 +148,7 @@ export interface SessionLog {
   sessionKey: SessionKey;
   exercises: ExerciseLog[];
   comments?: string;
+  sessionRpe?: number; // ← NOUVEAU: RPE global de la séance (1-10)
 }
 
 // Type brut depuis Supabase session_logs
@@ -156,6 +163,7 @@ export interface SessionLogRow {
   exercises: ExerciseLog[] | null;
   comments: string | null;
   created_at: string;
+  session_rpe: number | null; // ← NOUVEAU
 }
 
 // Mapping SessionLog DB -> App
@@ -173,6 +181,7 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
     },
     exercises: row.exercises ?? [],
     comments: row.comments ?? undefined,
+    sessionRpe: row.session_rpe ?? undefined, // ← NOUVEAU
   };
 }
 
@@ -188,6 +197,7 @@ export function mapSessionLogToRow(log: SessionLog, oderId: string): Omit<Sessio
     session_key_name: log.sessionKey.seance || null,
     exercises: log.exercises,
     comments: log.comments ?? null,
+    session_rpe: log.sessionRpe ?? null, // ← NOUVEAU
   };
 }
 
@@ -202,7 +212,6 @@ export interface WeekOrganizerLog {
   endDate: string;
   message: string;
   createdAt: string;
-  // Nouveaux champs pour la visibilité
   visibilityType?: 'all' | 'groups' | 'athletes';
   visibleToGroupIds?: string[];
   visibleToAthleteIds?: string[];
@@ -264,7 +273,6 @@ export interface AthleteComment {
   comment: string;
   isRead: boolean;
   createdAt: string;
-  // Enriched fields (joined)
   username?: string;
   firstName?: string;
   lastName?: string;
@@ -280,13 +288,11 @@ export interface AthleteCommentRow {
   comment: string;
   is_read: boolean;
   created_at: string;
-  // Joined fields from profiles
   profiles?: {
     username: string | null;
     first_name: string | null;
     last_name: string | null;
   };
-  // Joined fields from session_logs
   session_logs?: {
     session_key_name: string | null;
   };
@@ -424,4 +430,40 @@ export function filterVisibleMessages(
   athleteGroupIds: string[]
 ): WeekOrganizerLog[] {
   return logs.filter(log => canAthleteViewMessage(log, athleteId, athleteGroupIds));
+}
+
+// ===========================================
+// UTILITAIRES RPE (NOUVEAU)
+// ===========================================
+export const RPE_SCALE = [
+  { value: 1, label: 'Très facile', color: 'bg-green-500', description: 'Effort minimal, récupération active' },
+  { value: 2, label: 'Facile', color: 'bg-green-400', description: 'Effort léger, conversation facile' },
+  { value: 3, label: 'Modéré', color: 'bg-lime-400', description: 'Effort confortable, légère transpiration' },
+  { value: 4, label: 'Assez modéré', color: 'bg-lime-500', description: 'Effort notable mais gérable' },
+  { value: 5, label: 'Moyen', color: 'bg-yellow-400', description: 'Effort modéré, respiration accélérée' },
+  { value: 6, label: 'Assez difficile', color: 'bg-yellow-500', description: 'Effort soutenu, conversation difficile' },
+  { value: 7, label: 'Difficile', color: 'bg-orange-400', description: 'Effort intense, fatigue notable' },
+  { value: 8, label: 'Très difficile', color: 'bg-orange-500', description: 'Effort très intense, limite approchée' },
+  { value: 9, label: 'Extrême', color: 'bg-red-500', description: 'Effort maximal, proche de l\'échec' },
+  { value: 10, label: 'Maximum', color: 'bg-red-600', description: 'Effort absolu, impossible de continuer' },
+];
+
+export function getRpeInfo(rpe: number) {
+  return RPE_SCALE.find(r => r.value === rpe) || RPE_SCALE[4];
+}
+
+export function getRpeColor(rpe: number): string {
+  if (rpe <= 2) return 'text-green-400';
+  if (rpe <= 4) return 'text-lime-400';
+  if (rpe <= 6) return 'text-yellow-400';
+  if (rpe <= 8) return 'text-orange-400';
+  return 'text-red-400';
+}
+
+export function getRpeBgColor(rpe: number): string {
+  if (rpe <= 2) return 'bg-green-500/20';
+  if (rpe <= 4) return 'bg-lime-500/20';
+  if (rpe <= 6) return 'bg-yellow-500/20';
+  if (rpe <= 8) return 'bg-orange-500/20';
+  return 'bg-red-500/20';
 }
