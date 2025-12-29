@@ -81,26 +81,26 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
               {firstName?.[0] || user.username[0]}{lastName?.[0] || ''}
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white">
-                {firstName} {lastName}
-              </h3>
+              <p className="text-xl font-bold text-white">
+                {firstName || lastName ? `${firstName} ${lastName}` : user.username}
+              </p>
               <p className="text-slate-400">@{user.username}</p>
-              <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-sm mt-2 ${roleBadge.color}`}>
-                <Shield className="w-3 h-3" />
+              <span className={`inline-block mt-2 px-3 py-1 rounded-full text-sm border ${roleBadge.color}`}>
                 {roleBadge.label}
-              </div>
+              </span>
             </div>
           </div>
 
           {/* Formulaire */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-2">Prénom</label>
               <input
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Votre prénom"
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -109,37 +109,32 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Votre nom"
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Email</label>
+              <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl">
+                <Mail className="w-5 h-5 text-slate-500" />
+                <span className="text-slate-400">{user.email || 'Non renseigné'}</span>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="email"
-                value={user.email || ''}
-                disabled
-                className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-slate-400 cursor-not-allowed"
-              />
-            </div>
-            <p className="text-xs text-slate-500 mt-1">L'email ne peut pas être modifié</p>
-          </div>
-
+          {/* Bouton Sauvegarder */}
           {onUpdateProfile && (
             <button
               onClick={handleSave}
               disabled={saving}
-              className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold transition-all ${
-                saved 
-                  ? 'bg-emerald-600 text-white' 
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold transition-all ${
+                saved
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-blue-600 hover:bg-blue-500 text-white'
-              }`}
+              } disabled:opacity-50`}
             >
               {saving ? (
-                <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : saved ? (
                 <>
                   <Check className="w-5 h-5" />
@@ -156,55 +151,16 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
         </div>
       </div>
 
-      {/* Autres options */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-        <div className="p-6 border-b border-slate-800">
-          <h2 className="font-semibold text-white">Compte</h2>
-        </div>
-
-        <div className="divide-y divide-slate-800">
-          <button className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center">
-                <Bell className="w-5 h-5 text-slate-400" />
-              </div>
-              <div className="text-left">
-                <p className="font-medium text-white">Notifications</p>
-                <p className="text-sm text-slate-500">Gérer les alertes</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-slate-600" />
-          </button>
-
-          <button className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center">
-                <Palette className="w-5 h-5 text-slate-400" />
-              </div>
-              <div className="text-left">
-                <p className="font-medium text-white">Apparence</p>
-                <p className="text-sm text-slate-500">Thème sombre activé</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-slate-600" />
-          </button>
-        </div>
-      </div>
-
       {/* Déconnexion */}
       <button
         onClick={onLogout}
-        className="w-full flex items-center justify-center gap-3 bg-red-600/10 hover:bg-red-600/20 border border-red-600/20 text-red-400 py-4 rounded-2xl font-semibold transition-colors"
+        className="w-full flex items-center justify-center gap-2 py-4 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-2xl text-red-400 font-semibold transition-colors"
       >
         <LogOut className="w-5 h-5" />
         Se déconnecter
       </button>
-
-      {/* Version */}
-      <p className="text-center text-slate-600 text-sm">
-        F.Y.T v2.0.0
-      </p>
     </div>
   );
 };
 
+export default SettingsView;

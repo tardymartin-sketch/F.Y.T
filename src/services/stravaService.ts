@@ -365,13 +365,11 @@ class StravaService {
       
       if (withStreams) {
         try {
-          // Récupérer les streams (données détaillées)
           streams = await this.fetchActivityStreams(accessToken, activity.id);
-          await new Promise(resolve => setTimeout(resolve, 50)); // Rate limiting
+          await new Promise(resolve => setTimeout(resolve, 50));
           
-          // Récupérer les détails complets (incluant segments)
           const fullActivity = await this.fetchActivityDetails(accessToken, activity.id);
-          segments = fullActivity.segment_efforts || [];
+          segments = (fullActivity as any).segment_efforts || [];
           await new Promise(resolve => setTimeout(resolve, 50));
         } catch (err) {
           console.warn(`Could not fetch streams/segments for activity ${activity.id}:`, err);
@@ -389,20 +387,12 @@ class StravaService {
     return allActivities.length;
   }
 
-  /**
-   * Synchronise une seule activité avec tous ses détails
-   */
   async syncSingleActivity(userId: string, activityId: number): Promise<StravaActivityDB | null> {
     try {
       const accessToken = await this.ensureValidToken(userId);
       
-      // Récupérer les détails complets
       const activity = await this.fetchActivityDetails(accessToken, activityId);
-      
-      // Récupérer les streams
       const streams = await this.fetchActivityStreams(accessToken, activityId);
-      
-      // Les segments sont dans les détails de l'activité
       const segments = (activity as any).segment_efforts || [];
       
       return await this.saveActivity(userId, activity, streams, segments);
@@ -423,42 +413,29 @@ class StravaService {
       strava_activity_id: activity.id,
       name: activity.name,
       sport_type: activity.sport_type,
-      activity_type: activity.type,
-      description: activity.description || null,
+      distance: activity.distance,
+      moving_time: activity.moving_time,
+      elapsed_time: activity.elapsed_time,
+      total_elevation_gain: activity.total_elevation_gain,
       start_date: activity.start_date,
       start_date_local: activity.start_date_local,
       timezone: activity.timezone,
-      elapsed_time: activity.elapsed_time,
-      moving_time: activity.moving_time,
-      distance: activity.distance || null,
-      total_elevation_gain: activity.total_elevation_gain || null,
-      average_speed: activity.average_speed || null,
-      max_speed: activity.max_speed || null,
+      start_latlng: activity.start_latlng,
+      end_latlng: activity.end_latlng,
+      average_speed: activity.average_speed,
+      max_speed: activity.max_speed,
       has_heartrate: activity.has_heartrate,
-      average_heartrate: activity.average_heartrate || null,
-      max_heartrate: activity.max_heartrate || null,
-      average_cadence: activity.average_cadence || null,
-      average_watts: activity.average_watts || null,
-      max_watts: activity.max_watts || null,
-      weighted_average_watts: activity.weighted_average_watts || null,
-      kilojoules: activity.kilojoules || null,
-      calories: activity.calories || null,
-      start_latlng: activity.start_latlng || null,
-      end_latlng: activity.end_latlng || null,
+      average_heartrate: activity.average_heartrate,
+      max_heartrate: activity.max_heartrate,
       summary_polyline: activity.map?.summary_polyline || null,
-      device_name: activity.device_name || null,
-      gear_id: activity.gear_id || null,
       streams_data: streams || null,
       segment_efforts: segments || null,
-      raw_data: activity,
-      synced_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
       .from('strava_activities')
-      .upsert(activityData as any, { 
-        onConflict: 'strava_activity_id',
-        ignoreDuplicates: false 
+      .upsert(activityData, {
+        onConflict: 'user_id,strava_activity_id',
       })
       .select()
       .single();
@@ -466,6 +443,10 @@ class StravaService {
     if (error) throw error;
     return data;
   }
+
+  // --------------------------------------------------------
+  // Get Activities from DB
+  // --------------------------------------------------------
 
   async getActivities(
     userId: string,
@@ -498,6 +479,17 @@ class StravaService {
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
+  }
+
+  async getActivityBySessionLogId(sessionLogId: string): Promise<StravaActivityDB | null> {
+    const { data, error } = await supabase
+      .from('strava_activities')
+      .select('*')
+      .eq('session_log_id', sessionLogId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
   }
 
   activityToCard(activity: StravaActivityDB): StravaActivityCard {
@@ -688,4 +680,3 @@ class StravaService {
 
 export const stravaService = new StravaService();
 export default stravaService;
-

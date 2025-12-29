@@ -1,9 +1,3 @@
-// ============================================================
-// F.Y.T - STRAVA ACTIVITY CHARTS
-// src/components/StravaActivityCharts.tsx
-// Graphiques détaillés pour une activité Strava
-// ============================================================
-
 import React, { useMemo } from 'react';
 import {
   LineChart,
@@ -13,16 +7,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Area,
   AreaChart,
-  ComposedChart,
-  Legend
+  Area
 } from 'recharts';
 import { Activity, Heart, Mountain, Zap, TrendingUp, Clock } from 'lucide-react';
-
-// ============================================================
-// Types
-// ============================================================
 
 interface StreamData {
   time?: { data: number[] };
@@ -56,7 +44,6 @@ interface StravaSegmentEffort {
     climb_category: number;
   };
   pr_rank?: number | null;
-  achievements?: { type_id: number; type: string; rank: number }[];
 }
 
 interface StravaActivityChartsProps {
@@ -66,154 +53,42 @@ interface StravaActivityChartsProps {
   compact?: boolean;
 }
 
-// ============================================================
-// Helpers
-// ============================================================
-
-const formatDistance = (meters: number): string => {
-  return (meters / 1000).toFixed(2);
-};
-
-const formatPace = (speedMs: number): string => {
-  if (!speedMs || speedMs === 0) return '-';
-  const paceSecondsPerKm = 1000 / speedMs;
-  const minutes = Math.floor(paceSecondsPerKm / 60);
-  const seconds = Math.round(paceSecondsPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
-
-const formatSpeed = (speedMs: number): string => {
-  if (!speedMs) return '-';
-  return (speedMs * 3.6).toFixed(1);
-};
-
-const formatDuration = (seconds: number): string => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h${m.toString().padStart(2, '0')}min`;
-  return `${m}min${s.toString().padStart(2, '0')}s`;
-};
-
-const getClimbCategoryLabel = (category: number): string => {
-  const labels: Record<number, string> = {
-    0: '',
-    1: 'Cat 4',
-    2: 'Cat 3',
-    3: 'Cat 2',
-    4: 'Cat 1',
-    5: 'HC',
-  };
-  return labels[category] || '';
-};
-
-const getClimbCategoryColor = (category: number): string => {
-  const colors: Record<number, string> = {
-    0: 'bg-slate-600',
-    1: 'bg-green-600',
-    2: 'bg-yellow-600',
-    3: 'bg-orange-600',
-    4: 'bg-red-600',
-    5: 'bg-purple-600',
-  };
-  return colors[category] || 'bg-slate-600';
-};
-
-// ============================================================
-// Chart Components
-// ============================================================
-
-const ChartCard: React.FC<{
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  color: string;
-}> = ({ title, icon, children, color }) => (
-  <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-    <div className={`px-4 py-2 border-b border-slate-700/50 flex items-center gap-2 ${color}`}>
-      {icon}
-      <span className="font-medium text-sm">{title}</span>
-    </div>
-    <div className="p-4">
-      {children}
-    </div>
-  </div>
-);
-
-const CustomTooltip: React.FC<any> = ({ active, payload, label, unit, formatter }) => {
-  if (!active || !payload || !payload.length) return null;
-  
-  return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-slate-400 text-xs mb-1">{label} km</p>
-      {payload.map((entry: any, index: number) => (
-        <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
-          {entry.name}: {formatter ? formatter(entry.value) : entry.value} {unit}
-        </p>
-      ))}
-    </div>
-  );
-};
-
-// ============================================================
-// Main Component
-// ============================================================
-
 export const StravaActivityCharts: React.FC<StravaActivityChartsProps> = ({
   streams,
   segments,
   sportType,
-  compact = false,
+  compact = false
 }) => {
-  // Préparer les données pour les graphiques
   const chartData = useMemo(() => {
-    if (!streams?.distance?.data) return [];
+    if (!streams?.time?.data) return [];
 
-    const distanceData = streams.distance.data;
-    const velocityData = streams.velocity_smooth?.data || [];
-    const heartrateData = streams.heartrate?.data || [];
-    const altitudeData = streams.altitude?.data || [];
-    const cadenceData = streams.cadence?.data || [];
-    const gradeData = streams.grade_smooth?.data || [];
-
-    // Échantillonner les données pour ne pas surcharger le graphique
-    const sampleRate = Math.max(1, Math.floor(distanceData.length / 500));
+    const timeData = streams.time.data;
+    const step = compact ? Math.max(1, Math.floor(timeData.length / 100)) : 1;
     
-    const data = [];
-    for (let i = 0; i < distanceData.length; i += sampleRate) {
-      const distKm = distanceData[i] / 1000;
-      
-      data.push({
-        distance: parseFloat(distKm.toFixed(2)),
-        speed: velocityData[i] ? parseFloat((velocityData[i] * 3.6).toFixed(1)) : null,
-        heartrate: heartrateData[i] || null,
-        altitude: altitudeData[i] ? parseFloat(altitudeData[i].toFixed(0)) : null,
-        cadence: cadenceData[i] || null,
-        grade: gradeData[i] ? parseFloat(gradeData[i].toFixed(1)) : null,
-        // Pour le pace (running)
-        pace: velocityData[i] && velocityData[i] > 0 
-          ? parseFloat((1000 / velocityData[i] / 60).toFixed(2)) 
-          : null,
-      });
-    }
-    
-    return data;
-  }, [streams]);
+    return timeData
+      .filter((_, i) => i % step === 0)
+      .map((time, i) => ({
+        time: Math.round(time / 60),
+        distance: streams.distance?.data[i * step] ? Math.round(streams.distance.data[i * step] / 100) / 10 : null,
+        heartrate: streams.heartrate?.data[i * step] || null,
+        altitude: streams.altitude?.data[i * step] ? Math.round(streams.altitude.data[i * step]) : null,
+        speed: streams.velocity_smooth?.data[i * step] ? Math.round(streams.velocity_smooth.data[i * step] * 3.6 * 10) / 10 : null,
+        cadence: streams.cadence?.data[i * step] || null,
+        watts: streams.watts?.data[i * step] || null,
+        grade: streams.grade_smooth?.data[i * step] ? Math.round(streams.grade_smooth.data[i * step] * 10) / 10 : null,
+      }));
+  }, [streams, compact]);
 
-  const hasVelocity = chartData.some(d => d.speed !== null);
-  const hasHeartrate = chartData.some(d => d.heartrate !== null);
-  const hasAltitude = chartData.some(d => d.altitude !== null);
-  const hasCadence = chartData.some(d => d.cadence !== null);
-  
-  const isRunning = ['Run', 'TrailRun', 'Walk', 'Hike'].includes(sportType);
-  const isCycling = ['Ride', 'MountainBikeRide', 'GravelRide', 'EBikeRide', 'VirtualRide'].includes(sportType);
+  const hasHeartrate = streams?.heartrate?.data && streams.heartrate.data.length > 0;
+  const hasAltitude = streams?.altitude?.data && streams.altitude.data.length > 0;
+  const hasSpeed = streams?.velocity_smooth?.data && streams.velocity_smooth.data.length > 0;
+  const hasPower = streams?.watts?.data && streams.watts.data.length > 0;
 
-  if (!streams || chartData.length === 0) {
+  if (chartData.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-500">
-        <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>Pas de données détaillées disponibles</p>
-        <p className="text-xs mt-1">Les streams n'ont pas été synchronisés pour cette activité</p>
+      <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
+        <Activity className="w-5 h-5 mr-2 opacity-50" />
+        Pas de données disponibles
       </div>
     );
   }
@@ -221,64 +96,14 @@ export const StravaActivityCharts: React.FC<StravaActivityChartsProps> = ({
   const chartHeight = compact ? 150 : 200;
 
   return (
-    <div className="space-y-4">
-      {/* Graphique Vitesse / Allure */}
-      {hasVelocity && (
-        <ChartCard 
-          title={isRunning ? "Allure" : "Vitesse"} 
-          icon={<Zap className="w-4 h-4" />}
-          color="text-blue-400"
-        >
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="speedGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis 
-                dataKey="distance" 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickFormatter={(v) => `${v}`}
-              />
-              <YAxis 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                domain={['auto', 'auto']}
-                tickFormatter={(v) => isRunning ? formatPace(v / 3.6) : `${v}`}
-              />
-              <Tooltip 
-                content={
-                  <CustomTooltip 
-                    unit={isRunning ? '/km' : 'km/h'} 
-                    formatter={(v: number) => isRunning ? formatPace(v / 3.6) : v.toFixed(1)}
-                  />
-                } 
-              />
-              <Area
-                type="monotone"
-                dataKey="speed"
-                stroke="#3b82f6"
-                fill="url(#speedGradient)"
-                strokeWidth={2}
-                name={isRunning ? "Allure" : "Vitesse"}
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      )}
-
-      {/* Graphique Fréquence Cardiaque */}
+    <div className={`space-y-${compact ? '3' : '4'}`}>
+      {/* Heart Rate Chart */}
       {hasHeartrate && (
-        <ChartCard 
-          title="Fréquence cardiaque" 
-          icon={<Heart className="w-4 h-4" />}
-          color="text-red-400"
-        >
+        <div className="bg-slate-800/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Heart className="w-4 h-4 text-red-400" />
+            <span className="text-sm font-medium text-white">Fréquence cardiaque</span>
+          </div>
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart data={chartData}>
               <defs>
@@ -288,166 +113,129 @@ export const StravaActivityCharts: React.FC<StravaActivityChartsProps> = ({
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis 
-                dataKey="distance" 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
+              <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickFormatter={(v) => `${v}min`} />
+              <YAxis stroke="#64748b" fontSize={10} domain={['auto', 'auto']} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                labelFormatter={(v) => `${v} min`}
+                formatter={(value: number) => [`${value} bpm`, 'FC']}
               />
-              <YAxis 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                domain={['dataMin - 10', 'dataMax + 10']}
-              />
-              <Tooltip content={<CustomTooltip unit="bpm" />} />
-              <Area
-                type="monotone"
-                dataKey="heartrate"
-                stroke="#ef4444"
-                fill="url(#hrGradient)"
-                strokeWidth={2}
-                name="FC"
-                dot={false}
-              />
+              <Area type="monotone" dataKey="heartrate" stroke="#ef4444" fill="url(#hrGradient)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        </ChartCard>
+        </div>
       )}
 
-      {/* Graphique Altitude */}
+      {/* Altitude Chart */}
       {hasAltitude && (
-        <ChartCard 
-          title="Altitude" 
-          icon={<Mountain className="w-4 h-4" />}
-          color="text-emerald-400"
-        >
+        <div className="bg-slate-800/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Mountain className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-medium text-white">Altitude</span>
+          </div>
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="altGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis 
-                dataKey="distance" 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
+              <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickFormatter={(v) => `${v}min`} />
+              <YAxis stroke="#64748b" fontSize={10} domain={['auto', 'auto']} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                labelFormatter={(v) => `${v} min`}
+                formatter={(value: number) => [`${value} m`, 'Altitude']}
               />
-              <YAxis 
-                stroke="#64748b" 
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                domain={['dataMin - 20', 'dataMax + 20']}
-              />
-              <Tooltip content={<CustomTooltip unit="m" />} />
-              <Area
-                type="monotone"
-                dataKey="altitude"
-                stroke="#10b981"
-                fill="url(#altGradient)"
-                strokeWidth={2}
-                name="Altitude"
-                dot={false}
-              />
+              <Area type="monotone" dataKey="altitude" stroke="#10b981" fill="url(#altGradient)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        </ChartCard>
+        </div>
       )}
 
-      {/* Graphique combiné FC + Altitude (compact mode) */}
-      {compact && hasHeartrate && hasAltitude && (
-        <ChartCard 
-          title="FC & Altitude" 
-          icon={<TrendingUp className="w-4 h-4" />}
-          color="text-purple-400"
-        >
+      {/* Speed Chart */}
+      {hasSpeed && (
+        <div className="bg-slate-800/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-white">Vitesse</span>
+          </div>
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <ComposedChart data={chartData}>
+            <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="distance" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} />
-              <YAxis yAxisId="left" stroke="#ef4444" tick={{ fill: '#ef4444', fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" stroke="#10b981" tick={{ fill: '#10b981', fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              <Line yAxisId="left" type="monotone" dataKey="heartrate" stroke="#ef4444" dot={false} name="FC (bpm)" />
-              <Area yAxisId="right" type="monotone" dataKey="altitude" fill="#10b98133" stroke="#10b981" dot={false} name="Altitude (m)" />
-            </ComposedChart>
+              <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickFormatter={(v) => `${v}min`} />
+              <YAxis stroke="#64748b" fontSize={10} domain={['auto', 'auto']} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                labelFormatter={(v) => `${v} min`}
+                formatter={(value: number) => [`${value} km/h`, 'Vitesse']}
+              />
+              <Line type="monotone" dataKey="speed" stroke="#3b82f6" strokeWidth={2} dot={false} />
+            </LineChart>
           </ResponsiveContainer>
-        </ChartCard>
+        </div>
       )}
 
-      {/* Liste des segments */}
-      {segments && segments.length > 0 && (
-        <ChartCard 
-          title={`Segments (${segments.length})`} 
-          icon={<Activity className="w-4 h-4" />}
-          color="text-orange-400"
-        >
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {segments.map((effort) => (
-              <div 
-                key={effort.id}
-                className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-white text-sm truncate">
-                      {effort.segment.name}
+      {/* Power Chart */}
+      {hasPower && (
+        <div className="bg-slate-800/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-4 h-4 text-yellow-400" />
+            <span className="text-sm font-medium text-white">Puissance</span>
+          </div>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickFormatter={(v) => `${v}min`} />
+              <YAxis stroke="#64748b" fontSize={10} domain={['auto', 'auto']} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                labelFormatter={(v) => `${v} min`}
+                formatter={(value: number) => [`${value} W`, 'Puissance']}
+              />
+              <Line type="monotone" dataKey="watts" stroke="#eab308" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Segments */}
+      {segments && segments.length > 0 && !compact && (
+        <div className="bg-slate-800/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-4 h-4 text-orange-400" />
+            <span className="text-sm font-medium text-white">Segments ({segments.length})</span>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {segments.map((seg) => (
+              <div key={seg.id} className="bg-slate-900/50 rounded-lg p-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-medium truncate">{seg.segment.name}</span>
+                  {seg.pr_rank && (
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      seg.pr_rank === 1 ? 'bg-yellow-500/20 text-yellow-400' :
+                      seg.pr_rank === 2 ? 'bg-slate-400/20 text-slate-300' :
+                      seg.pr_rank === 3 ? 'bg-orange-500/20 text-orange-400' :
+                      'bg-slate-700 text-slate-400'
+                    }`}>
+                      PR #{seg.pr_rank}
                     </span>
-                    {effort.segment.climb_category > 0 && (
-                      <span className={`px-1.5 py-0.5 text-xs rounded font-bold text-white ${getClimbCategoryColor(effort.segment.climb_category)}`}>
-                        {getClimbCategoryLabel(effort.segment.climb_category)}
-                      </span>
-                    )}
-                    {effort.pr_rank === 1 && (
-                      <span className="px-1.5 py-0.5 text-xs rounded bg-yellow-500 text-yellow-900 font-bold">
-                        PR 🏆
-                      </span>
-                    )}
-                    {effort.pr_rank === 2 && (
-                      <span className="px-1.5 py-0.5 text-xs rounded bg-slate-400 text-slate-900 font-bold">
-                        2nd
-                      </span>
-                    )}
-                    {effort.pr_rank === 3 && (
-                      <span className="px-1.5 py-0.5 text-xs rounded bg-orange-700 text-orange-100 font-bold">
-                        3rd
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                    <span>{(effort.distance / 1000).toFixed(2)} km</span>
-                    {effort.segment.average_grade !== 0 && (
-                      <span className={effort.segment.average_grade > 0 ? 'text-red-400' : 'text-green-400'}>
-                        {effort.segment.average_grade > 0 ? '↑' : '↓'} {Math.abs(effort.segment.average_grade).toFixed(1)}%
-                      </span>
-                    )}
-                    {effort.average_heartrate && (
-                      <span className="text-red-400">
-                        ♥ {Math.round(effort.average_heartrate)} bpm
-                      </span>
-                    )}
-                  </div>
+                  )}
                 </div>
-                <div className="text-right">
-                  <div className="font-mono text-white text-sm">
-                    {formatDuration(effort.moving_time)}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {isRunning 
-                      ? formatPace(effort.distance / effort.moving_time) + ' /km'
-                      : formatSpeed(effort.distance / effort.moving_time) + ' km/h'
-                    }
-                  </div>
+                <div className="flex gap-3 text-xs text-slate-400 mt-1">
+                  <span>{(seg.distance / 1000).toFixed(2)} km</span>
+                  <span>{Math.floor(seg.moving_time / 60)}:{(seg.moving_time % 60).toString().padStart(2, '0')}</span>
+                  <span>{seg.segment.average_grade.toFixed(1)}%</span>
                 </div>
               </div>
             ))}
           </div>
-        </ChartCard>
+        </div>
       )}
     </div>
   );
 };
 
 export default StravaActivityCharts;
-

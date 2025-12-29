@@ -1,3 +1,9 @@
+// ============================================================
+// F.Y.T - LOADING SCREEN
+// src/components/LoadingScreen.tsx
+// Écran de chargement
+// ============================================================
+
 import React from 'react';
 import { Dumbbell } from 'lucide-react';
 
@@ -22,4 +28,3 @@ export const LoadingScreen: React.FC = () => {
     </div>
   );
 };
-

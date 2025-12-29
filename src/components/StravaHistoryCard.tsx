@@ -36,6 +36,16 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({
   const [stravaData, setStravaData] = useState<StravaActivityDB | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Guard clause - si log est undefined ou n'a pas d'exercises
+  if (!log || !log.exercises || log.exercises.length === 0) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-center text-slate-500">
+        <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">Données de l'activité indisponibles</p>
+      </div>
+    );
+  }
+
   // Extraire les infos de l'activité depuis les notes
   const exercise = log.exercises[0];
   const notes = exercise?.notes || '';
@@ -182,136 +192,116 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({
         </div>
       </button>
 
-      {/* Expanded content */}
+      {/* Contenu expansible */}
       {isExpanded && (
-        <div className="border-t border-slate-800">
-          <div className="p-5 space-y-4">
-            {/* Metrics grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {log.durationMinutes && (
-                <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 mb-1">
-                    <Clock className="w-4 h-4" />
-                    <span className="text-xs">Durée</span>
-                  </div>
-                  <p className="text-white font-semibold">{log.durationMinutes} min</p>
-                </div>
-              )}
-              {distance && (
-                <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 mb-1">
-                    <MapPin className="w-4 h-4" />
-                    <span className="text-xs">Distance</span>
-                  </div>
-                  <p className="text-white font-semibold">{distance}</p>
-                </div>
-              )}
-              {elevation && (
-                <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 mb-1">
-                    <TrendingUp className="w-4 h-4" />
-                    <span className="text-xs">Dénivelé</span>
-                  </div>
-                  <p className="text-white font-semibold">{elevation}</p>
-                </div>
-              )}
-              {avgHr && (
-                <div className="bg-slate-800/50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-slate-500 mb-1">
-                    <Heart className="w-4 h-4" />
-                    <span className="text-xs">FC moy</span>
-                  </div>
-                  <p className="text-white font-semibold">{avgHr}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Toggle buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowCharts(false)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
-                  !showCharts ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                }`}
-              >
+        <div className="px-5 pb-5 space-y-4 border-t border-slate-800 pt-4">
+          {/* Métriques mobiles */}
+          <div className="sm:hidden flex flex-wrap gap-2">
+            {log.durationMinutes && (
+              <div className="flex items-center gap-1.5 text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg text-sm">
+                <Clock className="w-4 h-4" />
+                <span>{log.durationMinutes} min</span>
+              </div>
+            )}
+            {distance && (
+              <div className="flex items-center gap-1.5 text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg text-sm">
                 <MapPin className="w-4 h-4" />
-                Carte
-              </button>
-              <button
-                onClick={() => setShowCharts(true)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
-                  showCharts ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                Graphiques
-              </button>
-            </div>
-
-            {/* Loading */}
-            {isLoading && (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
-                <span className="ml-2 text-slate-400">Chargement des données...</span>
+                <span>{distance}</span>
               </div>
             )}
-
-            {/* Carte */}
-            {!showCharts && !isLoading && (
-              stravaData?.summary_polyline ? (
-                <div className="h-64 rounded-xl overflow-hidden">
-                  <StravaActivityMap 
-                    polyline={stravaData.summary_polyline}
-                    sportColor={sportConfig.color}
-                  />
-                </div>
-              ) : (
-                <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
-                  <MapPin className="w-5 h-5 mr-2 opacity-50" />
-                  Pas de tracé GPS disponible
-                </div>
-              )
-            )}
-
-            {/* Graphiques */}
-            {showCharts && !isLoading && (
-              stravaData?.streams_data ? (
-                <StravaActivityCharts
-                  streams={stravaData.streams_data}
-                  segments={stravaData?.segment_efforts || undefined}
-                  sportType={sportType}
-                  compact={false}
-                />
-              ) : (
-                <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
-                  <BarChart3 className="w-5 h-5 mr-2 opacity-50" />
-                  Pas de données détaillées disponibles
-                </div>
-              )
-            )}
-
-            {/* Lien Strava */}
-            {stravaData && (
-              <div className="flex justify-end">
-                <a
-                  href={`https://www.strava.com/activities/${stravaData.strava_activity_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 bg-orange-500/10 text-orange-400 rounded-lg text-sm flex items-center gap-2 hover:bg-orange-500/20 transition-colors"
-                >
-                  Voir sur Strava
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              </div>
-            )}
-
-            {/* Commentaires */}
-            {log.comments && (
-              <div className="bg-slate-800/30 rounded-xl p-4">
-                <p className="text-slate-400 text-sm whitespace-pre-wrap">{log.comments}</p>
+            {avgHr && (
+              <div className="flex items-center gap-1.5 text-red-400 bg-slate-800 px-3 py-1.5 rounded-lg text-sm">
+                <Heart className="w-4 h-4" />
+                <span>{avgHr}</span>
               </div>
             )}
           </div>
+
+          {/* Toggle Carte / Graphiques */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCharts(false)}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                !showCharts ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              <MapPin className="w-4 h-4" />
+              Carte
+            </button>
+            <button
+              onClick={() => setShowCharts(true)}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                showCharts ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              Graphiques
+            </button>
+          </div>
+
+          {/* Chargement */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+              <span className="ml-2 text-slate-400">Chargement des données...</span>
+            </div>
+          )}
+
+          {/* Carte */}
+          {!showCharts && !isLoading && (
+            stravaData?.summary_polyline ? (
+              <div className="h-64 rounded-xl overflow-hidden">
+                <StravaActivityMap 
+                  polyline={stravaData.summary_polyline}
+                  sportColor={sportConfig.color}
+                />
+              </div>
+            ) : (
+              <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
+                <MapPin className="w-5 h-5 mr-2 opacity-50" />
+                Pas de tracé GPS disponible
+              </div>
+            )
+          )}
+
+          {/* Graphiques */}
+          {showCharts && !isLoading && (
+            stravaData?.streams_data ? (
+              <StravaActivityCharts
+                streams={stravaData.streams_data}
+                segments={stravaData?.segment_efforts || undefined}
+                sportType={sportType}
+                compact={false}
+              />
+            ) : (
+              <div className="h-32 bg-slate-800/50 rounded-xl flex items-center justify-center text-slate-500 text-sm">
+                <BarChart3 className="w-5 h-5 mr-2 opacity-50" />
+                Pas de données détaillées disponibles
+              </div>
+            )
+          )}
+
+          {/* Lien Strava */}
+          {stravaData && (
+            <div className="flex justify-end">
+              <a
+                href={`https://www.strava.com/activities/${stravaData.strava_activity_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 bg-orange-500/10 text-orange-400 rounded-lg text-sm flex items-center gap-2 hover:bg-orange-500/20 transition-colors"
+              >
+                Voir sur Strava
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+          )}
+
+          {/* Commentaires */}
+          {log.comments && (
+            <div className="bg-slate-800/30 rounded-xl p-4">
+              <p className="text-slate-400 text-sm whitespace-pre-wrap">{log.comments}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

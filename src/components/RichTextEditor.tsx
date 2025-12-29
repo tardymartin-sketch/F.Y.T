@@ -21,7 +21,6 @@ interface Props {
   placeholder?: string;
 }
 
-// Couleurs disponibles pour le texte
 const TEXT_COLORS = [
   { name: 'Blanc', color: '#ffffff' },
   { name: 'Rouge', color: '#ef4444' },
@@ -39,7 +38,6 @@ export const RichTextEditor: React.FC<Props> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Désactiver les fonctionnalités non utilisées pour réduire le bundle
         codeBlock: false,
         code: false,
         blockquote: false,
@@ -59,7 +57,6 @@ export const RichTextEditor: React.FC<Props> = ({
     },
   });
 
-  // Synchroniser le contenu externe (utile si le parent met à jour `value`)
   React.useEffect(() => {
     if (editor && value !== editor.getHTML()) {
       editor.commands.setContent(value, false);
@@ -74,7 +71,6 @@ export const RichTextEditor: React.FC<Props> = ({
     );
   }
 
-  // Bouton de la toolbar
   const ToolbarButton: React.FC<{
     onClick: () => void;
     isActive?: boolean;
@@ -97,7 +93,6 @@ export const RichTextEditor: React.FC<Props> = ({
     </button>
   );
 
-  // Bouton de couleur
   const ColorButton: React.FC<{ color: string; name: string }> = ({ color, name }) => (
     <button
       type="button"
@@ -114,9 +109,8 @@ export const RichTextEditor: React.FC<Props> = ({
 
   return (
     <div className="bg-slate-950 border border-slate-700 rounded-xl overflow-hidden focus-within:border-blue-500 transition-colors">
-      {/* Barre d'outils */}
+      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-1 p-2 bg-slate-900 border-b border-slate-700">
-        {/* Undo / Redo */}
         <ToolbarButton
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
@@ -134,7 +128,6 @@ export const RichTextEditor: React.FC<Props> = ({
 
         <div className="h-4 w-px bg-slate-700 mx-1" />
 
-        {/* Formatage texte */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           isActive={editor.isActive('bold')}
@@ -152,7 +145,6 @@ export const RichTextEditor: React.FC<Props> = ({
 
         <div className="h-4 w-px bg-slate-700 mx-1" />
 
-        {/* Titres */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           isActive={editor.isActive('heading', { level: 1 })}
@@ -177,7 +169,6 @@ export const RichTextEditor: React.FC<Props> = ({
 
         <div className="h-4 w-px bg-slate-700 mx-1" />
 
-        {/* Listes */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           isActive={editor.isActive('bulletList')}
@@ -195,7 +186,6 @@ export const RichTextEditor: React.FC<Props> = ({
 
         <div className="h-4 w-px bg-slate-700 mx-1" />
 
-        {/* Couleurs */}
         <div className="flex items-center gap-1">
           {TEXT_COLORS.map((c) => (
             <ColorButton key={c.color} color={c.color} name={c.name} />
@@ -203,13 +193,12 @@ export const RichTextEditor: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Zone d'édition */}
+      {/* Editor Content */}
       <EditorContent 
         editor={editor} 
         className="[&_.ProseMirror]:min-h-[150px] [&_.ProseMirror]:p-4 [&_.ProseMirror]:focus:outline-none"
       />
 
-      {/* Styles pour le contenu de l'éditeur */}
       <style>{`
         .ProseMirror p.is-editor-empty:first-child::before {
           content: "${placeholder}";
@@ -261,8 +250,6 @@ export const RichTextEditor: React.FC<Props> = ({
   );
 };
 
-// Composant pour afficher le HTML rendu (lecture seule)
-// À utiliser côté athlète pour afficher le message du coach
 export const RichTextDisplay: React.FC<{ html: string; className?: string }> = ({ 
   html, 
   className = '' 
@@ -271,49 +258,8 @@ export const RichTextDisplay: React.FC<{ html: string; className?: string }> = (
     <div 
       className={`rich-text-display ${className}`}
       dangerouslySetInnerHTML={{ __html: html }}
-      style={{
-        // Styles inline pour garantir le rendu même sans CSS global
-      }}
     />
   );
 };
 
-// Styles CSS à ajouter dans index.css pour le RichTextDisplay
-export const RICH_TEXT_DISPLAY_STYLES = `
-.rich-text-display h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-}
-.rich-text-display h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-top: 0.75rem;
-  margin-bottom: 0.5rem;
-}
-.rich-text-display p {
-  margin-bottom: 0.5rem;
-}
-.rich-text-display ul,
-.rich-text-display ol {
-  padding-left: 1.5rem;
-  margin-bottom: 0.5rem;
-}
-.rich-text-display ul {
-  list-style-type: disc;
-}
-.rich-text-display ol {
-  list-style-type: decimal;
-}
-.rich-text-display li {
-  margin-bottom: 0.25rem;
-}
-.rich-text-display strong {
-  font-weight: 700;
-}
-.rich-text-display em {
-  font-style: italic;
-}
-`;
-
+export default RichTextEditor;

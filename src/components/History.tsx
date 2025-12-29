@@ -29,7 +29,6 @@ interface Props {
   userId?: string;
 }
 
-// Helper pour détecter si une session vient de Strava
 const isStravaSession = (log: SessionLog): boolean => {
   return log.sessionKey.seance.toLowerCase().includes('strava');
 };
@@ -42,11 +41,9 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [swipedId, setSwipedId] = useState<string | null>(null);
   
-  // Touch tracking for swipe
   const touchStartX = useRef<number>(0);
   const touchCurrentX = useRef<number>(0);
 
-  // Filtrage et tri
   const filteredHistory = useMemo(() => {
     let result = [...history];
     
@@ -70,7 +67,6 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
     return result;
   }, [history, searchTerm, selectedMonth, currentYear]);
 
-  // Statistiques du mois (avec moyenne RPE)
   const monthStats = useMemo(() => {
     const now = new Date();
     const thisMonth = history.filter(h => {
@@ -78,177 +74,161 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
     
-    // ← NOUVEAU: Calculer la moyenne des RPE du mois
     const sessionsWithRpe = thisMonth.filter(h => h.sessionRpe !== undefined);
     const avgRpe = sessionsWithRpe.length > 0 
-      ? sessionsWithRpe.reduce((acc, h) => acc + (h.sessionRpe || 0), 0) / sessionsWithRpe.length
+      ? Math.round((sessionsWithRpe.reduce((acc, h) => acc + (h.sessionRpe || 0), 0) / sessionsWithRpe.length) * 10) / 10
       : null;
+    
+    const totalDuration = thisMonth.reduce((acc, h) => acc + (h.durationMinutes || 0), 0);
     
     return {
       count: thisMonth.length,
-      totalMinutes: thisMonth.reduce((acc, h) => acc + (h.durationMinutes || 0), 0),
-      avgRpe: avgRpe ? Math.round(avgRpe * 10) / 10 : null // Arrondi à 1 décimale
+      totalHours: Math.round(totalDuration / 60),
+      avgRpe
     };
   }, [history]);
 
-  const handleTouchStart = (e: TouchEvent, logId: string) => {
+  const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+  const handleTouchStart = (id: string, e: TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
-    touchCurrentX.current = e.touches[0].clientX;
   };
 
-  const handleTouchMove = (e: TouchEvent) => {
+  const handleTouchMove = (id: string, e: TouchEvent) => {
     touchCurrentX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = (logId: string) => {
     const diff = touchStartX.current - touchCurrentX.current;
-    if (diff > 80) {
-      setSwipedId(logId);
+    if (diff > 50) {
+      setSwipedId(id);
     } else if (diff < -50) {
       setSwipedId(null);
     }
   };
 
-  const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('fr-FR', { 
+      weekday: 'short', 
+      day: 'numeric', 
+      month: 'short' 
+    });
+  };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     setDeletingId(id);
-    try {
-      await onDelete(id);
-    } finally {
+    setTimeout(() => {
+      onDelete(id);
       setDeletingId(null);
       setSwipedId(null);
-    }
+    }, 300);
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white">Historique</h1>
-        <p className="text-slate-400 mt-1">{history.length} séances enregistrées</p>
-      </div>
-
-      {/* Stats du mois - MODIFIÉ pour inclure le RPE moyen */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-blue-400 mb-1">
-            <Dumbbell className="w-4 h-4" />
-            <span className="text-xs font-medium uppercase">Ce mois</span>
+      {/* Stats Header */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700/50 rounded-2xl p-6">
+        <h2 className="text-xl font-bold text-white mb-4">Ce mois-ci</h2>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="text-center">
+            <p className="text-3xl font-bold text-blue-400">{monthStats.count}</p>
+            <p className="text-sm text-slate-400">séances</p>
           </div>
-          <span className="text-2xl font-bold text-white">{monthStats.count}</span>
-          <span className="text-slate-500 text-sm ml-1">séances</span>
-        </div>
-        
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-emerald-400 mb-1">
-            <Clock className="w-4 h-4" />
-            <span className="text-xs font-medium uppercase">Durée totale</span>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-emerald-400">{monthStats.totalHours}h</p>
+            <p className="text-sm text-slate-400">d'entraînement</p>
           </div>
-          <span className="text-2xl font-bold text-white">
-            {Math.floor(monthStats.totalMinutes / 60)}h{(monthStats.totalMinutes % 60).toString().padStart(2, '0')}
-          </span>
-        </div>
-
-        {/* ← NOUVEAU: RPE Moyen du mois */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-orange-400 mb-1">
-            <Gauge className="w-4 h-4" />
-            <span className="text-xs font-medium uppercase">RPE Moyen</span>
+          <div className="text-center">
+            {monthStats.avgRpe ? (
+              <>
+                <p className={`text-3xl font-bold ${getRpeColor(Math.round(monthStats.avgRpe))}`}>
+                  {monthStats.avgRpe}
+                </p>
+                <p className="text-sm text-slate-400">RPE moyen</p>
+              </>
+            ) : (
+              <>
+                <p className="text-3xl font-bold text-slate-500">—</p>
+                <p className="text-sm text-slate-400">RPE moyen</p>
+              </>
+            )}
           </div>
-          {monthStats.avgRpe !== null ? (
-            <div className="flex items-center gap-2">
-              <span className={`text-2xl font-bold ${getRpeColor(Math.round(monthStats.avgRpe))}`}>
-                {monthStats.avgRpe}
-              </span>
-              <span className="text-slate-500 text-sm">/10</span>
-            </div>
-          ) : (
-            <span className="text-slate-500 text-sm">—</span>
-          )}
         </div>
       </div>
 
-      {/* Filtres */}
+      {/* Filters */}
       <div className="space-y-4">
-        {/* Recherche */}
+        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
           <input
             type="text"
+            placeholder="Rechercher un exercice..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Rechercher un exercice..."
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+            className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
-        {/* Sélecteur de mois */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={() => setCurrentYear(y => y - 1)}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="font-semibold text-white">{currentYear}</span>
-            <button
-              onClick={() => setCurrentYear(y => y + 1)}
-              disabled={currentYear >= new Date().getFullYear()}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-30"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
+        {/* Month Filter */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCurrentYear(y => y - 1)}
+            className="p-2 text-slate-400 hover:text-white"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <span className="text-white font-medium min-w-[60px] text-center">{currentYear}</span>
+          <button
+            onClick={() => setCurrentYear(y => y + 1)}
+            className="p-2 text-slate-400 hover:text-white"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
           
-          <div className="grid grid-cols-6 gap-1.5">
-            {months.map((month, idx) => {
-              const hasData = history.some(h => {
-                const d = new Date(h.date);
-                return d.getMonth() === idx && d.getFullYear() === currentYear;
-              });
-              
-              return (
+          <div className="flex-1 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedMonth(null)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  selectedMonth === null
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Tous
+              </button>
+              {months.map((m, i) => (
                 <button
-                  key={month}
-                  onClick={() => setSelectedMonth(selectedMonth === idx ? null : idx)}
-                  disabled={!hasData}
-                  className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                    selectedMonth === idx
+                  key={i}
+                  onClick={() => setSelectedMonth(i)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    selectedMonth === i
                       ? 'bg-blue-600 text-white'
-                      : hasData
-                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                        : 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  {month}
+                  {m}
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Liste des séances */}
+      {/* Sessions List */}
       {filteredHistory.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Dumbbell className="w-16 h-16 text-slate-700 mb-4" />
-          <h3 className="text-xl font-semibold text-slate-400 mb-2">Aucune séance trouvée</h3>
-          <p className="text-slate-500">
-            {searchTerm ? 'Essayez une autre recherche' : 'Commencez à vous entraîner !'}
-          </p>
+        <div className="text-center py-12">
+          <Dumbbell className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+          <p className="text-slate-500">Aucune séance trouvée</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredHistory.map((log) => {
-            // Affichage spécial pour les sessions Strava
             if (isStravaSession(log) && userId) {
               return (
                 <StravaHistoryCard
                   key={log.id}
                   log={log}
-                  onDelete={handleDelete}
+                  onDelete={onDelete}
                   userId={userId}
                 />
               );
@@ -256,109 +236,121 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
 
             const isExpanded = expandedId === log.id;
             const isSwiped = swipedId === log.id;
-            const date = new Date(log.date);
+            const isDeleting = deletingId === log.id;
+            
             const totalSets = log.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
             const completedSets = log.exercises.reduce((acc, ex) => 
               acc + ex.sets.filter(s => s.completed).length, 0
             );
+            const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
 
             return (
-              <div 
+              <div
                 key={log.id}
-                className="relative overflow-hidden"
+                className={`relative overflow-hidden rounded-2xl transition-all duration-300 ${
+                  isDeleting ? 'opacity-0 scale-95' : ''
+                }`}
+                onTouchStart={(e) => handleTouchStart(log.id, e)}
+                onTouchMove={(e) => handleTouchMove(log.id, e)}
               >
-                {/* Bouton supprimer (swipe) */}
-                <div 
-                  className={`absolute right-0 top-0 bottom-0 flex items-center transition-all duration-200 ${
-                    isSwiped ? 'translate-x-0' : 'translate-x-full'
-                  }`}
-                >
+                {/* Swipe Action */}
+                <div className={`absolute inset-y-0 right-0 flex items-center justify-end bg-red-600 transition-all ${
+                  isSwiped ? 'w-24' : 'w-0'
+                }`}>
                   <button
                     onClick={() => handleDelete(log.id)}
-                    disabled={deletingId === log.id}
-                    className="h-full px-6 bg-red-600 hover:bg-red-500 text-white flex items-center gap-2 transition-colors"
+                    className="w-full h-full flex items-center justify-center text-white"
                   >
-                    {deletingId === log.id ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <Trash2 className="w-5 h-5" />
-                        <span className="hidden sm:inline">Supprimer</span>
-                      </>
-                    )}
+                    <Trash2 className="w-6 h-6" />
                   </button>
                 </div>
 
-                {/* Carte principale */}
-                <div
-                  className={`bg-slate-900 border border-slate-800 rounded-xl overflow-hidden transition-all duration-200 ${
-                    isSwiped ? '-translate-x-24 sm:-translate-x-32' : ''
-                  }`}
-                  onTouchStart={(e) => handleTouchStart(e, log.id)}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={() => handleTouchEnd(log.id)}
-                >
+                {/* Main Card */}
+                <div className={`bg-slate-900 border border-slate-800 transition-transform ${
+                  isSwiped ? '-translate-x-24' : ''
+                }`}>
                   {/* Header */}
                   <button
                     onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/50 transition-colors"
+                    className="w-full p-4 text-left"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="text-center min-w-[50px]">
-                        <span className="block text-2xl font-bold text-white">{date.getDate()}</span>
-                        <span className="text-xs text-slate-400 uppercase">
-                          {date.toLocaleDateString('fr-FR', { month: 'short' })}
-                        </span>
-                      </div>
-                      
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-white">
-                            Séance {log.sessionKey.seance}
-                          </h3>
-                          {/* ← NOUVEAU: Badge RPE de la séance */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-white font-semibold">
+                            {log.sessionKey.seance}
+                          </span>
                           {log.sessionRpe && (
                             <RpeBadge rpe={log.sessionRpe} size="sm" showLabel={false} />
                           )}
                         </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
-                          <span>{log.exercises.length} exercices</span>
-                          <span>•</span>
-                          <span>{completedSets}/{totalSets} séries</span>
+                        <div className="flex items-center gap-3 text-sm text-slate-400">
+                          <span>{formatDate(log.date)}</span>
                           {log.durationMinutes && (
-                            <>
-                              <span>•</span>
-                              <span>{log.durationMinutes} min</span>
-                            </>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" />
+                              {log.durationMinutes}min
+                            </span>
                           )}
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(log);
-                        }}
-                        className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-slate-400" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-slate-400" />
-                      )}
+                      <div className="flex items-center gap-3">
+                        {/* Progress Ring */}
+                        <div className="relative w-12 h-12">
+                          <svg className="w-12 h-12 -rotate-90">
+                            <circle
+                              cx="24" cy="24" r="20"
+                              fill="none"
+                              stroke="#1e293b"
+                              strokeWidth="4"
+                            />
+                            <circle
+                              cx="24" cy="24" r="20"
+                              fill="none"
+                              stroke={progress === 100 ? '#10b981' : '#3b82f6'}
+                              strokeWidth="4"
+                              strokeLinecap="round"
+                              strokeDasharray={`${progress * 1.256} 125.6`}
+                            />
+                          </svg>
+                          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white">
+                            {Math.round(progress)}%
+                          </span>
+                        </div>
+
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-slate-400" />
+                        )}
+                      </div>
                     </div>
                   </button>
 
-                  {/* Contenu expandé */}
+                  {/* Expanded Content */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 space-y-3 border-t border-slate-800">
-                      {/* ← NOUVEAU: Affichage du RPE global si présent */}
+                    <div className="px-4 pb-4 space-y-4 border-t border-slate-800 pt-4">
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onEdit(log)}
+                          className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 text-sm font-medium transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => handleDelete(log.id)}
+                          className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 text-sm font-medium transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* RPE Global */}
                       {log.sessionRpe && (
-                        <div className={`mt-4 p-3 rounded-xl ${getRpeBgColor(log.sessionRpe)} flex items-center justify-between`}>
+                        <div className={`p-3 rounded-xl ${getRpeBgColor(log.sessionRpe)} flex items-center justify-between`}>
                           <div className="flex items-center gap-2">
                             <Gauge className={`w-5 h-5 ${getRpeColor(log.sessionRpe)}`} />
                             <span className="text-sm font-medium text-slate-300">RPE de la séance</span>
@@ -367,67 +359,38 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
                         </div>
                       )}
 
-                      {log.exercises.map((ex, exIdx) => (
-                        <div key={exIdx} className="bg-slate-800/50 rounded-lg p-3 mt-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-medium text-white">{ex.exerciseName}</span>
-                            <div className="flex items-center gap-2">
-                              {/* ← NOUVEAU: Badge RPE de l'exercice */}
-                              {ex.rpe && (
-                                <RpeBadge rpe={ex.rpe} size="sm" showLabel={false} />
-                              )}
-                              <span className="text-xs text-slate-500">
-                                {ex.sets.filter(s => s.completed).length}/{ex.sets.length} séries
-                              </span>
+                      {/* Exercises */}
+                      <div className="space-y-3">
+                        {log.exercises.map((exercise, idx) => (
+                          <div key={idx} className="bg-slate-800/50 rounded-xl p-3">
+                            <p className="font-medium text-white mb-2">{exercise.exerciseName}</p>
+                            <div className="space-y-1">
+                              {exercise.sets.map((set, setIdx) => (
+                                <div
+                                  key={setIdx}
+                                  className={`flex items-center gap-3 text-sm p-2 rounded-lg ${
+                                    set.completed ? 'bg-emerald-500/10' : 'bg-slate-800/50'
+                                  }`}
+                                >
+                                  <span className="text-slate-500 w-8">#{set.setNumber}</span>
+                                  <span className="text-white flex-1">{set.reps || '—'}</span>
+                                  <span className="text-slate-400">{set.weight ? `${set.weight}kg` : '—'}</span>
+                                  {set.completed && (
+                                    <span className="text-emerald-400">✓</span>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           </div>
-                          
-                          <div className="grid grid-cols-3 gap-2 text-xs text-slate-400">
-                            <span className="font-medium">Série</span>
-                            <span className="font-medium">Reps</span>
-                            <span className="font-medium">Poids</span>
-                            
-                            {ex.sets.map((set, setIdx) => (
-                              <React.Fragment key={setIdx}>
-                                <span className={set.completed ? 'text-emerald-400' : ''}>
-                                  #{set.setNumber}
-                                </span>
-                                <span className="text-white">{set.reps || '—'}</span>
-                                <span className="text-white">{set.weight ? `${set.weight} kg` : '—'}</span>
-                              </React.Fragment>
-                            ))}
-                          </div>
+                        ))}
+                      </div>
 
-                          {ex.notes && (
-                            <p className="mt-2 text-xs text-slate-500 italic">{ex.notes}</p>
-                          )}
-                        </div>
-                      ))}
-
+                      {/* Comments */}
                       {log.comments && (
-                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mt-3">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-                            <p className="text-sm text-yellow-200/80">{log.comments}</p>
-                          </div>
+                        <div className="bg-slate-800/30 rounded-xl p-3 text-sm text-slate-400 italic">
+                          {log.comments}
                         </div>
                       )}
-
-                      {/* Bouton supprimer (desktop) */}
-                      <button
-                        onClick={() => handleDelete(log.id)}
-                        disabled={deletingId === log.id}
-                        className="w-full mt-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                      >
-                        {deletingId === log.id ? (
-                          <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                        ) : (
-                          <>
-                            <Trash2 className="w-4 h-4" />
-                            Supprimer cette séance
-                          </>
-                        )}
-                      </button>
                     </div>
                   )}
                 </div>

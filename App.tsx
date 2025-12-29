@@ -1,3 +1,9 @@
+// ============================================================
+// F.Y.T - APP PRINCIPAL (Version avec Session en cours persistante)
+// App.tsx
+// Gestion de la session active avec persistence localStorage
+// ============================================================
+
 import React, { useState, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './src/supabaseClient';
@@ -11,7 +17,6 @@ import {
   updateUserCoach,
   fetchCurrentUserProfile,
   updateUserProfile,
-  // New imports for Week Organizer and Comments
   fetchWeekOrganizerLogs,
   fetchActiveWeekOrganizer,
   saveWeekOrganizerLog,
@@ -26,7 +31,7 @@ import {
   updateGroupMembers,
   fetchAthleteGroupWithMembers,
   fetchAthleteGroupsForAthlete,
-  fetchActiveWeekOrganizerForAthlete,
+  fetchActiveWeekOrganizersForAthlete, // MODIFIÉ: nouvelle fonction pour obtenir tous les messages
 } from './src/services/supabaseService';
 
 import type { AthleteGroupWithCount } from './types';
@@ -72,80 +77,119 @@ const App: React.FC = () => {
   // Data States
   const [trainingData, setTrainingData] = useState<WorkoutRow[]>([]);
   const [history, setHistory] = useState<SessionLog[]>([]);
-  const [dataLoading, setDataLoading] = useState(false);
-
-  // Session State
-  const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
-  const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
-
-  // Filters
   const [filters, setFilters] = useState<FilterState>({
     selectedAnnee: null,
     selectedMois: null,
     selectedSemaine: null,
-    selectedSeances: []
+    selectedSeances: [],
   });
+  const [dataLoading, setDataLoading] = useState(false);
+  
+  // Active Session State - MODIFIÉ: Persistence via localStorage
+  const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
+  const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
 
-  // Week Organizer State
-  const [activeWeekOrganizer, setActiveWeekOrganizer] = useState<WeekOrganizerLog | null>(null);
+  // Week Organizer State - MODIFIÉ: tableau au lieu d'un seul
+  const [activeWeekOrganizers, setActiveWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
   const [pastWeekOrganizers, setPastWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
 
   // ===========================================
-  // AUTHENTICATION EFFECTS
+  // AUTH EFFECTS
   // ===========================================
-
+  
   useEffect(() => {
-    // Check existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        loadUserProfile(session.user.id);
-      } else {
-        setAuthLoading(false);
-      }
+      setAuthLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-        loadUserProfile(session.user.id);
-      } else {
-        setCurrentUser(null);
-        setAuthLoading(false);
-      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   // ===========================================
-  // DATA LOADING
+  // PERSISTENCE DE LA SESSION EN COURS
   // ===========================================
 
-  const loadUserProfile = async (userId: string) => {
-    try {
-      const profile = await fetchCurrentUserProfile();
-      if (profile) {
-        setCurrentUser(profile);
-        await loadInitialData(profile.id);
+  // Vérifier au chargement s'il y a une session en cours
+  useEffect(() => {
+    const savedSession = localStorage.getItem('F.Y.T_active_session');
+    if (savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        if (parsed.sessionData && parsed.logs) {
+          setHasActiveSession(true);
+        }
+      } catch (e) {
+        console.error('Erreur parsing session sauvegardée:', e);
+        localStorage.removeItem('F.Y.T_active_session');
       }
+    }
+  }, []);
+
+  // Observer les changements dans localStorage
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedSession = localStorage.getItem('F.Y.T_active_session');
+      setHasActiveSession(!!savedSession);
+    };
+
+    // Vérifier périodiquement (pour les changements dans le même onglet)
+    const interval = setInterval(handleStorageChange, 1000);
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // ===========================================
+  // LOAD USER AND DATA
+  // ===========================================
+
+  useEffect(() => {
+    if (session) {
+      loadUserProfile();
+    } else {
+      setCurrentUser(null);
+      setTrainingData([]);
+      setHistory([]);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadUserData();
+    }
+  }, [currentUser]);
+
+  const loadUserProfile = async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      const profile = await fetchCurrentUserProfile(session.user.id);
+      setCurrentUser(profile);
     } catch (error) {
       console.error("Erreur chargement profil:", error);
-    } finally {
-      setAuthLoading(false);
     }
   };
 
-  const loadInitialData = async (userId: string) => {
+  const loadUserData = async () => {
+    if (!currentUser) return;
+    
     setDataLoading(true);
     try {
-      // Load training plans
-      const plans = await fetchTrainingPlans();
+      const [plans, logs] = await Promise.all([
+        fetchTrainingPlans(currentUser.id),
+        fetchSessionLogs(currentUser.id)
+      ]);
+      
       setTrainingData(plans);
-
-      // Load user history
-      const logs = await fetchSessionLogs(userId);
       setHistory(logs);
     } catch (error) {
       console.error("Erreur chargement données:", error);
@@ -188,84 +232,99 @@ const App: React.FC = () => {
     return await fetchAthleteGroupWithMembers(groupId);
   };
 
-  // Load week organizer for athletes (when they have a coach)
+  // MODIFIÉ: Charger TOUS les week organizers pour les athlètes
   useEffect(() => {
-    const loadWeekOrganizer = async () => {
+    const loadWeekOrganizers = async () => {
       if (!currentUser || !currentUser.coachId) return;
       
       try {
-        // Utiliser la nouvelle fonction qui filtre par visibilité
-        const active = await fetchActiveWeekOrganizerForAthlete(
+        // Utiliser la nouvelle fonction qui retourne TOUS les messages visibles
+        const activeMessages = await fetchActiveWeekOrganizersForAthlete(
           currentUser.coachId,
           currentUser.id
         );
-        setActiveWeekOrganizer(active);
+        setActiveWeekOrganizers(activeMessages);
         
         // Charger les messages passés visibles
         const athleteGroupIds = await fetchAthleteGroupsForAthlete(currentUser.id);
         const all = await fetchWeekOrganizerLogs(currentUser.coachId);
         
+        const activeIds = new Set(activeMessages.map(m => m.id));
         const visible = all.filter(log => {
           const endDate = new Date(log.endDate);
           const isVisible = canAthleteViewMessage(log, currentUser.id, athleteGroupIds);
-          return endDate < new Date() && isVisible && log.id !== active?.id;
+          return endDate < new Date() && isVisible && !activeIds.has(log.id);
         });
         
         setPastWeekOrganizers(visible.slice(0, 5));
       } catch (error) {
-        console.error("Erreur chargement week organizer:", error);
+        console.error("Erreur chargement week organizers:", error);
       }
     };
-    
-    loadWeekOrganizer();
+
+    loadWeekOrganizers();
   }, [currentUser]);
 
   // ===========================================
-  // HANDLERS
+  // SESSION HANDLERS
   // ===========================================
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setCurrentView('home');
-    setIsSidebarOpen(false);
-    setTrainingData([]);
-    setHistory([]);
-  };
-
   const handleStartSession = () => {
-    const sessionData = trainingData.filter(d =>
-      d.annee === filters.selectedAnnee &&
-      d.moisNum === filters.selectedMois &&
-      d.semaine === filters.selectedSemaine &&
+    const sessionData = trainingData.filter(d => 
+      d.annee === filters.selectedAnnee && 
+      d.moisNum === filters.selectedMois && 
+      d.semaine === filters.selectedSemaine && 
       filters.selectedSeances.includes(d.seance)
     );
-
+    
     if (sessionData.length > 0) {
       setActiveSessionData(sessionData);
       setEditingSession(null);
       setCurrentView('active');
+      setHasActiveSession(true);
+    }
+  };
+
+  // Reprendre une session en cours depuis localStorage
+  const handleResumeSession = () => {
+    const savedSession = localStorage.getItem('F.Y.T_active_session');
+    if (savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        // Reconstruire les données de session
+        if (parsed.sessionData) {
+          const sessionData = trainingData.filter(d => {
+            return parsed.sessionData.some((s: any) => 
+              s.seance === d.seance && 
+              s.annee === d.annee && 
+              s.moisNum === d.moisNum && 
+              s.semaine === d.semaine
+            );
+          });
+          if (sessionData.length > 0) {
+            setActiveSessionData(sessionData);
+            setCurrentView('active');
+          }
+        }
+      } catch (e) {
+        console.error('Erreur reprise session:', e);
+      }
     }
   };
 
   const handleSaveSession = async (log: SessionLog) => {
     if (!currentUser) return;
-
+    
     try {
-      const savedLog = await saveSessionLog(log, currentUser.id);
-      
-      // Update local state
-      setHistory(prev => {
-        const filtered = prev.filter(h => h.id !== savedLog.id);
-        return [savedLog, ...filtered].sort((a, b) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-      });
-
+      await saveSessionLog(log, currentUser.id);
+      await loadUserData();
       setActiveSessionData(null);
       setEditingSession(null);
-      setCurrentView('history');
+      setHasActiveSession(false);
+      localStorage.removeItem('F.Y.T_active_session');
+      setCurrentView('home');
     } catch (error) {
-      console.error("Erreur sauvegarde:", error);
+      console.error("Erreur sauvegarde session:", error);
       throw error;
     }
   };
@@ -273,24 +332,25 @@ const App: React.FC = () => {
   const handleCancelSession = () => {
     setActiveSessionData(null);
     setEditingSession(null);
+    setHasActiveSession(false);
+    localStorage.removeItem('F.Y.T_active_session');
     setCurrentView('home');
   };
 
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await deleteSessionLog(sessionId);
-      setHistory(prev => prev.filter(h => h.id !== sessionId));
+      setHistory(prev => prev.filter(s => s.id !== sessionId));
     } catch (error) {
-      console.error("Erreur suppression:", error);
+      console.error("Erreur suppression session:", error);
     }
   };
 
   const handleEditSession = (log: SessionLog) => {
-    // Reconstruct session data from training plans
     const sessionData = trainingData.filter(d =>
       d.annee === log.sessionKey.annee &&
       d.semaine === log.sessionKey.semaine &&
-      log.sessionKey.seance.split('+').includes(d.seance)
+      log.sessionKey.seance.includes(d.seance)
     );
 
     if (sessionData.length > 0) {
@@ -298,7 +358,6 @@ const App: React.FC = () => {
       setEditingSession(log);
       setCurrentView('active');
     } else {
-      // Fallback: create minimal session data from log
       const minimalData: WorkoutRow[] = log.exercises.map((ex, idx) => ({
         id: idx,
         annee: log.sessionKey.annee,
@@ -378,142 +437,167 @@ const App: React.FC = () => {
 
   const handleSaveAthleteComment = async (exerciseName: string, comment: string, sessionId: string) => {
     if (!currentUser) return;
-    await saveAthleteComment(currentUser.id, sessionId, exerciseName, comment);
+    await saveAthleteComment({
+      oderId: currentUser.id,
+      sessionId,
+      exerciseName,
+      comment,
+      isRead: false,
+    });
+  };
+
+  // ===========================================
+  // LOGOUT HANDLER
+  // ===========================================
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('F.Y.T_active_session');
+  };
+
+  // ===========================================
+  // NAVIGATION HANDLER - MODIFIÉ pour session en cours
+  // ===========================================
+
+  const handleViewChange = (view: string) => {
+    // Si on clique sur "active" depuis le menu et qu'il y a une session en cours
+    if (view === 'active' && hasActiveSession && !activeSessionData) {
+      handleResumeSession();
+    } else {
+      setCurrentView(view);
+    }
   };
 
   // ===========================================
   // RENDER
   // ===========================================
 
-  // Loading state
   if (authLoading) {
     return <LoadingScreen />;
   }
 
-  // Not authenticated
-  if (!session || !currentUser) {
-    return <Auth />;
+  if (!session) {
+    return <Auth onAuth={() => {}} />;
   }
 
-  // Main app
+  if (!currentUser) {
+    return <LoadingScreen />;
+  }
+
   const isAdmin = currentUser.role === 'admin';
   const isCoach = currentUser.role === 'coach';
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-200 overflow-x-hidden max-w-[100vw]">
-      {/* Sidebar */}
+    <div className="min-h-screen bg-slate-950 flex">
       <Sidebar
         currentView={currentView}
-        setCurrentView={setCurrentView}
+        setCurrentView={handleViewChange}
         isAdmin={isAdmin}
         isCoach={isCoach}
-        onLogout={handleSignOut}
+        onLogout={handleLogout}
         user={currentUser}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        hasActiveSession={hasActiveSession} // NOUVEAU: passer l'état de session active
       />
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen lg:ml-0 overflow-x-hidden">
-        {/* Mobile Header */}
-        <header className="lg:hidden sticky top-0 z-20 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
+      
+      <main className="flex-1 lg:ml-0 overflow-y-auto">
+        {/* Mobile header */}
+        <div className="lg:hidden sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
               <Menu className="w-6 h-6" />
             </button>
             <h1 className="font-bold text-white">F.Y.T</h1>
-            <div className="w-10" /> {/* Spacer for centering */}
+            <div className="w-10" />
           </div>
-        </header>
+        </div>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto w-full">
-            {dataLoading && currentView === 'home' ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
-              </div>
-            ) : (
-              <>
-                {currentView === 'home' && (
-                  <Home
-                    data={trainingData}
-                    filters={filters}
-                    setFilters={setFilters}
-                    onStartSession={handleStartSession}
-                    user={currentUser}
-                    history={history}
-                    activeWeekOrganizer={activeWeekOrganizer}
-                    pastWeekOrganizers={pastWeekOrganizers}
-                  />
-                )}
+        <div className="p-4 lg:p-8">
+          {dataLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <>
+              {currentView === 'home' && (
+                <Home
+                  data={trainingData}
+                  filters={filters}
+                  setFilters={setFilters}
+                  onStartSession={handleStartSession}
+                  user={currentUser}
+                  history={history}
+                  activeWeekOrganizers={activeWeekOrganizers} // MODIFIÉ: tableau
+                  pastWeekOrganizers={pastWeekOrganizers}
+                />
+              )}
 
-                {currentView === 'active' && activeSessionData && (
-                  <ActiveSession
-                    sessionData={activeSessionData}
-                    history={history}
-                    onSave={handleSaveSession}
-                    onCancel={handleCancelSession}
-                    initialLog={editingSession}
-                    userId={currentUser.id}
-                    onSaveComment={handleSaveAthleteComment}
-                  />
-                )}
+              {currentView === 'active' && activeSessionData && (
+                <ActiveSession
+                  sessionData={activeSessionData}
+                  history={history}
+                  onSave={handleSaveSession}
+                  onCancel={handleCancelSession}
+                  initialLog={editingSession}
+                  userId={currentUser.id}
+                  onSaveComment={handleSaveAthleteComment}
+                />
+              )}
 
-                {currentView === 'history' && (
-                  <History
-                    history={history}
-                    onDelete={handleDeleteSession}
-                    onEdit={handleEditSession}
-                    userId={currentUser.id}
-                  />
-                )}
+              {currentView === 'history' && (
+                <History
+                  history={history}
+                  onDelete={handleDeleteSession}
+                  onEdit={handleEditSession}
+                  userId={currentUser.id}
+                />
+              )}
 
-                {currentView === 'team' && (isCoach || isAdmin) && (
-                  <TeamView
-                    coachId={currentUser.id}
-                    fetchTeam={handleFetchTeam}
-                    fetchAthleteHistory={handleFetchAthleteHistory}
-                    fetchTeamComments={handleFetchTeamComments}
-                    markCommentsAsRead={handleMarkCommentsAsRead}
-                    fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
-                    saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
-                    deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
-                    fetchAthleteGroups={handleFetchAthleteGroups}
-                    createAthleteGroup={handleCreateAthleteGroup}
-                    updateAthleteGroup={handleUpdateAthleteGroup}
-                    deleteAthleteGroup={handleDeleteAthleteGroup}
-                    updateGroupMembers={handleUpdateGroupMembers}
-                    loadGroupMembers={handleLoadGroupMembers}
-                  />
-                )}
+              {currentView === 'team' && (isCoach || isAdmin) && (
+                <TeamView
+                  coachId={currentUser.id}
+                  fetchTeam={handleFetchTeam}
+                  fetchAthleteHistory={handleFetchAthleteHistory}
+                  fetchTeamComments={handleFetchTeamComments}
+                  markCommentsAsRead={handleMarkCommentsAsRead}
+                  fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
+                  saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
+                  deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
+                  fetchAthleteGroups={handleFetchAthleteGroups}
+                  createAthleteGroup={handleCreateAthleteGroup}
+                  updateAthleteGroup={handleUpdateAthleteGroup}
+                  deleteAthleteGroup={handleDeleteAthleteGroup}
+                  updateGroupMembers={handleUpdateGroupMembers}
+                  loadGroupMembers={handleLoadGroupMembers}
+                />
+              )}
 
-                {currentView === 'admin' && isAdmin && (
-                  <AdminUsersView
-                    fetchAllUsers={handleFetchAllUsers}
-                    onUpdateCoach={handleUpdateCoach}
-                  />
-                )}
+              {currentView === 'admin' && isAdmin && (
+                <AdminUsersView
+                  fetchAllUsers={handleFetchAllUsers}
+                  updateCoach={handleUpdateCoach}
+                />
+              )}
 
-                {currentView === 'settings' && (
-                  <SettingsView
-                    user={currentUser}
-                    onUpdateProfile={handleUpdateProfile}
-                    onLogout={handleSignOut}
-                  />
-                )}
+              {currentView === 'settings' && (
+                <SettingsView
+                  user={currentUser}
+                  onUpdateProfile={handleUpdateProfile}
+                  onLogout={handleLogout}
+                />
+              )}
 
-                {currentView === 'import' && (
-                  <StravaImport user={currentUser} />
-                )}
-              </>
-            )}
-          </div>
-        </main>
-      </div>
+              {currentView === 'import' && (
+                <StravaImport user={currentUser} />
+              )}
+            </>
+          )}
+        </div>
+      </main>
     </div>
   );
 };

@@ -1,9 +1,3 @@
-// ============================================================
-// F.Y.T - RPE SELECTOR COMPONENT
-// src/components/RpeSelector.tsx
-// Sélecteur de RPE (Rating of Perceived Exertion) avec info
-// ============================================================
-
 import React, { useState } from 'react';
 import { Info, X } from 'lucide-react';
 import { RPE_SCALE, getRpeInfo, getRpeColor, getRpeBgColor } from '../../types';
@@ -37,7 +31,6 @@ export const RpeSelector: React.FC<RpeSelectorProps> = ({
 
   return (
     <div className="space-y-2">
-      {/* Label avec bouton info */}
       {showLabel && (
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-400">{label}</span>
@@ -57,7 +50,6 @@ export const RpeSelector: React.FC<RpeSelectorProps> = ({
         </div>
       )}
 
-      {/* Sélecteur 1-10 */}
       <div className="flex items-center gap-1.5">
         {RPE_SCALE.map((rpe) => (
           <button
@@ -81,24 +73,18 @@ export const RpeSelector: React.FC<RpeSelectorProps> = ({
         ))}
       </div>
 
-      {/* Description du RPE sélectionné */}
       {value && selectedInfo && (
         <p className="text-xs text-slate-500 italic">
           {selectedInfo.description}
         </p>
       )}
 
-      {/* Modal Info RPE */}
       {showInfo && (
         <RpeInfoModal onClose={() => setShowInfo(false)} />
       )}
     </div>
   );
 };
-
-// ============================================================
-// RPE INFO MODAL
-// ============================================================
 
 interface RpeInfoModalProps {
   onClose: () => void;
@@ -108,7 +94,6 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-fade-in">
-        {/* Header */}
         <div className="sticky top-0 bg-slate-900 border-b border-slate-800 p-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
@@ -127,9 +112,7 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-5 space-y-6">
-          {/* Description */}
           <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
             <p className="text-slate-300 leading-relaxed">
               Le <strong className="text-white">RPE</strong> (Rating of Perceived Exertion) est une échelle 
@@ -142,7 +125,6 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
             </p>
           </div>
 
-          {/* Échelle complète */}
           <div>
             <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
               L'échelle RPE
@@ -165,7 +147,6 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
             </div>
           </div>
 
-          {/* Conseils */}
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
             <h4 className="text-sm font-semibold text-blue-400 mb-2">💡 Conseils d'utilisation</h4>
             <ul className="text-sm text-slate-300 space-y-2">
@@ -177,7 +158,6 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="sticky bottom-0 bg-slate-900 border-t border-slate-800 p-4">
           <button
             onClick={onClose}
@@ -190,10 +170,6 @@ export const RpeInfoModal: React.FC<RpeInfoModalProps> = ({ onClose }) => {
     </div>
   );
 };
-
-// ============================================================
-// RPE DISPLAY BADGE (pour l'affichage en lecture seule)
-// ============================================================
 
 interface RpeBadgeProps {
   rpe: number;
@@ -224,10 +200,6 @@ export const RpeBadge: React.FC<RpeBadgeProps> = ({
   );
 };
 
-// ============================================================
-// SESSION RPE MODAL (pour le RPE global de la séance)
-// ============================================================
-
 interface SessionRpeModalProps {
   onSubmit: (rpe: number) => void;
   onSkip: () => void;
@@ -256,65 +228,42 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
     const hrs = Math.floor(minutes / 60);
     const mins = minutes % 60;
     if (hrs > 0) {
-      return `${hrs}h${mins > 0 ? mins.toString().padStart(2, '0') : ''}`;
+      return `${hrs}h${mins > 0 ? ` ${mins}min` : ''}`;
     }
-    return `${mins} min`;
+    return `${mins}min`;
   };
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl animate-fade-in">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-800 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <div className="p-6 text-center border-b border-slate-800">
+          <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">💪</span>
           </div>
-          <h3 className="text-xl font-bold text-white">Séance terminée !</h3>
-          <p className="text-slate-400 mt-1">Comment avez-vous ressenti cette séance ?</p>
+          <h3 className="text-xl font-bold text-white mb-2">Séance terminée !</h3>
+          <p className="text-slate-400 text-sm">
+            {sessionName} • {formatDuration(durationMinutes)} • {exerciseCount} exercices
+          </p>
         </div>
 
-        {/* Stats de la séance */}
-        <div className="px-6 py-4 border-b border-slate-800">
-          <div className="flex items-center justify-center gap-6 text-sm">
-            <div className="text-center">
-              <span className="block text-2xl font-bold text-white">{sessionName}</span>
-              <span className="text-slate-500">Séance</span>
-            </div>
-            <div className="w-px h-10 bg-slate-700" />
-            <div className="text-center">
-              <span className="block text-2xl font-bold text-emerald-400">{formatDuration(durationMinutes)}</span>
-              <span className="text-slate-500">Durée</span>
-            </div>
-            <div className="w-px h-10 bg-slate-700" />
-            <div className="text-center">
-              <span className="block text-2xl font-bold text-blue-400">{exerciseCount}</span>
-              <span className="text-slate-500">Exercices</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Sélecteur RPE */}
-        <div className="p-6">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-sm font-medium text-slate-300">RPE global de la séance</span>
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-slate-300 font-medium">Comment avez-vous ressenti cette séance ?</p>
             <button
-              type="button"
               onClick={() => setShowInfo(true)}
-              className="p-1 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-full transition-colors"
+              className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-full transition-colors"
             >
               <Info className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Boutons RPE */}
-          <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="flex justify-center gap-2">
             {RPE_SCALE.map((rpe) => (
               <button
                 key={rpe.value}
-                type="button"
                 onClick={() => setSelectedRpe(rpe.value)}
                 className={`
-                  w-10 h-10 rounded-xl font-bold text-lg transition-all duration-200
+                  w-9 h-9 rounded-lg font-bold transition-all duration-200
                   ${selectedRpe === rpe.value
                     ? `${rpe.color} text-white shadow-lg scale-110 ring-2 ring-white/30`
                     : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
@@ -326,7 +275,6 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
             ))}
           </div>
 
-          {/* Description du RPE sélectionné */}
           {selectedRpe && (
             <div className={`text-center p-3 rounded-xl ${getRpeBgColor(selectedRpe)} animate-fade-in`}>
               <span className={`font-semibold ${getRpeColor(selectedRpe)}`}>
@@ -339,7 +287,6 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
           )}
         </div>
 
-        {/* Actions */}
         <div className="p-6 pt-0 space-y-3">
           <button
             onClick={handleSubmit}
@@ -364,7 +311,6 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
         </div>
       </div>
 
-      {/* Modal Info RPE */}
       {showInfo && (
         <RpeInfoModal onClose={() => setShowInfo(false)} />
       )}

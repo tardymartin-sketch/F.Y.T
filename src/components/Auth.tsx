@@ -1,3 +1,9 @@
+// ============================================================
+// F.Y.T - AUTH COMPONENT
+// src/components/Auth.tsx
+// Authentification (Login / Register)
+// ============================================================
+
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { Mail, Lock, User, Dumbbell, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
@@ -172,29 +178,23 @@ export const Auth: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-slate-800">
-            <button 
+          <div className="mt-6 text-center">
+            <button
               onClick={() => {
                 setIsRegistering(!isRegistering);
                 setError(null);
               }}
-              className="w-full text-slate-400 hover:text-white text-sm transition-colors py-2"
+              className="text-slate-400 hover:text-white transition-colors"
             >
               {isRegistering ? (
-                <>Déjà un compte ? <span className="text-blue-400 font-medium">Connectez-vous</span></>
+                <>Déjà un compte ? <span className="text-blue-400 font-medium">Se connecter</span></>
               ) : (
-                <>Pas encore de compte ? <span className="text-blue-400 font-medium">Inscrivez-vous</span></>
+                <>Pas de compte ? <span className="text-blue-400 font-medium">S'inscrire</span></>
               )}
             </button>
           </div>
         </div>
-
-        {/* Footer */}
-        <p className="text-center text-slate-600 text-sm mt-8">
-          © 2024 F.Y.T — Votre coach numérique
-        </p>
       </div>
     </div>
   );
 };
-

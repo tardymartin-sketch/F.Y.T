@@ -1,7 +1,7 @@
 // ============================================================
-// F.Y.T - TEAM VIEW (VERSION AVEC RPE)
+// F.Y.T - TEAM VIEW (Version avec noms de groupes affichés)
 // src/components/TeamView.tsx
-// Vue équipe avec affichage des RPE dans l'historique athlète
+// Affiche les noms des groupes dans les encarts week organizer
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -83,6 +83,7 @@ export const TeamView: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [isAthleteListHovered, setIsAthleteListHovered] = useState(false);
 
   // Feedbacks state
   const [comments, setComments] = useState<AthleteComment[]>([]);
@@ -275,7 +276,7 @@ export const TeamView: React.FC<Props> = ({
     );
   });
 
-  // ← NOUVEAU: Stats avec RPE moyen
+  // Stats avec RPE moyen
   const getAthleteStats = (history: SessionLog[]) => {
     const now = new Date();
     const thisMonth = history.filter(h => {
@@ -294,681 +295,674 @@ export const TeamView: React.FC<Props> = ({
     const recentSessions = history.filter(h => new Date(h.date) >= thirtyDaysAgo);
     const sessionsWithRpe = recentSessions.filter(h => h.sessionRpe !== undefined);
     const avgRpe = sessionsWithRpe.length > 0
-      ? Math.round((sessionsWithRpe.reduce((acc, h) => acc + (h.sessionRpe || 0), 0) / sessionsWithRpe.length) * 10) / 10
+      ? Math.round(sessionsWithRpe.reduce((acc, h) => acc + (h.sessionRpe || 0), 0) / sessionsWithRpe.length * 10) / 10
       : null;
-    
+
     return {
-      totalSessions: history.length,
-      monthSessions: thisMonth.length,
+      totalThisMonth: thisMonth.length,
       daysSinceLastSession,
-      avgRpe
+      avgRpe,
     };
   };
 
-  const unreadCount = comments.filter(c => !c.isRead).length;
+  // MODIFIÉ: Helper pour obtenir les noms des groupes à partir des IDs
+  const getGroupNames = (groupIds: string[] | undefined): string => {
+    if (!groupIds || groupIds.length === 0) return 'Tous';
+    
+    const groupNames = groupIds
+      .map(id => groups.find(g => g.id === id)?.name)
+      .filter(Boolean);
+    
+    if (groupNames.length === 0) return 'Groupes inconnus';
+    if (groupNames.length <= 3) return groupNames.join(', ');
+    return `${groupNames.slice(0, 3).join(', ')} +${groupNames.length - 3}`;
+  };
 
-  const getVisibilityLabel = (log: WeekOrganizerLog): string => {
-    if (!log.visibilityType || log.visibilityType === 'all') return 'Tous les athlètes';
-    if (log.visibilityType === 'groups') {
-      const count = log.visibleToGroupIds?.length || 0;
-      return `${count} groupe${count > 1 ? 's' : ''}`;
+  // Helper pour obtenir le texte de visibilité
+  const getVisibilityText = (log: WeekOrganizerLog): string => {
+    if (!log.visibilityType || log.visibilityType === 'all') {
+      return 'Tous les athlètes';
     }
+    
+    if (log.visibilityType === 'groups') {
+      return getGroupNames(log.visibleToGroupIds);
+    }
+    
     if (log.visibilityType === 'athletes') {
       const count = log.visibleToAthleteIds?.length || 0;
       return `${count} athlète${count > 1 ? 's' : ''}`;
     }
-    return '';
+    
+    return 'Tous';
   };
 
-  // =============================================
-  // ATHLETE DETAIL VIEW (avec RPE)
-  // =============================================
-  if (selectedAthlete) {
-    const stats = getAthleteStats(athleteHistory);
+  // Tabs component
+  const renderTabs = () => (
+    <div className="flex gap-1 p-1 bg-slate-800/50 rounded-xl mb-6">
+      {[
+        { id: 'team', label: 'Équipe', icon: Users },
+        { id: 'feedbacks', label: 'Feedbacks', icon: MessageSquare },
+        { id: 'organizer', label: 'Week Organizer', icon: Calendar },
+        { id: 'groups', label: 'Groupes', icon: Layers },
+      ].map(tab => {
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as TabType)}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === tab.id
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // Week Organizer Tab
+  const renderOrganizerTab = () => (
+    <div className="space-y-6">
+      {/* Add new message button */}
+      <button
+        onClick={() => setShowOrganizerForm(true)}
+        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-semibold transition-colors"
+      >
+        <Plus className="w-5 h-5" />
+        Nouveau message
+      </button>
+
+      {/* Form modal */}
+      {showOrganizerForm && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-white">Nouveau message</h3>
+              <button
+                onClick={() => setShowOrganizerForm(false)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-2">Titre</label>
+                <input
+                  type="text"
+                  value={organizerForm.title}
+                  onChange={(e) => setOrganizerForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ex: Semaine de récupération"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Date début</label>
+                  <input
+                    type="date"
+                    value={organizerForm.startDate}
+                    onChange={(e) => setOrganizerForm(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Date fin</label>
+                  <input
+                    type="date"
+                    value={organizerForm.endDate}
+                    onChange={(e) => setOrganizerForm(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Visibility Selector */}
+              <VisibilitySelector
+                visibilityType={organizerForm.visibilityType}
+                selectedGroupIds={organizerForm.visibleToGroupIds}
+                selectedAthleteIds={organizerForm.visibleToAthleteIds}
+                availableGroups={groups}
+                availableAthletes={athletes}
+                onChange={(visibilityType, groupIds, athleteIds) => {
+                  setOrganizerForm(prev => ({
+                    ...prev,
+                    visibilityType,
+                    visibleToGroupIds: groupIds,
+                    visibleToAthleteIds: athleteIds,
+                  }));
+                }}
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-2">Message</label>
+                <RichTextEditor
+                  content={organizerForm.message}
+                  onChange={(html) => setOrganizerForm(prev => ({ ...prev, message: html }))}
+                  placeholder="Écrivez votre message pour la semaine..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowOrganizerForm(false)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSaveOrganizer}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  Publier
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Messages list */}
+      <div className="space-y-4">
+        {organizerLogs.length === 0 ? (
+          <div className="text-center py-12">
+            <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">Aucun message programmé</p>
+          </div>
+        ) : (
+          organizerLogs.map(log => {
+            const isActive = new Date(log.startDate) <= new Date() && new Date(log.endDate) >= new Date();
+            const isPast = new Date(log.endDate) < new Date();
+            
+            return (
+              <div
+                key={log.id}
+                className={`bg-slate-800/50 border rounded-xl p-4 ${
+                  isActive ? 'border-blue-500/50' : isPast ? 'border-slate-700 opacity-60' : 'border-slate-700'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-semibold text-white">{log.title}</h4>
+                      {isActive && (
+                        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">
+                          Actif
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mb-2">
+                      {new Date(log.startDate).toLocaleDateString('fr-FR')} - {new Date(log.endDate).toLocaleDateString('fr-FR')}
+                    </p>
+                    {/* MODIFIÉ: Afficher les noms des groupes */}
+                    <p className="text-xs text-slate-500 mb-3 flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {getVisibilityText(log)}
+                    </p>
+                    <div 
+                      className="text-sm text-slate-300 prose prose-invert prose-sm max-w-none line-clamp-3"
+                      dangerouslySetInnerHTML={{ __html: log.message }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleDeleteOrganizer(log.id)}
+                    className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
+  // Team Tab avec liste d'athlètes collapsible
+  const renderTeamTab = () => {
+    // Détermine si la liste doit être réduite (athlète sélectionné et pas de survol)
+    const isCollapsed = selectedAthlete !== null && !isAthleteListHovered;
     
     return (
-      <div className="space-y-6 animate-fade-in">
-        <button 
-          onClick={() => setSelectedAthlete(null)}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+      <div className="flex gap-6">
+        {/* Athletes list - Collapsible */}
+        <div 
+          className={`transition-all duration-300 ease-in-out flex-shrink-0 ${
+            isCollapsed ? 'w-16' : 'w-72'
+          }`}
         >
-          <ChevronLeft className="w-5 h-5" />
-          <span>Retour à l'équipe</span>
-        </button>
+          <div className="space-y-4 sticky top-4">
+            {/* Barre de recherche - visible seulement quand étendu */}
+            <div className={`transition-all duration-300 overflow-hidden ${
+              isCollapsed ? 'h-0 opacity-0' : 'h-auto opacity-100'
+            }`}>
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Rechercher..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
-              {selectedAthlete.firstName?.[0]}{selectedAthlete.lastName?.[0]}
+            {/* Liste des athlètes - hover uniquement ici */}
+            <div 
+              className={`space-y-2 max-h-[70vh] overflow-y-auto ${
+                isCollapsed ? 'overflow-x-hidden' : ''
+              }`}
+              onMouseEnter={() => setIsAthleteListHovered(true)}
+              onMouseLeave={() => setIsAthleteListHovered(false)}
+            >
+              {filteredAthletes.map(athlete => (
+                <button
+                  key={athlete.id}
+                  onClick={() => handleSelectAthlete(athlete)}
+                  className={`w-full flex items-center gap-3 rounded-xl transition-all ${
+                    isCollapsed ? 'p-1.5 justify-center' : 'p-3'
+                  } ${
+                    selectedAthlete?.id === athlete.id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300'
+                  }`}
+                  title={isCollapsed ? `${athlete.firstName} ${athlete.lastName}` : undefined}
+                >
+                  {/* Badge avec initiales - toujours visible */}
+                  <div className={`flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm ${
+                    isCollapsed ? 'w-11 h-11' : 'w-10 h-10'
+                  } ${
+                    selectedAthlete?.id === athlete.id
+                      ? 'bg-white/20'
+                      : 'bg-gradient-to-br from-blue-500 to-emerald-500 text-white'
+                  }`}>
+                    {athlete.firstName?.[0]}{athlete.lastName?.[0] || athlete.username[0]}
+                  </div>
+                  
+                  {/* Nom et username - visible seulement quand étendu */}
+                  <div className={`flex-1 text-left min-w-0 transition-all duration-300 ${
+                    isCollapsed ? 'w-0 opacity-0 hidden' : 'opacity-100'
+                  }`}>
+                    <p className="font-medium truncate">
+                      {athlete.firstName} {athlete.lastName}
+                    </p>
+                    <p className={`text-xs truncate ${
+                      selectedAthlete?.id === athlete.id ? 'text-blue-200' : 'text-slate-500'
+                    }`}>
+                      @{athlete.username}
+                    </p>
+                  </div>
+                  
+                  {/* Chevron - visible seulement quand étendu */}
+                  {!isCollapsed && (
+                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  )}
+                </button>
+              ))}
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">
-                {selectedAthlete.firstName} {selectedAthlete.lastName}
-              </h1>
-              <p className="text-slate-400">@{selectedAthlete.username}</p>
-            </div>
+            
+            {/* Indicateur de survol quand collapsé */}
+            {isCollapsed && (
+              <div className="text-center mt-2">
+                <ChevronRight className="w-4 h-4 text-slate-500 mx-auto animate-pulse" />
+              </div>
+            )}
           </div>
-
-          {/* ← MODIFIÉ: Grille 4 colonnes avec RPE */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-white">{stats.totalSessions}</p>
-              <p className="text-sm text-slate-400">Séances totales</p>
-            </div>
-            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-emerald-400">{stats.monthSessions}</p>
-              <p className="text-sm text-slate-400">Ce mois</p>
-            </div>
-            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-blue-400">
-                {stats.daysSinceLastSession !== null ? `${stats.daysSinceLastSession}j` : '—'}
-              </p>
-              <p className="text-sm text-slate-400">Dernière séance</p>
-            </div>
-            {/* ← NOUVEAU: RPE Moyen */}
-            <div className="bg-slate-800/50 rounded-xl p-4 text-center">
-              {stats.avgRpe !== null ? (
-                <>
-                  <p className={`text-3xl font-bold ${getRpeColor(Math.round(stats.avgRpe))}`}>
-                    {stats.avgRpe}
-                  </p>
-                  <p className="text-sm text-slate-400">RPE moy. 30j</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-3xl font-bold text-slate-600">—</p>
-                  <p className="text-sm text-slate-400">RPE moy. 30j</p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ← NOUVEAU: Alerte si RPE élevé */}
-          {stats.avgRpe !== null && stats.avgRpe >= 8 && (
-            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
-              <Gauge className="w-5 h-5 text-red-400" />
-              <p className="text-sm text-red-400">
-                ⚠️ RPE moyen élevé ({stats.avgRpe}/10) - Surveiller les signes de surmenage
-              </p>
-            </div>
-          )}
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl">
-          <div className="p-6 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-white">Historique des séances</h2>
+        {/* Athlete details - prend l'espace restant */}
+        <div className="flex-1 min-w-0">
+        {!selectedAthlete ? (
+          <div className="bg-slate-800/30 border border-dashed border-slate-700 rounded-2xl p-12 text-center">
+            <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">Sélectionnez un athlète pour voir son historique</p>
           </div>
-          
-          {loading ? (
-            <div className="p-12 text-center text-slate-500">Chargement...</div>
-          ) : athleteHistory.length === 0 ? (
-            <div className="p-12 text-center">
-              <Dumbbell className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500">Aucune séance enregistrée</p>
+        ) : loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Athlete header */}
+            <div className="bg-slate-800/50 rounded-xl p-4 flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-xl">
+                {selectedAthlete.firstName?.[0]}{selectedAthlete.lastName?.[0]}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">
+                  {selectedAthlete.firstName} {selectedAthlete.lastName}
+                </h3>
+                <p className="text-slate-400">@{selectedAthlete.username}</p>
+              </div>
             </div>
-          ) : (
-            <div className="divide-y divide-slate-800">
-              {athleteHistory.slice(0, 10).map((log) => {
-                // Affichage spécial pour les sessions Strava
-                if (isStravaSession(log) && selectedAthlete) {
-                  return (
-                    <StravaHistoryCard
-                      key={log.id}
-                      log={log}
-                      onDelete={() => {}}
-                      userId={selectedAthlete.id}
-                      readOnly={true}
-                    />
-                  );
-                }
 
-                const date = new Date(log.date);
-                const isExpanded = expandedSessionId === log.id;
-                const totalSets = log.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
-                const completedSets = log.exercises.reduce((acc, ex) => 
-                  acc + ex.sets.filter(s => s.completed).length, 0
-                );
-                const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
+            {/* Stats */}
+            {(() => {
+              const stats = getAthleteStats(athleteHistory);
+              return (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-white">{stats.totalThisMonth}</p>
+                    <p className="text-xs text-slate-400">Ce mois</p>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-white">
+                      {stats.daysSinceLastSession !== null ? `${stats.daysSinceLastSession}j` : '-'}
+                    </p>
+                    <p className="text-xs text-slate-400">Dernière séance</p>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                    {stats.avgRpe !== null ? (
+                      <>
+                        <p className={`text-2xl font-bold ${getRpeColor(stats.avgRpe)}`}>
+                          {stats.avgRpe}
+                        </p>
+                        <p className="text-xs text-slate-400">RPE moyen</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-slate-500">-</p>
+                        <p className="text-xs text-slate-400">RPE moyen</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
-                return (
-                  <div key={log.id} className="overflow-hidden">
-                    {/* Header cliquable */}
-                    <button
-                      onClick={() => setExpandedSessionId(isExpanded ? null : log.id)}
-                      className="w-full p-4 hover:bg-slate-800/50 transition-colors text-left"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-slate-800 rounded-xl flex flex-col items-center justify-center">
-                            <span className="text-xs text-slate-500">
-                              {date.toLocaleDateString('fr-FR', { month: 'short' })}
-                            </span>
-                            <span className="text-lg font-bold text-white">{date.getDate()}</span>
-                          </div>
-                          <div>
-                            {/* ← MODIFIÉ: Ajout du badge RPE */}
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-white">Session {log.sessionKey.seance}</p>
-                              {log.sessionRpe && (
-                                <RpeBadge rpe={log.sessionRpe} size="sm" showLabel={false} />
-                              )}
+            {/* History */}
+            <div className="space-y-3">
+              <h4 className="font-semibold text-white flex items-center gap-2">
+                <Dumbbell className="w-5 h-5 text-blue-400" />
+                Historique des séances
+              </h4>
+              
+              {athleteHistory.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">Aucune séance enregistrée</p>
+              ) : (
+                <div className="space-y-3">
+                  {athleteHistory.map(session => {
+                    const isStrava = isStravaSession(session);
+                    
+                    // Pour les sessions Strava, utiliser directement StravaHistoryCard
+                    if (isStrava && selectedAthlete) {
+                      return (
+                        <StravaHistoryCard
+                          key={session.id}
+                          log={session}
+                          onDelete={() => {}}
+                          userId={selectedAthlete.id}
+                          readOnly={true}
+                        />
+                      );
+                    }
+                    
+                    // Pour les sessions normales, même format que History.tsx
+                    const isExpanded = expandedSessionId === session.id;
+                    const date = new Date(session.date);
+                    const totalSets = session.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+                    const completedSets = session.exercises.reduce((acc, ex) => 
+                      acc + ex.sets.filter(s => s.completed).length, 0
+                    );
+                    
+                    return (
+                      <div 
+                        key={session.id} 
+                        className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden"
+                      >
+                        {/* Header */}
+                        <button
+                          onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="text-center min-w-[50px]">
+                              <span className="block text-2xl font-bold text-white">{date.getDate()}</span>
+                              <span className="text-xs text-slate-400 uppercase">
+                                {date.toLocaleDateString('fr-FR', { month: 'short' })}
+                              </span>
                             </div>
-                            <p className="text-sm text-slate-400">
-                              {log.exercises.length} exercices
-                              {log.durationMinutes && ` • ${log.durationMinutes} min`}
-                              {` • ${completedSets}/${totalSets} séries`}
-                            </p>
-                            {/* Barre de progression */}
-                            <div className="mt-2 w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 rounded-full transition-all"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        {isExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-slate-400" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-slate-600" />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Contenu expansé - Détails des exercices */}
-                    {isExpanded && (
-                      <div className="px-4 pb-4 space-y-3 border-t border-slate-800 bg-slate-800/30">
-                        <div className="pt-4">
-                          {/* ← NOUVEAU: Affichage RPE global de la séance */}
-                          {log.sessionRpe && (
-                            <div className={`mb-4 p-3 rounded-xl ${getRpeBgColor(log.sessionRpe)} flex items-center justify-between`}>
-                              <div className="flex items-center gap-2">
-                                <Gauge className={`w-5 h-5 ${getRpeColor(log.sessionRpe)}`} />
-                                <span className="text-sm font-medium text-slate-300">RPE de la séance</span>
-                              </div>
-                              <RpeBadge rpe={log.sessionRpe} size="md" />
-                            </div>
-                          )}
-
-                          {log.exercises.map((exercise, exIdx) => {
-                            const exerciseCompleted = exercise.sets.filter(s => s.completed).length;
-                            const exerciseTotal = exercise.sets.length;
                             
-                            return (
-                              <div 
-                                key={exIdx} 
-                                className="bg-slate-900 border border-slate-700 rounded-xl p-4 mb-3 last:mb-0"
-                              >
-                                {/* Nom de l'exercice avec RPE */}
-                                <div className="flex items-center justify-between mb-3">
-                                  <h4 className="font-medium text-white">{exercise.exerciseName}</h4>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold text-white">
+                                  Séance {session.sessionKey.seance}
+                                </h3>
+                                {session.sessionRpe && (
+                                  <RpeBadge rpe={session.sessionRpe} size="sm" showLabel={false} />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
+                                <span>{session.exercises.length} exercices</span>
+                                <span>•</span>
+                                <span>{completedSets}/{totalSets} séries</span>
+                                {session.durationMinutes && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{session.durationMinutes} min</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                          )}
+                        </button>
+
+                        {/* Contenu expandé */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 space-y-3 border-t border-slate-800">
+                            {/* RPE global si présent */}
+                            {session.sessionRpe && (
+                              <div className={`mt-4 p-3 rounded-xl ${getRpeBgColor(session.sessionRpe)} flex items-center justify-between`}>
+                                <div className="flex items-center gap-2">
+                                  <Gauge className={`w-5 h-5 ${getRpeColor(session.sessionRpe)}`} />
+                                  <span className="text-sm font-medium text-slate-300">RPE de la séance</span>
+                                </div>
+                                <RpeBadge rpe={session.sessionRpe} size="md" />
+                              </div>
+                            )}
+
+                            {session.exercises.map((ex, exIdx) => (
+                              <div key={exIdx} className="bg-slate-800/50 rounded-lg p-3 mt-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-white">{ex.exerciseName}</span>
                                   <div className="flex items-center gap-2">
-                                    {/* ← NOUVEAU: Badge RPE de l'exercice */}
-                                    {exercise.rpe && (
-                                      <RpeBadge rpe={exercise.rpe} size="sm" showLabel={false} />
+                                    {ex.rpe && (
+                                      <RpeBadge rpe={ex.rpe} size="sm" showLabel={false} />
                                     )}
-                                    <span className={`text-xs px-2 py-1 rounded-full ${
-                                      exerciseCompleted === exerciseTotal 
-                                        ? 'bg-emerald-500/20 text-emerald-400' 
-                                        : 'bg-slate-700 text-slate-400'
-                                    }`}>
-                                      {exerciseCompleted}/{exerciseTotal} séries
+                                    <span className="text-xs text-slate-500">
+                                      {ex.sets.filter(s => s.completed).length}/{ex.sets.length} séries
                                     </span>
                                   </div>
                                 </div>
-
-                                {/* Tableau des séries */}
-                                <div className="space-y-2">
-                                  {/* Header du tableau */}
-                                  <div className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-500 uppercase tracking-wider px-2">
-                                    <div>Série</div>
-                                    <div>Reps</div>
-                                    <div>Poids</div>
-                                    <div className="text-center">✓</div>
-                                  </div>
-
-                                  {/* Lignes des séries */}
-                                  {exercise.sets.map((set, setIdx) => (
-                                    <div 
-                                      key={setIdx}
-                                      className={`grid grid-cols-4 gap-2 items-center p-2 rounded-lg ${
-                                        set.completed 
-                                          ? 'bg-emerald-500/10' 
-                                          : 'bg-slate-800/50'
-                                      }`}
-                                    >
-                                      <span className="text-sm text-slate-400">#{set.setNumber}</span>
-                                      <span className="text-sm text-white font-medium">{set.reps || '—'}</span>
-                                      <span className="text-sm text-white">{set.weight ? `${set.weight}kg` : '—'}</span>
-                                      <div className="flex justify-center">
-                                        {set.completed ? (
-                                          <Check className="w-4 h-4 text-emerald-400" />
-                                        ) : (
-                                          <span className="w-4 h-4 rounded-full border border-slate-600" />
-                                        )}
-                                      </div>
-                                    </div>
+                                
+                                <div className="grid grid-cols-3 gap-2 text-xs text-slate-400">
+                                  <span className="font-medium">Série</span>
+                                  <span className="font-medium">Reps</span>
+                                  <span className="font-medium">Poids</span>
+                                  
+                                  {ex.sets.map((set, setIdx) => (
+                                    <React.Fragment key={setIdx}>
+                                      <span className={set.completed ? 'text-emerald-400' : ''}>
+                                        #{set.setNumber}
+                                      </span>
+                                      <span className="text-white">{set.reps || '—'}</span>
+                                      <span className="text-white">{set.weight ? `${set.weight} kg` : '—'}</span>
+                                    </React.Fragment>
                                   ))}
                                 </div>
 
-                                {/* Notes de l'exercice */}
-                                {exercise.notes && (
-                                  <p className="mt-3 text-sm text-slate-400 italic border-t border-slate-800 pt-3">
-                                    {exercise.notes}
-                                  </p>
+                                {ex.notes && (
+                                  <p className="mt-2 text-xs text-slate-500 italic">{ex.notes}</p>
                                 )}
                               </div>
-                            );
-                          })}
+                            ))}
 
-                          {/* Commentaires de la séance */}
-                          {log.comments && (
-                            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mt-3">
-                              <p className="text-sm text-yellow-200/80">{log.comments}</p>
-                            </div>
-                          )}
-                        </div>
+                            {session.comments && (
+                              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mt-3">
+                                <p className="text-sm text-yellow-200/80">{session.comments}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+    );
+  };
+
+  // Feedbacks Tab
+  const renderFeedbacksTab = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => {
+              setShowAllComments(!showAllComments);
+              setTimeout(loadComments, 0);
+            }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showAllComments
+                ? 'bg-slate-700 text-white'
+                : 'bg-blue-600 text-white'
+            }`}
+          >
+            {showAllComments ? 'Tous' : 'Non lus'}
+          </button>
+        </div>
+        
+        {selectedComments.size > 0 && (
+          <button
+            onClick={handleMarkAsRead}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <CheckCheck className="w-4 h-4" />
+            Marquer comme lu ({selectedComments.size})
+          </button>
+        )}
+      </div>
+
+      {commentsLoading ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+        </div>
+      ) : comments.length === 0 ? (
+        <div className="text-center py-12">
+          <MessageSquare className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+          <p className="text-slate-400">
+            {showAllComments ? 'Aucun commentaire' : 'Aucun commentaire non lu'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {comments.map(comment => (
+            <div
+              key={comment.id}
+              className={`bg-slate-800/50 border rounded-xl p-4 transition-all ${
+                selectedComments.has(comment.id)
+                  ? 'border-blue-500 bg-blue-500/10'
+                  : comment.isRead
+                    ? 'border-slate-700 opacity-60'
+                    : 'border-slate-700'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <button
+                  onClick={() => {
+                    setSelectedComments(prev => {
+                      const next = new Set(prev);
+                      if (next.has(comment.id)) {
+                        next.delete(comment.id);
+                      } else {
+                        next.add(comment.id);
+                      }
+                      return next;
+                    });
+                  }}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0 mt-1 ${
+                    selectedComments.has(comment.id)
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'border-slate-600 hover:border-blue-500'
+                  }`}
+                >
+                  {selectedComments.has(comment.id) && (
+                    <Check className="w-3 h-3 text-white" />
+                  )}
+                </button>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-white">
+                      {comment.firstName} {comment.lastName}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {new Date(comment.createdAt).toLocaleDateString('fr-FR')}
+                    </span>
+                    {!comment.isRead && (
+                      <span className="w-2 h-2 bg-blue-500 rounded-full" />
                     )}
                   </div>
-                );
-              })}
+                  <p className="text-xs text-slate-400 mb-2">
+                    {comment.sessionName} • {comment.exerciseName}
+                  </p>
+                  <p className="text-sm text-slate-300">{comment.comment}</p>
+                </div>
+              </div>
             </div>
-          )}
+          ))}
         </div>
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
 
-  // =============================================
-  // MAIN TABS VIEW
-  // =============================================
+  // Groups Tab
+  const renderGroupsTab = () => (
+    <AthleteGroupsManager
+      coachId={coachId}
+      athletes={athletes}
+      groups={groups}
+      onCreateGroup={handleCreateGroup}
+      onUpdateGroup={handleUpdateGroup}
+      onDeleteGroup={handleDeleteGroup}
+      onUpdateMembers={handleUpdateMembers}
+      onLoadGroupMembers={handleLoadGroupMembers}
+    />
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold text-white">Mon Équipe</h1>
-        <p className="text-slate-400 mt-1">{athletes.length} athlètes</p>
+        <p className="text-slate-400 mt-1">Gérez vos athlètes et leurs entraînements</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('team')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-            activeTab === 'team' 
-              ? 'bg-blue-600 text-white' 
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Users className="w-4 h-4 inline mr-2" />
-          Équipe
-        </button>
-        
-        {fetchTeamComments && (
-          <button
-            onClick={() => { setActiveTab('feedbacks'); loadComments(); }}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap relative ${
-              activeTab === 'feedbacks' 
-                ? 'bg-blue-600 text-white' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 inline mr-2" />
-            Feedbacks
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        )}
-        
-        {fetchWeekOrganizerLogs && (
-          <button
-            onClick={() => setActiveTab('organizer')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-              activeTab === 'organizer' 
-                ? 'bg-blue-600 text-white' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Calendar className="w-4 h-4 inline mr-2" />
-            Week Organizer
-          </button>
-        )}
-        
-        {fetchAthleteGroups && (
-          <button
-            onClick={() => setActiveTab('groups')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-              activeTab === 'groups' 
-                ? 'bg-blue-600 text-white' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Layers className="w-4 h-4 inline mr-2" />
-            Groupes
-          </button>
-        )}
-      </div>
+      {renderTabs()}
 
-      {/* Tab Content: Team */}
-      {activeTab === 'team' && (
-        <div className="space-y-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Rechercher un athlète..."
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-            />
-          </div>
-
-          {/* Athletes Grid */}
-          {loading ? (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center">
-              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-              <p className="text-slate-400">Chargement de l'équipe...</p>
-            </div>
-          ) : filteredAthletes.length === 0 ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
-              <Users className="w-16 h-16 text-slate-700 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-slate-400 mb-2">
-                {searchTerm ? "Aucun résultat" : "Aucun athlète"}
-              </h3>
-              <p className="text-slate-500 text-sm">
-                {searchTerm 
-                  ? "Essayez une autre recherche" 
-                  : "Invitez des athlètes à rejoindre votre équipe"
-                }
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredAthletes.map((athlete) => (
-                <button
-                  key={athlete.id}
-                  onClick={() => handleSelectAthlete(athlete)}
-                  className="bg-slate-900 border border-slate-800 hover:border-blue-500/50 rounded-2xl p-5 text-left transition-all duration-200 group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-blue-500/20 to-emerald-500/20 group-hover:from-blue-500/30 group-hover:to-emerald-500/30 rounded-xl flex items-center justify-center text-blue-400 font-bold text-lg transition-colors">
-                      {athlete.firstName?.[0]}{athlete.lastName?.[0]}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-white truncate">
-                        {athlete.firstName} {athlete.lastName}
-                      </h3>
-                      <p className="text-sm text-slate-400 truncate">@{athlete.username}</p>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-blue-400 transition-colors" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab Content: Feedbacks */}
-      {activeTab === 'feedbacks' && fetchTeamComments && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => { setShowAllComments(!showAllComments); loadComments(); }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  showAllComments 
-                    ? 'bg-slate-700 text-white' 
-                    : 'bg-blue-500/20 text-blue-400'
-                }`}
-              >
-                {showAllComments ? 'Tous' : 'Non lus uniquement'}
-              </button>
-              {unreadCount > 0 && (
-                <span className="text-sm text-slate-400">{unreadCount} non lu{unreadCount > 1 ? 's' : ''}</span>
-              )}
-            </div>
-            
-            {selectedComments.size > 0 && markCommentsAsRead && (
-              <button
-                onClick={handleMarkAsRead}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
-              >
-                <CheckCheck className="w-4 h-4" />
-                Marquer comme lu ({selectedComments.size})
-              </button>
-            )}
-          </div>
-
-          {commentsLoading ? (
-            <div className="text-center py-12 text-slate-500">Chargement...</div>
-          ) : comments.length === 0 ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
-              <MessageSquare className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500">Aucun feedback</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {comments.map((comment) => (
-                <div 
-                  key={comment.id}
-                  className={`bg-slate-900 border rounded-xl p-4 transition-colors ${
-                    comment.isRead ? 'border-slate-800' : 'border-blue-500/50 bg-blue-500/5'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedComments.has(comment.id)}
-                      onChange={(e) => {
-                        const newSet = new Set(selectedComments);
-                        if (e.target.checked) {
-                          newSet.add(comment.id);
-                        } else {
-                          newSet.delete(comment.id);
-                        }
-                        setSelectedComments(newSet);
-                      }}
-                      className="mt-1 w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-white">
-                          {comment.firstName} {comment.lastName}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          {new Date(comment.createdAt).toLocaleDateString('fr-FR')}
-                        </span>
-                        {!comment.isRead && (
-                          <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">Nouveau</span>
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-400 mb-2">
-                        Exercice: <span className="text-white">{comment.exerciseName}</span>
-                        {comment.sessionName && (
-                          <> • Session: <span className="text-white">{comment.sessionName}</span></>
-                        )}
-                      </p>
-                      <p className="text-slate-300">{comment.comment}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab Content: Week Organizer */}
-      {activeTab === 'organizer' && fetchWeekOrganizerLogs && (
-        <div className="space-y-4">
-          {!showOrganizerForm ? (
-            <button
-              onClick={() => setShowOrganizerForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Nouveau message
-            </button>
-          ) : (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-white">Nouveau message</h3>
-                <button
-                  onClick={() => setShowOrganizerForm(false)}
-                  className="p-2 text-slate-400 hover:text-white rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={organizerForm.title}
-                  onChange={(e) => setOrganizerForm({ ...organizerForm, title: e.target.value })}
-                  placeholder="Titre du message"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder:text-slate-500"
-                />
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Date début</label>
-                    <input
-                      type="date"
-                      value={organizerForm.startDate}
-                      onChange={(e) => setOrganizerForm({ ...organizerForm, startDate: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Date fin</label>
-                    <input
-                      type="date"
-                      value={organizerForm.endDate}
-                      onChange={(e) => setOrganizerForm({ ...organizerForm, endDate: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white"
-                    />
-                  </div>
-                </div>
-
-                <VisibilitySelector
-                  visibilityType={organizerForm.visibilityType}
-                  selectedGroupIds={organizerForm.visibleToGroupIds}
-                  selectedAthleteIds={organizerForm.visibleToAthleteIds}
-                  groups={groups}
-                  athletes={athletes}
-                  onChange={(type, groupIds, athleteIds) => setOrganizerForm({
-                    ...organizerForm,
-                    visibilityType: type,
-                    visibleToGroupIds: groupIds,
-                    visibleToAthleteIds: athleteIds,
-                  })}
-                />
-
-                <RichTextEditor
-                  value={organizerForm.message}
-                  onChange={(html) => setOrganizerForm({ ...organizerForm, message: html })}
-                  placeholder="Rédigez votre message..."
-                />
-
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => setShowOrganizerForm(false)}
-                    className="px-4 py-2 text-slate-400 hover:text-white"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    onClick={handleSaveOrganizer}
-                    className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-medium"
-                  >
-                    <Send className="w-4 h-4" />
-                    Publier
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Liste des messages */}
-          {organizerLogs.length === 0 ? (
-            <div className="bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
-              <Calendar className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500">Aucun message publié</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {organizerLogs.map((log) => {
-                const today = new Date().toISOString().split('T')[0];
-                const isActive = log.startDate <= today && log.endDate >= today;
-
-                return (
-                  <div
-                    key={log.id}
-                    className={`bg-slate-900 border rounded-2xl overflow-hidden ${
-                      isActive ? 'border-emerald-500/50' : 'border-slate-800'
-                    }`}
-                  >
-                    <div className="p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-bold text-white">{log.title}</h3>
-                            {isActive && (
-                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded-full">
-                                Actif
-                              </span>
-                            )}
-                            <span className="px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded-full">
-                              {getVisibilityLabel(log)}
-                            </span>
-                          </div>
-                          <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
-                            <Clock className="w-3 h-3" />
-                            {new Date(log.startDate).toLocaleDateString('fr-FR')} — {new Date(log.endDate).toLocaleDateString('fr-FR')}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteOrganizer(log.id)}
-                          className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      
-                      <div 
-                        className="text-slate-300 rich-text-display"
-                        dangerouslySetInnerHTML={{ __html: log.message }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab Content: Groups */}
-      {activeTab === 'groups' && fetchAthleteGroups && (
-        <AthleteGroupsManager
-          coachId={coachId}
-          athletes={athletes}
-          groups={groups}
-          onCreateGroup={handleCreateGroup}
-          onUpdateGroup={handleUpdateGroup}
-          onDeleteGroup={handleDeleteGroup}
-          onUpdateMembers={handleUpdateMembers}
-          onLoadGroupMembers={handleLoadGroupMembers}
-        />
-      )}
+      {activeTab === 'team' && renderTeamTab()}
+      {activeTab === 'feedbacks' && renderFeedbacksTab()}
+      {activeTab === 'organizer' && renderOrganizerTab()}
+      {activeTab === 'groups' && renderGroupsTab()}
     </div>
   );
 };
-
-export default TeamView;

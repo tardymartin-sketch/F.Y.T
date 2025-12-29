@@ -128,13 +128,6 @@ export const SessionSelector: React.FC<Props> = ({ data, filters, onChange }) =>
     onChange({ ...filters, selectedSeances: [] });
   };
 
-  // Obtenir le nom court du mois
-  const getShortMonthName = (monthNum: string): string => {
-    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-    const idx = parseInt(monthNum) - 1;
-    return monthNames[idx] || monthNum;
-  };
-
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Filtres principaux - 3 en ligne */}
@@ -168,7 +161,6 @@ export const SessionSelector: React.FC<Props> = ({ data, filters, onChange }) =>
               <option value="">—</option>
               {months.map(([num, name]) => (
                 <option key={num} value={num}>
-                  {/* Afficher le nom court sur mobile via le nom complet */}
                   {name || `Mois ${num}`}
                 </option>
               ))}
@@ -246,35 +238,21 @@ export const SessionSelector: React.FC<Props> = ({ data, filters, onChange }) =>
                   className={`
                     relative px-3 md:px-5 py-2 md:py-3 rounded-lg md:rounded-xl font-medium text-xs md:text-sm border-2 transition-all duration-200
                     ${isSelected 
-                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/25 scale-[1.02]' 
-                      : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-slate-500 hover:bg-slate-800'
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/25' 
+                      : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-white'
                     }
                   `}
                 >
-                  <div className="flex items-center gap-1.5 md:gap-2">
-                    {isSelected && (
-                      <div className="w-4 h-4 md:w-5 md:h-5 bg-white/20 rounded-full flex items-center justify-center">
-                        <Check className="w-2.5 h-2.5 md:w-3 md:h-3" />
-                      </div>
-                    )}
-                    <span>S{s}</span>
-                    {isSelected && filters.selectedSeances.length > 1 && (
-                      <span className="bg-white/20 text-xs w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full">
-                        {selectionIndex + 1}
-                      </span>
-                    )}
-                  </div>
+                  <span>Session {s}</span>
+                  {isSelected && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg">
+                      {selectionIndex + 1}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
-        )}
-
-        {filters.selectedSeances.length > 1 && (
-          <p className="text-xs text-slate-500 mt-2 md:mt-3 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-            Sessions combinées dans l'ordre
-          </p>
         )}
       </div>
     </div>

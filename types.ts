@@ -128,7 +128,7 @@ export interface ExerciseLog {
   originalSession?: string;
   sets: SetLog[];
   notes?: string;
-  rpe?: number; // ← NOUVEAU: RPE par exercice (1-10)
+  rpe?: number;
 }
 
 export interface SessionKey {
@@ -148,7 +148,7 @@ export interface SessionLog {
   sessionKey: SessionKey;
   exercises: ExerciseLog[];
   comments?: string;
-  sessionRpe?: number; // ← NOUVEAU: RPE global de la séance (1-10)
+  sessionRpe?: number;
 }
 
 // Type brut depuis Supabase session_logs
@@ -163,7 +163,7 @@ export interface SessionLogRow {
   exercises: ExerciseLog[] | null;
   comments: string | null;
   created_at: string;
-  session_rpe: number | null; // ← NOUVEAU
+  session_rpe: number | null;
 }
 
 // Mapping SessionLog DB -> App
@@ -181,7 +181,7 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
     },
     exercises: row.exercises ?? [],
     comments: row.comments ?? undefined,
-    sessionRpe: row.session_rpe ?? undefined, // ← NOUVEAU
+    sessionRpe: row.session_rpe ?? undefined,
   };
 }
 
@@ -197,7 +197,7 @@ export function mapSessionLogToRow(log: SessionLog, oderId: string): Omit<Sessio
     session_key_name: log.sessionKey.seance || null,
     exercises: log.exercises,
     comments: log.comments ?? null,
-    session_rpe: log.sessionRpe ?? null, // ← NOUVEAU
+    session_rpe: log.sessionRpe ?? null,
   };
 }
 
@@ -433,24 +433,20 @@ export function filterVisibleMessages(
 }
 
 // ===========================================
-// UTILITAIRES RPE (NOUVEAU)
+// UTILITAIRES RPE
 // ===========================================
 export const RPE_SCALE = [
   { value: 1, label: 'Très facile', color: 'bg-green-500', description: 'Effort minimal, récupération active' },
   { value: 2, label: 'Facile', color: 'bg-green-400', description: 'Effort léger, conversation facile' },
-  { value: 3, label: 'Modéré', color: 'bg-lime-400', description: 'Effort confortable, légère transpiration' },
-  { value: 4, label: 'Assez modéré', color: 'bg-lime-500', description: 'Effort notable mais gérable' },
-  { value: 5, label: 'Moyen', color: 'bg-yellow-400', description: 'Effort modéré, respiration accélérée' },
-  { value: 6, label: 'Assez difficile', color: 'bg-yellow-500', description: 'Effort soutenu, conversation difficile' },
-  { value: 7, label: 'Difficile', color: 'bg-orange-400', description: 'Effort intense, fatigue notable' },
-  { value: 8, label: 'Très difficile', color: 'bg-orange-500', description: 'Effort très intense, limite approchée' },
-  { value: 9, label: 'Extrême', color: 'bg-red-500', description: 'Effort maximal, proche de l\'échec' },
-  { value: 10, label: 'Maximum', color: 'bg-red-600', description: 'Effort absolu, impossible de continuer' },
+  { value: 3, label: 'Léger', color: 'bg-lime-400', description: 'Échauffement, respiration contrôlée' },
+  { value: 4, label: 'Modéré', color: 'bg-yellow-400', description: 'Effort soutenu, conversation possible' },
+  { value: 5, label: 'Moyen', color: 'bg-yellow-500', description: 'Travail modéré, quelques phrases possibles' },
+  { value: 6, label: 'Difficile', color: 'bg-orange-400', description: 'Effort notable, respiration accélérée' },
+  { value: 7, label: 'Très difficile', color: 'bg-orange-500', description: 'Effort intense, peu de mots possibles' },
+  { value: 8, label: 'Intense', color: 'bg-red-400', description: 'Très dur, quelques reps en réserve' },
+  { value: 9, label: 'Très intense', color: 'bg-red-500', description: 'Quasi-max, 1 rep en réserve' },
+  { value: 10, label: 'Maximum', color: 'bg-red-600', description: 'Effort maximal, rien en réserve' },
 ];
-
-export function getRpeInfo(rpe: number) {
-  return RPE_SCALE.find(r => r.value === rpe) || RPE_SCALE[4];
-}
 
 export function getRpeColor(rpe: number): string {
   if (rpe <= 2) return 'text-green-400';
@@ -466,4 +462,8 @@ export function getRpeBgColor(rpe: number): string {
   if (rpe <= 6) return 'bg-yellow-500/20';
   if (rpe <= 8) return 'bg-orange-500/20';
   return 'bg-red-500/20';
+}
+
+export function getRpeInfo(rpe: number) {
+  return RPE_SCALE.find(r => r.value === rpe) || RPE_SCALE[4];
 }

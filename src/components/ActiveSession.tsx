@@ -1,7 +1,7 @@
 // ============================================================
-// F.Y.T - ACTIVE SESSION (Version avec RPE)
+// F.Y.T - ACTIVE SESSION (Version avec persistence)
 // src/components/ActiveSession.tsx
-// Séance d'entraînement active avec suivi RPE par exercice
+// Séance d'entraînement active avec persistence localStorage
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -62,11 +62,64 @@ export const ActiveSession: React.FC<Props> = ({
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
 
-  // ← NOUVEAU: État pour le modal RPE de fin de séance
+  // État pour le modal RPE de fin de séance
   const [showSessionRpeModal, setShowSessionRpeModal] = useState(false);
   const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(null);
 
-  const isEditMode = !!(initialLog && initialLog.id && initialLog.id !== 'temp');
+  const isEditMode = !!initialLog;
+
+  // Initialisation des logs
+  useEffect(() => {
+    // Vérifier s'il y a une session en cours dans localStorage
+    const savedSession = localStorage.getItem('F.Y.T_active_session');
+    if (savedSession && !initialLog) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        if (parsed.logs && parsed.sessionData) {
+          // Vérifier si c'est la même session
+          const savedSessionIds = parsed.sessionData.map((s: any) => `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`).sort().join(',');
+          const currentSessionIds = sessionData.map(s => `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`).sort().join(',');
+          
+          if (savedSessionIds === currentSessionIds) {
+            setLogs(parsed.logs);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Erreur parsing session sauvegardée:', e);
+      }
+    }
+
+    // Sinon, initialiser normalement
+    if (initialLog) {
+      setLogs(initialLog.exercises);
+    } else {
+      const grouped = new Map<string, WorkoutRow[]>();
+      sessionData.forEach(row => {
+        const key = row.exercice;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(row);
+      });
+
+      const initialLogs: ExerciseLog[] = Array.from(grouped.entries()).map(([name, rows]) => {
+        const row = rows[0];
+        const numSets = parseInt(row.series) || 3;
+        return {
+          exerciseName: name,
+          originalSession: row.seance,
+          sets: Array.from({ length: numSets }, (_, i) => ({
+            setNumber: i + 1,
+            reps: '',
+            weight: '',
+            completed: false,
+          })),
+          notes: row.notes || '',
+        };
+      });
+      
+      setLogs(initialLogs);
+    }
+  }, [sessionData, initialLog]);
 
   // Timer
   useEffect(() => {
@@ -76,72 +129,32 @@ export const ActiveSession: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [startTime]);
 
-  // Initialisation des logs
+  // PERSISTENCE: Sauvegarder dans localStorage à chaque changement
   useEffect(() => {
-    if (initialLog) {
-      setLogs(initialLog.exercises);
-      return;
+    if (logs.length > 0 && !isEditMode) {
+      saveToLocalStorage(logs);
     }
-
-    const newLogs: ExerciseLog[] = sessionData.map(ex => {
-      let numSets = 3;
-      const setsStr = ex.series.trim();
-      if (setsStr && !isNaN(parseInt(setsStr))) {
-        const parts = setsStr.split('-');
-        numSets = parseInt(parts[parts.length - 1]);
-      }
-
-      return {
-        exerciseName: ex.exercice,
-        originalSession: ex.seance,
-        notes: '',
-        sets: Array.from({ length: numSets }).map((_, i) => ({
-          setNumber: i + 1,
-          reps: '',
-          weight: '',
-          completed: false
-        })),
-        rpe: undefined // ← NOUVEAU: Initialiser le RPE
-      };
-    });
-    setLogs(newLogs);
-  }, [sessionData, initialLog]);
+  }, [logs, isEditMode]);
 
   const formatTime = (seconds: number): string => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return hrs > 0
+      ? `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      : `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const updateSet = (exerciseIndex: number, setIndex: number, field: keyof SetLog, value: any) => {
     const newLogs = [...logs];
-    newLogs[exerciseIndex].sets[setIndex] = {
-      ...newLogs[exerciseIndex].sets[setIndex],
-      [field]: value
-    };
-    
-    const set = newLogs[exerciseIndex].sets[setIndex];
-    if (set.reps && set.weight) {
-      set.completed = true;
-    }
-    
+    (newLogs[exerciseIndex].sets[setIndex] as any)[field] = value;
     setLogs(newLogs);
-    saveToLocalStorage(newLogs);
   };
 
-  // ← NOUVEAU: Mettre à jour le RPE d'un exercice
-  const updateExerciseRpe = (exerciseIndex: number, rpe: number | undefined) => {
+  const updateExerciseRpe = (exerciseIndex: number, rpe: number) => {
     const newLogs = [...logs];
-    newLogs[exerciseIndex] = {
-      ...newLogs[exerciseIndex],
-      rpe
-    };
+    newLogs[exerciseIndex].rpe = rpe;
     setLogs(newLogs);
-    saveToLocalStorage(newLogs);
   };
 
   const saveToLocalStorage = (logsToSave: ExerciseLog[]) => {
@@ -171,7 +184,6 @@ export const ActiveSession: React.FC<Props> = ({
     setLogs(newLogs);
   };
 
-  // ← MODIFIÉ: handleFinish prépare maintenant le log et affiche le modal RPE
   const handleFinish = async () => {
     if (isRetroMode && (!retroDate.year || !retroDate.month || !retroDate.day)) {
       alert("Veuillez remplir la date complète pour enregistrer une séance passée.");
@@ -207,15 +219,13 @@ export const ActiveSession: React.FC<Props> = ({
       sessionKey,
       exercises: logs,
       durationMinutes: isRetroMode ? 60 : Math.round(elapsedTime / 60),
-      sessionRpe: undefined // Sera défini via le modal
+      sessionRpe: undefined
     };
 
-    // Afficher le modal RPE de séance
     setPendingSessionLog(finalLog);
     setShowSessionRpeModal(true);
   };
 
-  // ← NOUVEAU: Soumettre avec le RPE de séance
   const handleSessionRpeSubmit = async (sessionRpe: number) => {
     if (!pendingSessionLog) return;
     
@@ -234,7 +244,6 @@ export const ActiveSession: React.FC<Props> = ({
     }
   };
 
-  // ← NOUVEAU: Passer le RPE de séance
   const handleSkipSessionRpe = async () => {
     if (!pendingSessionLog) return;
     
@@ -360,241 +369,216 @@ export const ActiveSession: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Date rétroactive */}
+        {/* Mode rétroactif */}
         {isRetroMode && (
-          <div className="mt-4 grid grid-cols-3 gap-3 max-w-md">
-            <select 
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-              value={retroDate.day}
-              onChange={(e) => setRetroDate({...retroDate, day: e.target.value})}
-            >
-              <option value="">Jour</option>
-              {Array.from({length: 31}, (_, i) => i + 1).map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-            <select 
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-              value={retroDate.month}
-              onChange={(e) => setRetroDate({...retroDate, month: e.target.value})}
-            >
-              <option value="">Mois</option>
-              {['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'].map((m, i) => (
-                <option key={i} value={i + 1}>{m}</option>
-              ))}
-            </select>
-            <select 
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-              value={retroDate.year}
-              onChange={(e) => setRetroDate({...retroDate, year: e.target.value})}
-            >
-              <option value="">Année</option>
-              {[2025, 2024, 2023].map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+          <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl">
+            <p className="text-orange-400 text-sm mb-3">
+              <AlertTriangle className="w-4 h-4 inline mr-2" />
+              Mode séance passée - Saisissez la date de la séance
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <input
+                type="number"
+                placeholder="Jour"
+                min="1"
+                max="31"
+                value={retroDate.day}
+                onChange={(e) => setRetroDate(prev => ({ ...prev, day: e.target.value }))}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center"
+              />
+              <input
+                type="number"
+                placeholder="Mois"
+                min="1"
+                max="12"
+                value={retroDate.month}
+                onChange={(e) => setRetroDate(prev => ({ ...prev, month: e.target.value }))}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center"
+              />
+              <input
+                type="number"
+                placeholder="Année"
+                min="2020"
+                max="2030"
+                value={retroDate.year}
+                onChange={(e) => setRetroDate(prev => ({ ...prev, year: e.target.value }))}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center"
+              />
+            </div>
           </div>
         )}
       </div>
 
       {/* Liste des exercices */}
       <div className="space-y-4">
-        {logs.map((exLog, exIdx) => {
-          const originalData = sessionData.find(d => 
-            d.exercice === exLog.exerciseName && d.seance === exLog.originalSession
-          );
-          const hasVideo = originalData?.video && isValidUrl(originalData.video);
-          const isExpanded = expandedExercise === exIdx;
-          const completedSets = exLog.sets.filter(s => s.completed).length;
-
+        {logs.map((exercise, exerciseIndex) => {
+          const isExpanded = expandedExercise === exerciseIndex;
+          const originalData = sessionData.find(d => d.exercice === exercise.exerciseName);
+          
           return (
             <div 
-              key={exIdx} 
-              className={`bg-slate-900 border rounded-2xl overflow-hidden transition-all duration-200 ${
-                isExpanded ? 'border-blue-500/50' : 'border-slate-800'
-              }`}
+              key={exerciseIndex}
+              className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden"
             >
               {/* Header exercice */}
               <button
-                onClick={() => setExpandedExercise(isExpanded ? null : exIdx)}
-                className="w-full p-5 flex items-center justify-between text-left hover:bg-slate-800/50 transition-colors"
+                onClick={() => setExpandedExercise(isExpanded ? null : exerciseIndex)}
+                className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${
-                    completedSets === exLog.sets.length 
-                      ? 'bg-emerald-500/20 text-emerald-400' 
-                      : 'bg-slate-800 text-slate-400'
-                  }`}>
-                    {completedSets}/{exLog.sets.length}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white text-lg">{exLog.exerciseName}</h3>
-                    <div className="flex items-center gap-2 text-sm text-slate-400">
-                      {originalData?.series && <span>{originalData.series} séries</span>}
-                      {originalData?.repsDuree && <span>• {originalData.repsDuree}</span>}
-                      {/* ← NOUVEAU: Afficher le RPE si défini */}
-                      {exLog.rpe && (
-                        <RpeBadge rpe={exLog.rpe} size="sm" showLabel={false} />
-                      )}
-                    </div>
-                  </div>
-                </div>
                 <div className="flex items-center gap-3">
-                  {hasVideo && <Video className="w-5 h-5 text-blue-400" />}
-                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 font-bold text-sm">
+                    {exerciseIndex + 1}
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-semibold text-white">{exercise.exerciseName}</h3>
+                    <p className="text-xs text-slate-400">
+                      {exercise.sets.filter(s => s.completed).length}/{exercise.sets.length} séries
+                    </p>
+                  </div>
+                  {exercise.rpe && <RpeBadge rpe={exercise.rpe} size="sm" />}
                 </div>
+                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
               </button>
 
-              {/* Contenu expandé */}
+              {/* Contenu */}
               {isExpanded && (
-                <div className="px-5 pb-5 space-y-4 border-t border-slate-800">
-                  {/* Actions */}
-                  <div className="flex flex-wrap gap-2 pt-4">
-                    {hasVideo && (
-                      <a 
-                        href={originalData?.video}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg text-sm transition-colors"
+                <div className="px-4 pb-4 space-y-4">
+                  {/* Infos exercice */}
+                  {originalData && (
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="px-2 py-1 bg-slate-800 rounded-lg text-slate-400">
+                        {originalData.series} × {originalData.repsDuree}
+                      </span>
+                      {originalData.repos && (
+                        <span className="px-2 py-1 bg-slate-800 rounded-lg text-slate-400">
+                          {originalData.repos}s repos
+                        </span>
+                      )}
+                      {originalData.tempoRpe && (
+                        <span className="px-2 py-1 bg-slate-800 rounded-lg text-slate-400">
+                          {originalData.tempoRpe}
+                        </span>
+                      )}
+                      {originalData.video && isValidUrl(originalData.video) && (
+                        <a
+                          href={originalData.video}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2 py-1 bg-red-500/20 text-red-400 rounded-lg flex items-center gap-1"
+                        >
+                          <Video className="w-3 h-3" /> Vidéo
+                        </a>
+                      )}
+                      <button
+                        onClick={() => setHistoryModalExercise(exercise.exerciseName)}
+                        className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg flex items-center gap-1"
                       >
-                        <Video className="w-4 h-4" />
-                        Voir la démo
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                    <button
-                      onClick={() => setHistoryModalExercise(exLog.exerciseName)}
-                      className="flex items-center gap-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 px-4 py-2 rounded-lg text-sm transition-colors"
-                    >
-                      <History className="w-4 h-4" />
-                      Historique
-                    </button>
-                  </div>
-
-                  {/* Notes coach */}
-                  {originalData?.notes && (
-                    <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
-                      <AlertTriangle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-yellow-200/80">{originalData.notes}</p>
+                        <History className="w-3 h-3" /> Historique
+                      </button>
                     </div>
                   )}
 
-                  {/* Sets */}
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-12 gap-3 text-xs font-medium text-slate-500 uppercase tracking-wider px-2">
-                      <div className="col-span-2">Série</div>
-                      <div className="col-span-4">Reps</div>
-                      <div className="col-span-4">Poids (kg)</div>
-                      <div className="col-span-2"></div>
+                  {/* Notes */}
+                  {originalData?.notes && (
+                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm">
+                      {originalData.notes}
                     </div>
+                  )}
 
-                    {exLog.sets.map((set, setIdx) => (
+                  {/* Séries */}
+                  <div className="space-y-2">
+                    {exercise.sets.map((set, setIndex) => (
                       <div 
-                        key={setIdx} 
-                        className={`grid grid-cols-12 gap-3 items-center p-3 rounded-xl transition-colors ${
-                          set.completed ? 'bg-emerald-500/10' : 'bg-slate-800/50'
+                        key={setIndex}
+                        className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                          set.completed 
+                            ? 'bg-emerald-500/20 border border-emerald-500/30' 
+                            : 'bg-slate-800/50'
                         }`}
                       >
-                        <div className="col-span-2">
-                          <span className={`font-mono font-medium ${set.completed ? 'text-emerald-400' : 'text-slate-400'}`}>
-                            #{set.setNumber}
-                          </span>
-                        </div>
-                        <div className="col-span-4">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={set.reps}
-                            onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value)}
-                            placeholder={originalData?.repsDuree || '—'}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                        <div className="col-span-4">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={set.weight}
-                            onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value)}
-                            placeholder="—"
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                        <div className="col-span-2 flex items-center justify-center gap-1">
+                        <span className="w-8 text-center text-slate-400 font-medium">
+                          S{set.setNumber}
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Reps"
+                          value={set.reps}
+                          onChange={(e) => updateSet(exerciseIndex, setIndex, 'reps', e.target.value)}
+                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Charge"
+                          value={set.weight}
+                          onChange={(e) => updateSet(exerciseIndex, setIndex, 'weight', e.target.value)}
+                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          onClick={() => updateSet(exerciseIndex, setIndex, 'completed', !set.completed)}
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+                            set.completed
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                          }`}
+                        >
+                          <Check className="w-5 h-5" />
+                        </button>
+                        {exercise.sets.length > 1 && (
                           <button
-                            onClick={() => updateSet(exIdx, setIdx, 'completed', !set.completed)}
-                            className={`p-2 rounded-lg transition-colors ${
-                              set.completed 
-                                ? 'bg-emerald-500 text-white' 
-                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                            }`}
+                            onClick={() => removeSet(exerciseIndex, setIndex)}
+                            className="p-2 text-slate-500 hover:text-red-400 transition-colors"
                           >
-                            <Check className="w-4 h-4" />
+                            <Minus className="w-4 h-4" />
                           </button>
-                          {exLog.sets.length > 1 && (
-                            <button
-                              onClick={() => removeSet(exIdx, setIdx)}
-                              className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                            >
-                              <Minus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
                     ))}
-
-                    <button
-                      onClick={() => addSet(exIdx)}
-                      className="w-full py-2 border border-dashed border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-slate-600 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Ajouter une série
-                    </button>
                   </div>
 
-                  {/* ← NOUVEAU: Sélecteur RPE pour l'exercice */}
-                  <div className="pt-4 border-t border-slate-800">
+                  <button
+                    onClick={() => addSet(exerciseIndex)}
+                    className="w-full py-2 border-2 border-dashed border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-blue-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Ajouter une série
+                  </button>
+
+                  {/* RPE Exercice */}
+                  <div className="pt-2 border-t border-slate-800">
                     <RpeSelector
-                      value={exLog.rpe}
-                      onChange={(rpe) => updateExerciseRpe(exIdx, rpe)}
-                      label="Difficulté ressentie (RPE)"
-                      size="md"
+                      value={exercise.rpe}
+                      onChange={(rpe) => updateExerciseRpe(exerciseIndex, rpe)}
+                      compact
                     />
                   </div>
 
-                  {/* Section commentaires */}
+                  {/* Commentaire pour le coach */}
                   {onSaveComment && (
-                    <div className="pt-4 border-t border-slate-800">
-                      <div className="flex items-center gap-2 mb-2">
+                    <div className="pt-2 border-t border-slate-800">
+                      <div className="flex items-center gap-2">
                         <MessageSquare className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm font-medium text-slate-300">Message au coach</span>
-                        {sentComments.has(exLog.exerciseName) && (
-                          <span className="text-xs text-emerald-400 flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Envoyé
-                          </span>
+                        <span className="text-sm text-slate-400">Message au coach</span>
+                        {sentComments.has(exercise.exerciseName) && (
+                          <span className="text-xs text-emerald-400">✓ Envoyé</span>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 mt-2">
                         <input
                           type="text"
-                          value={exerciseComments[exLog.exerciseName] || ''}
+                          placeholder="Un commentaire pour votre coach..."
+                          value={exerciseComments[exercise.exerciseName] || ''}
                           onChange={(e) => setExerciseComments(prev => ({
                             ...prev,
-                            [exLog.exerciseName]: e.target.value
+                            [exercise.exerciseName]: e.target.value
                           }))}
-                          placeholder="Ex: Douleur à l'épaule, poids trop léger..."
-                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <button
-                          onClick={() => handleSendComment(exLog.exerciseName)}
-                          disabled={!exerciseComments[exLog.exerciseName]?.trim() || commentSending === exLog.exerciseName}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors"
+                          onClick={() => handleSendComment(exercise.exerciseName)}
+                          disabled={!exerciseComments[exercise.exerciseName]?.trim() || commentSending === exercise.exerciseName}
+                          className="p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                         >
-                          {commentSending === exLog.exerciseName ? (
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4" />
-                          )}
+                          <Send className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -612,9 +596,9 @@ export const ActiveSession: React.FC<Props> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-white">{historyModalExercise}</h3>
-              <button 
+              <button
                 onClick={() => setHistoryModalExercise(null)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -624,7 +608,6 @@ export const ActiveSession: React.FC<Props> = ({
               <div>
                 <p className="text-sm text-slate-400 mb-3">
                   Dernière séance : {new Date(currentHistoryData.date).toLocaleDateString('fr-FR')}
-                  {/* ← NOUVEAU: Afficher le RPE historique */}
                   {currentHistoryData.rpe && (
                     <span className="ml-2">
                       <RpeBadge rpe={currentHistoryData.rpe} size="sm" />
@@ -676,7 +659,7 @@ export const ActiveSession: React.FC<Props> = ({
         </div>
       )}
 
-      {/* ← NOUVEAU: Modal RPE de séance */}
+      {/* Modal RPE de séance */}
       {showSessionRpeModal && pendingSessionLog && (
         <SessionRpeModal
           onSubmit={handleSessionRpeSubmit}

@@ -75,9 +75,9 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
       setUsers(prev => prev.map(u => 
         u.id === userId ? { ...u, coachId: selectedCoachId || undefined } : u
       ));
-      setEditingUserId(null);
+      cancelEditing();
     } catch (e) {
-      alert("Erreur lors de la mise à jour");
+      console.error("Erreur mise à jour coach:", e);
     } finally {
       setLoading(false);
     }
@@ -86,89 +86,46 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
   const getRoleConfig = (role: string) => {
     switch (role) {
       case 'admin':
-        return { 
-          icon: Shield, 
-          color: 'text-purple-400', 
-          bg: 'bg-purple-500/20',
-          label: 'Admin'
-        };
+        return { icon: Shield, label: 'Admin', color: 'text-purple-400', bg: 'bg-purple-500/10' };
       case 'coach':
-        return { 
-          icon: Dumbbell, 
-          color: 'text-emerald-400', 
-          bg: 'bg-emerald-500/20',
-          label: 'Coach'
-        };
+        return { icon: Users, label: 'Coach', color: 'text-emerald-400', bg: 'bg-emerald-500/10' };
       default:
-        return { 
-          icon: UserIcon, 
-          color: 'text-blue-400', 
-          bg: 'bg-blue-500/20',
-          label: 'Athlète'
-        };
+        return { icon: Dumbbell, label: 'Athlète', color: 'text-blue-400', bg: 'bg-blue-500/10' };
     }
-  };
-
-  const stats = {
-    total: users.length,
-    admins: users.filter(u => u.role === 'admin').length,
-    coaches: users.filter(u => u.role === 'coach').length,
-    athletes: users.filter(u => u.role === 'athlete').length,
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-white">Administration</h1>
-        <p className="text-slate-400 mt-1">Gérer les utilisateurs et leurs permissions</p>
+        <p className="text-slate-400 mt-1">Gestion des utilisateurs et des rôles</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-2xl font-bold text-white">{stats.total}</p>
-          <p className="text-sm text-slate-400">Total utilisateurs</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-2xl font-bold text-purple-400">{stats.admins}</p>
-          <p className="text-sm text-slate-400">Administrateurs</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-2xl font-bold text-emerald-400">{stats.coaches}</p>
-          <p className="text-sm text-slate-400">Coachs</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-2xl font-bold text-blue-400">{stats.athletes}</p>
-          <p className="text-sm text-slate-400">Athlètes</p>
-        </div>
-      </div>
-
-      {/* Filtres */}
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
           <input
             type="text"
             placeholder="Rechercher un utilisateur..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-
+        
         <div className="flex gap-2">
-          {['Tous', 'admin', 'coach', 'athlete'].map((role) => (
+          {[null, 'admin', 'coach', 'athlete'].map((role) => (
             <button
-              key={role}
-              onClick={() => setFilterRole(role === 'Tous' ? null : role)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                (role === 'Tous' && !filterRole) || filterRole === role
+              key={role || 'all'}
+              onClick={() => setFilterRole(role)}
+              className={`px-4 py-2 rounded-xl font-medium transition-colors ${
+                filterRole === role
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:text-white'
               }`}
             >
-              {role === 'Tous' ? 'Tous' : getRoleConfig(role).label}
+              {!role ? 'Tous' : getRoleConfig(role).label}
             </button>
           ))}
         </div>
@@ -252,17 +209,16 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
                       </td>
                       <td className="px-6 py-4">
                         {isEditing ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex gap-2">
                             <button
                               onClick={() => saveCoach(user.id)}
-                              disabled={loading}
-                              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors disabled:opacity-50"
+                              className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-colors"
                             >
                               <Check className="w-4 h-4" />
                             </button>
                             <button
                               onClick={cancelEditing}
-                              className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                              className="p-2 bg-slate-700 text-slate-400 rounded-lg hover:bg-slate-600 transition-colors"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -270,7 +226,7 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
                         ) : (
                           <button
                             onClick={() => startEditing(user)}
-                            className="p-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
@@ -287,3 +243,5 @@ export const AdminUsersView: React.FC<Props> = ({ fetchAllUsers, onUpdateCoach }
     </div>
   );
 };
+
+export default AdminUsersView;
