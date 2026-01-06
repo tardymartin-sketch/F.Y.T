@@ -164,3 +164,184 @@ html, body, #root {
     min-width: 44px;
   }
 }
+
+/* ===========================================
+   FAB (Floating Action Button) Animations
+   =========================================== */
+
+@keyframes pulse-session {
+  0%, 100% { 
+    transform: scale(1); 
+    box-shadow: 0 10px 15px -3px rgba(249, 115, 22, 0.3);
+  }
+  50% { 
+    transform: scale(1.05); 
+    box-shadow: 0 20px 25px -5px rgba(249, 115, 22, 0.4);
+  }
+}
+
+.animate-pulse-session {
+  animation: pulse-session 2s ease-in-out infinite;
+}
+
+/* FAB Ring animation */
+@keyframes fab-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.animate-fab-ring {
+  animation: fab-ring 1.5s ease-out infinite;
+}
+
+/* ===========================================
+   Bottom Navigation Styles
+   =========================================== */
+
+/* Active tab indicator animation */
+@keyframes tab-indicator {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.tab-indicator-animate {
+  animation: tab-indicator 0.2s ease-out;
+}
+
+/* Badge bounce animation */
+@keyframes badge-bounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.animate-badge-bounce {
+  animation: badge-bounce 0.3s ease-out;
+}
+
+/* ===========================================
+   Mobile Safe Areas
+   =========================================== */
+
+/* Support for iOS safe areas */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* ===========================================
+   Session Active Styles
+   =========================================== */
+
+/* Progress bar animation */
+@keyframes progress-fill {
+  from {
+    width: 0%;
+  }
+}
+
+.progress-bar-animate {
+  animation: progress-fill 0.3s ease-out;
+}
+
+/* Exercise card swipe hint */
+@keyframes swipe-hint {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-10px);
+  }
+}
+
+.animate-swipe-hint {
+  animation: swipe-hint 1.5s ease-in-out 2;
+}
+
+/* Stepper button press feedback */
+@keyframes stepper-press {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-stepper-press {
+  animation: stepper-press 0.15s ease-out;
+}
+
+/* ===========================================
+   Slide transitions for views
+   =========================================== */
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.25s ease-out;
+}
+
+/* ===========================================
+   Celebration animation (end of session)
+   =========================================== */
+
+@keyframes confetti {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100px) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.animate-confetti {
+  animation: confetti 1s ease-out forwards;
+}

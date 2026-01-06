@@ -82,6 +82,19 @@ export const ActiveSession: React.FC<Props> = ({
           
           if (savedSessionIds === currentSessionIds) {
             setLogs(parsed.logs);
+            
+            // Restaurer l'exercice déplié
+            if (typeof parsed.expandedExercise === 'number') {
+              setExpandedExercise(parsed.expandedExercise);
+            }
+            
+            // Restaurer la position de scroll après le rendu
+            if (typeof parsed.scrollPosition === 'number') {
+              setTimeout(() => {
+                window.scrollTo(0, parsed.scrollPosition);
+              }, 100);
+            }
+            
             return;
           }
         }
@@ -132,8 +145,39 @@ export const ActiveSession: React.FC<Props> = ({
   // PERSISTENCE: Sauvegarder dans localStorage à chaque changement
   useEffect(() => {
     if (logs.length > 0 && !isEditMode) {
-      saveToLocalStorage(logs);
+      saveToLocalStorage(logs, expandedExercise);
     }
+  }, [logs, isEditMode, expandedExercise]);
+
+  // Sauvegarder la position de scroll périodiquement
+  useEffect(() => {
+    const handleScroll = () => {
+      if (logs.length > 0 && !isEditMode) {
+        const savedSession = localStorage.getItem('F.Y.T_active_session');
+        if (savedSession) {
+          try {
+            const parsed = JSON.parse(savedSession);
+            parsed.scrollPosition = window.scrollY;
+            localStorage.setItem('F.Y.T_active_session', JSON.stringify(parsed));
+          } catch (e) {
+            // Ignorer les erreurs
+          }
+        }
+      }
+    };
+
+    // Debounce le scroll pour éviter trop d'écritures
+    let scrollTimeout: NodeJS.Timeout;
+    const debouncedScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(handleScroll, 300);
+    };
+
+    window.addEventListener('scroll', debouncedScroll);
+    return () => {
+      window.removeEventListener('scroll', debouncedScroll);
+      clearTimeout(scrollTimeout);
+    };
   }, [logs, isEditMode]);
 
   const formatTime = (seconds: number): string => {
@@ -157,11 +201,13 @@ export const ActiveSession: React.FC<Props> = ({
     setLogs(newLogs);
   };
 
-  const saveToLocalStorage = (logsToSave: ExerciseLog[]) => {
+  const saveToLocalStorage = (logsToSave: ExerciseLog[], currentExpandedExercise: number | null) => {
     localStorage.setItem('F.Y.T_active_session', JSON.stringify({
       logs: logsToSave,
       sessionData: sessionData.map(s => ({ seance: s.seance, annee: s.annee, moisNum: s.moisNum, semaine: s.semaine })),
-      startTime
+      startTime,
+      expandedExercise: currentExpandedExercise,
+      scrollPosition: window.scrollY
     }));
   };
 
@@ -490,43 +536,45 @@ export const ActiveSession: React.FC<Props> = ({
                     {exercise.sets.map((set, setIndex) => (
                       <div 
                         key={setIndex}
-                        className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                        className={`flex items-center gap-2 p-2 sm:p-3 rounded-xl transition-all ${
                           set.completed 
                             ? 'bg-emerald-500/20 border border-emerald-500/30' 
                             : 'bg-slate-800/50'
                         }`}
                       >
-                        <span className="w-8 text-center text-slate-400 font-medium">
+                        <span className="w-7 sm:w-8 text-center text-slate-400 font-medium text-sm sm:text-base flex-shrink-0">
                           S{set.setNumber}
                         </span>
                         <input
                           type="text"
+                          inputMode="numeric"
                           placeholder="Reps"
                           value={set.reps}
                           onChange={(e) => updateSet(exerciseIndex, setIndex, 'reps', e.target.value)}
-                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-16 sm:w-20 min-w-0 bg-slate-700 border border-slate-600 rounded-lg px-2 sm:px-3 py-2 text-white text-center text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <input
                           type="text"
-                          placeholder="Charge"
+                          inputMode="decimal"
+                          placeholder="Kg"
                           value={set.weight}
                           onChange={(e) => updateSet(exerciseIndex, setIndex, 'weight', e.target.value)}
-                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-16 sm:w-20 min-w-0 bg-slate-700 border border-slate-600 rounded-lg px-2 sm:px-3 py-2 text-white text-center text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <button
                           onClick={() => updateSet(exerciseIndex, setIndex, 'completed', !set.completed)}
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
                             set.completed
                               ? 'bg-emerald-500 text-white'
                               : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                           }`}
                         >
-                          <Check className="w-5 h-5" />
+                          <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                         {exercise.sets.length > 1 && (
                           <button
                             onClick={() => removeSet(exerciseIndex, setIndex)}
-                            className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                            className="p-1.5 sm:p-2 text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
                           >
                             <Minus className="w-4 h-4" />
                           </button>

@@ -316,28 +316,36 @@ export async function deleteWeekOrganizerLog(logId: string): Promise<void> {
 // ATHLETE COMMENTS (Feedbacks)
 // ===========================================
 
+// Récupérer les commentaires pour un coach (ses athlètes)
 export async function fetchTeamComments(coachId: string, onlyUnread: boolean = true): Promise<AthleteComment[]> {
+  console.log('[fetchTeamComments] Récupération pour coachId:', coachId, 'onlyUnread:', onlyUnread);
+
+  // Étape 1: Récupérer les athlètes du coach
   const { data: athletes, error: athletesError } = await supabase
     .from('profiles')
-    .select('id')
+    .select('id, username, first_name, last_name')
     .eq('coach_id', coachId);
 
   if (athletesError) {
-    console.error('Error fetching team athletes:', athletesError);
-    throw athletesError;
+    console.error('[fetchTeamComments] Erreur récupération athlètes:', athletesError);
+    return [];
   }
 
-  if (!athletes || athletes.length === 0) return [];
+  console.log('[fetchTeamComments] Athlètes trouvés:', athletes);
+
+  if (!athletes || athletes.length === 0) {
+    console.log('[fetchTeamComments] Aucun athlète trouvé pour ce coach');
+    return [];
+  }
 
   const athleteIds = athletes.map(a => a.id);
+  const athleteMap = new Map(athletes.map(a => [a.id, a]));
+  console.log('[fetchTeamComments] IDs des athlètes:', athleteIds);
 
+  // Étape 2: Récupérer les commentaires (requête simple sans jointures)
   let query = supabase
     .from('athlete_comments')
-    .select(`
-      *,
-      profiles:user_id (username, first_name, last_name),
-      session_logs:session_id (session_key_name)
-    `)
+    .select('*')
     .in('user_id', athleteIds)
     .order('created_at', { ascending: false });
 
@@ -348,28 +356,158 @@ export async function fetchTeamComments(coachId: string, onlyUnread: boolean = t
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error fetching team comments:', error);
-    throw error;
+    console.error('[fetchTeamComments] Erreur récupération commentaires:', error);
+    return [];
   }
 
-  return (data as AthleteCommentRow[]).map(mapAthleteCommentRowToComment);
+  console.log('[fetchTeamComments] Données brutes:', data);
+  console.log('[fetchTeamComments] Nombre de commentaires:', data?.length || 0);
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Mapper les données en ajoutant les infos de l'athlète depuis notre map
+  const mapped: AthleteComment[] = data.map((row: any) => {
+    const athlete = athleteMap.get(row.user_id);
+    return {
+      id: row.id,
+      oderId: row.user_id,
+      sessionId: row.session_id ?? undefined,
+      exerciseName: row.exercise_name,
+      comment: row.comment,
+      isRead: row.is_read,
+      createdAt: row.created_at,
+      username: athlete?.username ?? undefined,
+      firstName: athlete?.first_name ?? undefined,
+      lastName: athlete?.last_name ?? undefined,
+      sessionName: undefined,
+    };
+  });
+
+  console.log('[fetchTeamComments] Commentaires mappés:', mapped);
+
+  return mapped;
 }
 
-export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'createdAt' | 'username' | 'firstName' | 'lastName' | 'sessionName'>): Promise<void> {
-  const { error } = await supabase
+// Récupérer les commentaires d'un athlète (ses propres commentaires)
+export async function fetchAthleteOwnComments(athleteId: string): Promise<AthleteComment[]> {
+  console.log('[fetchAthleteOwnComments] Récupération pour athleteId:', athleteId);
+
+  // D'abord, essayer une requête simple sans jointures
+  const { data, error } = await supabase
     .from('athlete_comments')
-    .insert({
-      user_id: comment.oderId,
-      session_id: comment.sessionId || null,
-      exercise_name: comment.exerciseName,
-      comment: comment.comment,
-      is_read: comment.isRead,
-    });
+    .select('*')
+    .eq('user_id', athleteId)
+    .order('created_at', { ascending: false })
+    .limit(50);
 
   if (error) {
-    console.error('Error saving athlete comment:', error);
+    console.error('[fetchAthleteOwnComments] Erreur Supabase:', error);
+    // Ne pas throw, retourner un tableau vide pour ne pas bloquer l'app
+    return [];
+  }
+
+  console.log('[fetchAthleteOwnComments] Données brutes:', data);
+  console.log('[fetchAthleteOwnComments] Nombre de commentaires:', data?.length || 0);
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Mapper les données sans les jointures
+  const mapped: AthleteComment[] = data.map((row: any) => ({
+    id: row.id,
+    oderId: row.user_id,
+    sessionId: row.session_id ?? undefined,
+    exerciseName: row.exercise_name,
+    comment: row.comment,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+    username: undefined,
+    firstName: undefined,
+    lastName: undefined,
+    sessionName: undefined,
+  }));
+
+  console.log('[fetchAthleteOwnComments] Commentaires mappés:', mapped);
+
+  return mapped;
+}
+
+export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'createdAt' | 'username' | 'firstName' | 'lastName' | 'sessionName'>): Promise<AthleteComment | null> {
+  console.log('[saveAthleteComment] Début sauvegarde:', {
+    oderId: comment.oderId,
+    exerciseName: comment.exerciseName,
+    comment: comment.comment.substring(0, 50),
+    sessionId: comment.sessionId
+  });
+
+  // Valider que sessionId est un UUID valide ou null
+  // Si c'est 'active' ou autre valeur non-UUID, on met null
+  let validSessionId: string | null = null;
+  if (comment.sessionId && comment.sessionId !== 'active') {
+    // Vérifier si c'est un UUID valide (format basique)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(comment.sessionId)) {
+      validSessionId = comment.sessionId;
+    }
+  }
+
+  console.log('[saveAthleteComment] sessionId validé:', validSessionId);
+
+  const insertData = {
+    user_id: comment.oderId,
+    session_id: validSessionId,
+    exercise_name: comment.exerciseName,
+    comment: comment.comment,
+    is_read: comment.isRead,
+  };
+
+  console.log('[saveAthleteComment] Données à insérer:', insertData);
+
+  // Insert sans select pour éviter les problèmes de RLS
+  const { data, error } = await supabase
+    .from('athlete_comments')
+    .insert(insertData)
+    .select('*');
+
+  if (error) {
+    console.error('[saveAthleteComment] Erreur Supabase:', error);
+    console.error('[saveAthleteComment] Code erreur:', error.code);
+    console.error('[saveAthleteComment] Message:', error.message);
+    console.error('[saveAthleteComment] Details:', error.details);
     throw error;
   }
+
+  console.log('[saveAthleteComment] Réponse Supabase:', data);
+
+  if (!data || data.length === 0) {
+    console.log('[saveAthleteComment] Aucune donnée retournée mais pas d\'erreur');
+    // Créer un objet de retour minimal
+    return {
+      id: 'temp-' + Date.now(),
+      oderId: comment.oderId,
+      sessionId: validSessionId ?? undefined,
+      exerciseName: comment.exerciseName,
+      comment: comment.comment,
+      isRead: comment.isRead,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const row = data[0];
+  console.log('[saveAthleteComment] Commentaire sauvegardé avec succès:', row);
+
+  return {
+    id: row.id,
+    oderId: row.user_id,
+    sessionId: row.session_id ?? undefined,
+    exerciseName: row.exercise_name,
+    comment: row.comment,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+  };
 }
 
 export async function markCommentsAsRead(commentIds: string[]): Promise<void> {

@@ -24,6 +24,7 @@ import {
   fetchTeamComments,
   saveAthleteComment,
   markCommentsAsRead,
+  fetchAthleteOwnComments,
   fetchAthleteGroups,
   createAthleteGroup,
   updateAthleteGroup,
@@ -37,8 +38,11 @@ import {
 import type { AthleteGroupWithCount } from './types';
 import { 
   canAthleteViewMessage,
-  filterVisibleMessages 
+  filterVisibleMessages,
+  canAccessCoachMode,
+  canAccessAthleteMode,
 } from './types';
+import type { ActiveMode } from './types';
 import { 
   WorkoutRow, 
   SessionLog, 
@@ -62,6 +66,23 @@ import { SettingsView } from './src/components/SettingsView';
 import { StravaImport } from './src/components/StravaImport';
 import { Menu } from 'lucide-react';
 
+// NEW: Athlete Layout Components
+import { AthleteLayout } from './src/layouts/AthleteLayout';
+import { HomeAthlete } from './src/components/athlete/HomeAthlete';
+import { ActiveSessionAthlete } from './src/components/athlete/ActiveSessionAthlete';
+import { SessionCompletedScreen } from './src/components/athlete/SessionCompletedScreen';
+import { HistoryAthlete } from './src/components/athlete/HistoryAthlete';
+import { CoachMessages } from './src/components/athlete/CoachMessages';
+import { ProfileAthlete } from './src/components/athlete/ProfileAthlete';
+import type { AthleteView } from './src/components/athlete/BottomNav';
+import type { SessionState } from './src/components/athlete/FloatingActionButton';
+
+// NEW: Hooks
+import { useIsMobile } from './src/hooks';
+
+// Constante pour le stockage du mode actif
+const ACTIVE_MODE_KEY = 'F.Y.T_active_mode';
+
 const App: React.FC = () => {
   // Auth State
   const [session, setSession] = useState<Session | null>(null);
@@ -69,6 +90,9 @@ const App: React.FC = () => {
 
   // User State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // Mode actif (athlete, coach, admin) - lu depuis localStorage
+  const [activeMode, setActiveMode] = useState<ActiveMode | null>(null);
 
   // Navigation
   const [currentView, setCurrentView] = useState<string>('home');
@@ -89,10 +113,17 @@ const App: React.FC = () => {
   const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
   const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [completedSession, setCompletedSession] = useState<SessionLog | null>(null);
 
   // Week Organizer State - MODIFIÉ: tableau au lieu d'un seul
   const [activeWeekOrganizers, setActiveWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
   const [pastWeekOrganizers, setPastWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
+
+  // Athlete Comments State
+  const [athleteComments, setAthleteComments] = useState<AthleteComment[]>([]);
+
+  // Coach Name (pour le profil athlète)
+  const [coachName, setCoachName] = useState<string | undefined>(undefined);
 
   // ===========================================
   // AUTH EFFECTS
@@ -165,6 +196,25 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       loadUserData();
+      
+      // Charger le mode actif depuis localStorage
+      const storedMode = localStorage.getItem(ACTIVE_MODE_KEY) as ActiveMode | null;
+      if (storedMode && ['athlete', 'coach', 'admin'].includes(storedMode)) {
+        // Vérifier que l'utilisateur a bien accès à ce mode
+        if (storedMode === 'athlete' && canAccessAthleteMode(currentUser)) {
+          setActiveMode('athlete');
+        } else if ((storedMode === 'coach' || storedMode === 'admin') && canAccessCoachMode(currentUser)) {
+          setActiveMode(storedMode);
+        } else {
+          // Mode invalide, utiliser le rôle principal
+          setActiveMode(currentUser.role);
+          localStorage.setItem(ACTIVE_MODE_KEY, currentUser.role);
+        }
+      } else {
+        // Pas de mode stocké, utiliser le rôle principal
+        setActiveMode(currentUser.role);
+        localStorage.setItem(ACTIVE_MODE_KEY, currentUser.role);
+      }
     }
   }, [currentUser]);
 
@@ -182,17 +232,25 @@ const App: React.FC = () => {
   const loadUserData = async () => {
     if (!currentUser) return;
     
+    console.log('[loadUserData] Chargement données pour utilisateur:', currentUser.id);
+    
     setDataLoading(true);
     try {
-      const [plans, logs] = await Promise.all([
+      const [plans, logs, comments] = await Promise.all([
         fetchTrainingPlans(currentUser.id),
-        fetchSessionLogs(currentUser.id)
+        fetchSessionLogs(currentUser.id),
+        fetchAthleteOwnComments(currentUser.id)
       ]);
+      
+      console.log('[loadUserData] Plans chargés:', plans.length);
+      console.log('[loadUserData] Sessions chargées:', logs.length);
+      console.log('[loadUserData] Commentaires chargés:', comments.length, comments);
       
       setTrainingData(plans);
       setHistory(logs);
+      setAthleteComments(comments);
     } catch (error) {
-      console.error("Erreur chargement données:", error);
+      console.error("[loadUserData] Erreur chargement données:", error);
     } finally {
       setDataLoading(false);
     }
@@ -232,12 +290,26 @@ const App: React.FC = () => {
     return await fetchAthleteGroupWithMembers(groupId);
   };
 
-  // MODIFIÉ: Charger TOUS les week organizers pour les athlètes
+  // MODIFIÉ: Charger TOUS les week organizers pour les athlètes + nom du coach
   useEffect(() => {
     const loadWeekOrganizers = async () => {
       if (!currentUser || !currentUser.coachId) return;
       
       try {
+        // Charger le nom du coach
+        const { data: coachProfile } = await supabase
+          .from('profiles')
+          .select('first_name, last_name, username')
+          .eq('id', currentUser.coachId)
+          .single();
+        
+        if (coachProfile) {
+          const name = coachProfile.first_name && coachProfile.last_name
+            ? `${coachProfile.first_name} ${coachProfile.last_name}`
+            : coachProfile.username;
+          setCoachName(name);
+        }
+        
         // Utiliser la nouvelle fonction qui retourne TOUS les messages visibles
         const activeMessages = await fetchActiveWeekOrganizersForAthlete(
           currentUser.coachId,
@@ -319,14 +391,29 @@ const App: React.FC = () => {
       await saveSessionLog(log, currentUser.id);
       await loadUserData();
       setActiveSessionData(null);
-      setEditingSession(null);
       setHasActiveSession(false);
       localStorage.removeItem('F.Y.T_active_session');
-      setCurrentView('home');
+      localStorage.removeItem('F.Y.T_active_session_athlete');
+      
+      // Si c'est une édition, retour direct à l'accueil
+      if (editingSession) {
+        setEditingSession(null);
+        setCurrentView('home');
+      } else {
+        // Nouvelle séance: afficher l'écran de félicitations
+        setEditingSession(null);
+        setCompletedSession(log);
+        setCurrentView('completed');
+      }
     } catch (error) {
       console.error("Erreur sauvegarde session:", error);
       throw error;
     }
+  };
+
+  const handleGoHomeFromCompleted = () => {
+    setCompletedSession(null);
+    setCurrentView('home');
   };
 
   const handleCancelSession = () => {
@@ -436,14 +523,37 @@ const App: React.FC = () => {
   };
 
   const handleSaveAthleteComment = async (exerciseName: string, comment: string, sessionId: string) => {
-    if (!currentUser) return;
-    await saveAthleteComment({
-      oderId: currentUser.id,
-      sessionId,
+    if (!currentUser) {
+      console.error('[handleSaveAthleteComment] Pas d\'utilisateur connecté');
+      return;
+    }
+    
+    console.log('[handleSaveAthleteComment] Envoi commentaire:', {
+      userId: currentUser.id,
       exerciseName,
-      comment,
-      isRead: false,
+      comment: comment.substring(0, 50),
+      sessionId
     });
+
+    try {
+      const savedComment = await saveAthleteComment({
+        oderId: currentUser.id,
+        sessionId,
+        exerciseName,
+        comment,
+        isRead: false,
+      });
+      
+      console.log('[handleSaveAthleteComment] Commentaire sauvegardé:', savedComment);
+      
+      // Rafraîchir la liste des commentaires
+      if (savedComment) {
+        setAthleteComments(prev => [savedComment, ...prev]);
+      }
+    } catch (error) {
+      console.error('[handleSaveAthleteComment] Erreur:', error);
+      throw error;
+    }
   };
 
   // ===========================================
@@ -469,6 +579,48 @@ const App: React.FC = () => {
   };
 
   // ===========================================
+  // RENDER HELPERS
+  // ===========================================
+
+  // Convertir la view actuelle en AthleteView pour le bottom nav
+  const getAthleteView = (): AthleteView => {
+    switch (currentView) {
+      case 'home': return 'home';
+      case 'selector': return 'home'; // Le sélecteur est considéré comme partie de home
+      case 'history': return 'history';
+      case 'coach': return 'coach';
+      case 'settings': return 'profile';
+      default: return 'home';
+    }
+  };
+
+  // Convertir AthleteView en view interne
+  const handleAthleteViewChange = (view: AthleteView) => {
+    switch (view) {
+      case 'home': setCurrentView('home'); break;
+      case 'history': setCurrentView('history'); break;
+      case 'coach': setCurrentView('coach'); break; // Vue messages du coach
+      case 'profile': setCurrentView('settings'); break;
+    }
+  };
+
+  // Déterminer l'état du FAB
+  const getSessionState = (): SessionState => {
+    if (hasActiveSession) return 'active';
+    return 'none';
+  };
+
+  // Handler pour le FAB
+  const handleFabClick = () => {
+    if (hasActiveSession) {
+      handleResumeSession();
+    } else {
+      // Ouvrir le sélecteur de séance ou démarrer directement
+      setCurrentView('home');
+    }
+  };
+
+  // ===========================================
   // RENDER
   // ===========================================
 
@@ -480,13 +632,182 @@ const App: React.FC = () => {
     return <Auth onAuth={() => {}} />;
   }
 
-  if (!currentUser) {
+  if (!currentUser || !activeMode) {
     return <LoadingScreen />;
   }
 
+  // Vérifications basées sur le rôle principal (pour les permissions)
   const isAdmin = currentUser.role === 'admin';
   const isCoach = currentUser.role === 'coach';
+  
+  // Vérifications basées sur le mode actif (pour l'affichage)
+  const showAthleteInterface = activeMode === 'athlete';
+  const showCoachInterface = activeMode === 'coach' || activeMode === 'admin';
+  
+  // Peut-on switcher de mode ?
+  const canSwitchToCoach = canAccessCoachMode(currentUser);
+  const canSwitchToAthlete = canAccessAthleteMode(currentUser);
 
+  // Handler pour changer de mode
+  const handleSwitchMode = (newMode: ActiveMode) => {
+    localStorage.setItem(ACTIVE_MODE_KEY, newMode);
+    window.location.reload();
+  };
+
+  // ===========================================
+  // RENDER ATHLETE (Mobile-First avec Bottom Nav)
+  // ===========================================
+  if (showAthleteInterface) {
+    // Afficher l'écran de fin de séance en plein écran
+    if (currentView === 'completed' && completedSession) {
+      return (
+        <SessionCompletedScreen
+          sessionLog={completedSession}
+          onGoHome={handleGoHomeFromCompleted}
+        />
+      );
+    }
+
+    // Navigation toujours visible - le FAB orange indique qu'une session est en cours
+    // L'utilisateur peut naviguer librement et revenir via le FAB
+    const hideNavigation = false;
+
+    return (
+      <AthleteLayout
+        currentView={getAthleteView()}
+        onViewChange={handleAthleteViewChange}
+        unreadMessages={0} // TODO: implémenter le compteur de messages non lus
+        sessionState={getSessionState()}
+        onFabClick={handleFabClick}
+        hideNavigation={hideNavigation}
+      >
+        <div className="p-4">
+          {dataLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <>
+              {currentView === 'home' && (
+                <HomeAthlete
+                  user={currentUser}
+                  trainingData={trainingData}
+                  history={history}
+                  activeWeekOrganizers={activeWeekOrganizers}
+                  onStartSession={(exercises) => {
+                    // Mettre à jour les filtres pour correspondre à la séance sélectionnée
+                    if (exercises.length > 0) {
+                      const firstExercise = exercises[0];
+                      setFilters({
+                        selectedAnnee: firstExercise.annee,
+                        selectedMois: firstExercise.moisNum,
+                        selectedSemaine: firstExercise.semaine,
+                        selectedSeances: [firstExercise.seance],
+                      });
+                    }
+                    handleStartSession();
+                  }}
+                  onResumeSession={handleResumeSession}
+                  hasActiveSession={hasActiveSession}
+                  onSelectSession={() => setCurrentView('selector')}
+                />
+              )}
+
+              {/* Vue Sélecteur de séance (ancien sélecteur avec 3 dropdowns) */}
+              {currentView === 'selector' && (
+                <div className="space-y-4">
+                  {/* Header avec bouton retour */}
+                  <div className="flex items-center gap-3 pb-2">
+                    <button
+                      onClick={() => setCurrentView('home')}
+                      className="p-2 text-slate-400 hover:text-white transition-colors -ml-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m15 18-6-6 6-6"/>
+                      </svg>
+                    </button>
+                    <h1 className="text-xl font-bold text-white">Toutes les séances</h1>
+                  </div>
+                  
+                  {/* Ancien sélecteur avec dropdowns */}
+                  <Home
+                    data={trainingData}
+                    filters={filters}
+                    setFilters={setFilters}
+                    onStartSession={handleStartSession}
+                    user={currentUser}
+                    history={history}
+                    activeWeekOrganizers={[]}
+                    pastWeekOrganizers={[]}
+                  />
+                </div>
+              )}
+
+              {currentView === 'active' && activeSessionData && (
+                <ActiveSessionAthlete
+                  sessionData={activeSessionData}
+                  history={history}
+                  onSave={handleSaveSession}
+                  onCancel={handleCancelSession}
+                  initialLog={editingSession}
+                  userId={currentUser.id}
+                  onSaveComment={handleSaveAthleteComment}
+                />
+              )}
+
+              {currentView === 'history' && (
+                <HistoryAthlete
+                  history={history}
+                  onDelete={handleDeleteSession}
+                  onEdit={handleEditSession}
+                />
+              )}
+
+              {/* Vue Messages Coach */}
+              {currentView === 'coach' && (
+                <CoachMessages
+                  activeMessages={activeWeekOrganizers}
+                  pastMessages={pastWeekOrganizers}
+                  athleteComments={athleteComments}
+                />
+              )}
+
+              {/* Vue Profil */}
+              {currentView === 'profile' && (
+                <ProfileAthlete
+                  user={currentUser}
+                  history={history}
+                  coachName={coachName}
+                  onOpenSettings={() => setCurrentView('settings')}
+                  onLogout={handleLogout}
+                />
+              )}
+
+              {currentView === 'settings' && (
+                <SettingsView
+                  user={currentUser}
+                  onUpdateProfile={handleUpdateProfile}
+                  onLogout={handleLogout}
+                  activeMode={activeMode}
+                  canSwitchToCoach={canSwitchToCoach}
+                  canSwitchToAthlete={canSwitchToAthlete}
+                  onSwitchMode={handleSwitchMode}
+                />
+              )}
+
+              {currentView === 'import' && (
+                <StravaImport user={currentUser} />
+              )}
+            </>
+          )}
+        </div>
+      </AthleteLayout>
+    );
+  }
+
+  // ===========================================
+  // RENDER COACH / ADMIN (Desktop-First avec Sidebar)
+  // ===========================================
   return (
     <div className="min-h-screen bg-slate-950 flex">
       <Sidebar
@@ -498,11 +819,11 @@ const App: React.FC = () => {
         user={currentUser}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        hasActiveSession={hasActiveSession} // NOUVEAU: passer l'état de session active
+        hasActiveSession={hasActiveSession}
       />
       
       <main className="flex-1 lg:ml-0 overflow-y-auto">
-        {/* Mobile header */}
+        {/* Mobile header for coach/admin */}
         <div className="lg:hidden sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
           <div className="flex items-center justify-between">
             <button
@@ -531,7 +852,7 @@ const App: React.FC = () => {
                   onStartSession={handleStartSession}
                   user={currentUser}
                   history={history}
-                  activeWeekOrganizers={activeWeekOrganizers} // MODIFIÉ: tableau
+                  activeWeekOrganizers={activeWeekOrganizers}
                   pastWeekOrganizers={pastWeekOrganizers}
                 />
               )}
@@ -588,6 +909,10 @@ const App: React.FC = () => {
                   user={currentUser}
                   onUpdateProfile={handleUpdateProfile}
                   onLogout={handleLogout}
+                  activeMode={activeMode}
+                  canSwitchToCoach={canSwitchToCoach}
+                  canSwitchToAthlete={canSwitchToAthlete}
+                  onSwitchMode={handleSwitchMode}
                 />
               )}
 

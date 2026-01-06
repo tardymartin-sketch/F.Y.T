@@ -128,13 +128,18 @@ export const TeamView: React.FC<Props> = ({
   };
 
   const loadComments = async () => {
-    if (!fetchTeamComments) return;
+    if (!fetchTeamComments) {
+      console.log('[TeamView.loadComments] fetchTeamComments non défini');
+      return;
+    }
+    console.log('[TeamView.loadComments] Chargement commentaires pour coach:', coachId, 'showAllComments:', showAllComments);
     setCommentsLoading(true);
     try {
       const data = await fetchTeamComments(coachId, !showAllComments);
+      console.log('[TeamView.loadComments] Commentaires reçus:', data.length, data);
       setComments(data);
     } catch (e) {
-      console.error("Erreur chargement commentaires:", e);
+      console.error("[TeamView.loadComments] Erreur chargement commentaires:", e);
     } finally {
       setCommentsLoading(false);
     }

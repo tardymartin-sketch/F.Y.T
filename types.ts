@@ -12,9 +12,13 @@ export interface User {
   firstName?: string;
   lastName?: string;
   role: 'admin' | 'coach' | 'athlete';
+  secondaryRoles?: UserRole[];
   coachId?: string;
   email?: string;
 }
+
+// Type pour le mode actif (stocké dans localStorage)
+export type ActiveMode = 'athlete' | 'coach' | 'admin';
 
 export type UserRole = 'admin' | 'coach' | 'athlete';
 
@@ -26,6 +30,7 @@ export interface ProfileRow {
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  secondary_roles: string[] | null;
   coach_id: string | null;
   created_at: string;
 }
@@ -39,8 +44,58 @@ export function mapProfileToUser(row: ProfileRow): User {
     firstName: row.first_name ?? undefined,
     lastName: row.last_name ?? undefined,
     role: (row.role as UserRole) ?? 'athlete',
+    secondaryRoles: (row.secondary_roles as UserRole[]) ?? [],
     coachId: row.coach_id ?? undefined,
   };
+}
+
+// ===========================================
+// HELPERS MULTI-RÔLES
+// ===========================================
+
+/**
+ * Vérifie si un utilisateur peut accéder au mode coach/admin
+ */
+export function canAccessCoachMode(user: User): boolean {
+  return (
+    user.role === 'coach' ||
+    user.role === 'admin' ||
+    user.secondaryRoles?.includes('coach') ||
+    user.secondaryRoles?.includes('admin') ||
+    false
+  );
+}
+
+/**
+ * Vérifie si un utilisateur peut accéder au mode athlète
+ */
+export function canAccessAthleteMode(user: User): boolean {
+  return (
+    user.role === 'athlete' ||
+    user.secondaryRoles?.includes('athlete') ||
+    false
+  );
+}
+
+/**
+ * Retourne tous les modes disponibles pour un utilisateur
+ */
+export function getAvailableModes(user: User): ActiveMode[] {
+  const modes: ActiveMode[] = [];
+  
+  // Mode principal toujours disponible
+  modes.push(user.role);
+  
+  // Modes secondaires
+  if (user.secondaryRoles) {
+    user.secondaryRoles.forEach(role => {
+      if (!modes.includes(role)) {
+        modes.push(role);
+      }
+    });
+  }
+  
+  return modes;
 }
 
 // ===========================================
@@ -63,6 +118,8 @@ export interface TrainingPlanRow {
   Month_num: number | null;
   Tempo: string | null;
   "Notes/Consignes": string | null;
+  week_start_date: string | null;  // Format: YYYY-MM-DD
+  week_end_date: string | null;    // Format: YYYY-MM-DD
 }
 
 // Type utilisé dans l'application (camelCase, valeurs par défaut)
@@ -81,6 +138,8 @@ export interface WorkoutRow {
   tempoRpe: string;
   notes: string;
   video: string;
+  weekStartDate?: string;  // Format: YYYY-MM-DD
+  weekEndDate?: string;    // Format: YYYY-MM-DD
 }
 
 // Mapping Training Plan DB -> WorkoutRow App
@@ -100,6 +159,8 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     tempoRpe: row.Tempo ?? '',
     notes: row["Notes/Consignes"] ?? '',
     video: row.video_url ?? '',
+    weekStartDate: row.week_start_date ?? undefined,
+    weekEndDate: row.week_end_date ?? undefined,
   };
 }
 
