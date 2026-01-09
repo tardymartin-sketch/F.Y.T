@@ -99,8 +99,16 @@ export async function fetchSessionLogs(userId: string): Promise<SessionLog[]> {
 }
 
 export async function saveSessionLog(log: SessionLog, userId: string): Promise<SessionLog> {
+  console.log('[saveSessionLog] Début sauvegarde:', {
+    logId: log.id,
+    userId,
+    sessionKey: log.sessionKey,
+    exerciseCount: log.exercises?.length
+  });
+
   const rowData = mapSessionLogToRow(log, userId);
-  
+  console.log('[saveSessionLog] Données mappées:', rowData);
+
   const { data, error } = await supabase
     .from('session_logs')
     .upsert(rowData, { onConflict: 'id' })
@@ -108,10 +116,16 @@ export async function saveSessionLog(log: SessionLog, userId: string): Promise<S
     .single();
 
   if (error) {
-    console.error('Error saving session log:', error);
+    console.error('[saveSessionLog] Erreur Supabase:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
     throw error;
   }
 
+  console.log('[saveSessionLog] Sauvegarde réussie:', data);
   return mapSessionLogRowToSessionLog(data as SessionLogRow);
 }
 
@@ -316,8 +330,8 @@ export async function deleteWeekOrganizerLog(logId: string): Promise<void> {
 // ATHLETE COMMENTS (Feedbacks)
 // ===========================================
 
-// Récupérer les commentaires pour un coach (ses athlètes)
-export async function fetchTeamComments(coachId: string, onlyUnread: boolean = true): Promise<AthleteComment[]> {
+// Récupérer les commentaires pour un coach (ses athlètes + ses propres réponses)
+export async function fetchTeamComments(coachId: string, onlyUnread: boolean = false): Promise<AthleteComment[]> {
   console.log('[fetchTeamComments] Récupération pour coachId:', coachId, 'onlyUnread:', onlyUnread);
 
   // Étape 1: Récupérer les athlètes du coach
@@ -342,11 +356,14 @@ export async function fetchTeamComments(coachId: string, onlyUnread: boolean = t
   const athleteMap = new Map(athletes.map(a => [a.id, a]));
   console.log('[fetchTeamComments] IDs des athlètes:', athleteIds);
 
-  // Étape 2: Récupérer les commentaires (requête simple sans jointures)
+  // Étape 2: Récupérer les commentaires des athlètes ET du coach
+  // On inclut le coachId dans la liste pour récupérer ses réponses
+  const allUserIds = [...athleteIds, coachId];
+
   let query = supabase
     .from('athlete_comments')
     .select('*')
-    .in('user_id', athleteIds)
+    .in('user_id', allUserIds)
     .order('created_at', { ascending: false });
 
   if (onlyUnread) {
@@ -367,12 +384,20 @@ export async function fetchTeamComments(coachId: string, onlyUnread: boolean = t
     return [];
   }
 
-  // Mapper les données en ajoutant les infos de l'athlète depuis notre map
+  // Récupérer les infos du coach pour ses messages
+  const { data: coachData } = await supabase
+    .from('profiles')
+    .select('id, username, first_name, last_name')
+    .eq('id', coachId)
+    .single();
+
+  // Mapper les données en ajoutant les infos de l'utilisateur
   const mapped: AthleteComment[] = data.map((row: any) => {
-    const athlete = athleteMap.get(row.user_id);
+    const isCoachMessage = row.user_id === coachId;
+    const athlete = isCoachMessage ? coachData : athleteMap.get(row.user_id);
     return {
       id: row.id,
-      oderId: row.user_id,
+      userId: row.user_id,
       sessionId: row.session_id ?? undefined,
       exerciseName: row.exercise_name,
       comment: row.comment,
@@ -390,35 +415,64 @@ export async function fetchTeamComments(coachId: string, onlyUnread: boolean = t
   return mapped;
 }
 
-// Récupérer les commentaires d'un athlète (ses propres commentaires)
+// Récupérer les commentaires d'un athlète (ses propres commentaires + réponses du coach)
 export async function fetchAthleteOwnComments(athleteId: string): Promise<AthleteComment[]> {
   console.log('[fetchAthleteOwnComments] Récupération pour athleteId:', athleteId);
 
-  // D'abord, essayer une requête simple sans jointures
-  const { data, error } = await supabase
+  // Étape 1: Récupérer le coachId de l'athlète
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('coach_id')
+    .eq('id', athleteId)
+    .single();
+
+  const coachId = profile?.coach_id;
+  console.log('[fetchAthleteOwnComments] CoachId de l\'athlète:', coachId);
+
+  // Étape 2: Récupérer les messages de l'athlète
+  const { data: athleteMessages, error: athleteError } = await supabase
     .from('athlete_comments')
     .select('*')
     .eq('user_id', athleteId)
     .order('created_at', { ascending: false })
-    .limit(50);
+    .limit(100);
 
-  if (error) {
-    console.error('[fetchAthleteOwnComments] Erreur Supabase:', error);
-    // Ne pas throw, retourner un tableau vide pour ne pas bloquer l'app
+  if (athleteError) {
+    console.error('[fetchAthleteOwnComments] Erreur Supabase athlète:', athleteError);
     return [];
   }
 
-  console.log('[fetchAthleteOwnComments] Données brutes:', data);
-  console.log('[fetchAthleteOwnComments] Nombre de commentaires:', data?.length || 0);
+  // Étape 3: Si l'athlète a un coach, récupérer les exerciseNames et chercher les réponses du coach
+  let coachMessages: any[] = [];
+  if (coachId && athleteMessages && athleteMessages.length > 0) {
+    const exerciseNames = [...new Set(athleteMessages.map((m: any) => m.exercise_name))];
 
-  if (!data || data.length === 0) {
+    const { data: coachData, error: coachError } = await supabase
+      .from('athlete_comments')
+      .select('*')
+      .eq('user_id', coachId)
+      .in('exercise_name', exerciseNames)
+      .order('created_at', { ascending: false });
+
+    if (!coachError && coachData) {
+      coachMessages = coachData;
+    }
+  }
+
+  // Étape 4: Combiner et trier
+  const allMessages = [...(athleteMessages || []), ...coachMessages];
+  allMessages.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  console.log('[fetchAthleteOwnComments] Total messages:', allMessages.length);
+
+  if (allMessages.length === 0) {
     return [];
   }
 
-  // Mapper les données sans les jointures
-  const mapped: AthleteComment[] = data.map((row: any) => ({
+  // Mapper les données
+  const mapped: AthleteComment[] = allMessages.map((row: any) => ({
     id: row.id,
-    oderId: row.user_id,
+    userId: row.user_id,
     sessionId: row.session_id ?? undefined,
     exerciseName: row.exercise_name,
     comment: row.comment,
@@ -437,7 +491,7 @@ export async function fetchAthleteOwnComments(athleteId: string): Promise<Athlet
 
 export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'createdAt' | 'username' | 'firstName' | 'lastName' | 'sessionName'>): Promise<AthleteComment | null> {
   console.log('[saveAthleteComment] Début sauvegarde:', {
-    oderId: comment.oderId,
+    userId: comment.userId,
     exerciseName: comment.exerciseName,
     comment: comment.comment.substring(0, 50),
     sessionId: comment.sessionId
@@ -457,7 +511,7 @@ export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'c
   console.log('[saveAthleteComment] sessionId validé:', validSessionId);
 
   const insertData = {
-    user_id: comment.oderId,
+    user_id: comment.userId,
     session_id: validSessionId,
     exercise_name: comment.exerciseName,
     comment: comment.comment,
@@ -487,7 +541,7 @@ export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'c
     // Créer un objet de retour minimal
     return {
       id: 'temp-' + Date.now(),
-      oderId: comment.oderId,
+      userId: comment.userId,
       sessionId: validSessionId ?? undefined,
       exerciseName: comment.exerciseName,
       comment: comment.comment,
@@ -501,7 +555,7 @@ export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'c
 
   return {
     id: row.id,
-    oderId: row.user_id,
+    userId: row.user_id,
     sessionId: row.session_id ?? undefined,
     exerciseName: row.exercise_name,
     comment: row.comment,

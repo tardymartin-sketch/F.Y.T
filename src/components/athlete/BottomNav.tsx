@@ -1,150 +1,108 @@
-// ===========================================
-// F.Y.T - Bottom Navigation
-// src/components/athlete/BottomNav.tsx
-// Navigation par onglets pour l'interface athlète mobile-first
-// ===========================================
+import { Home, History, MessageSquare, User } from 'lucide-react';
+import { useUnreadCount } from '../../hooks/useUnreadCount';
 
-import React from 'react';
-import { 
-  Home, 
-  BarChart3, 
-  MessageSquare, 
-  User,
-  LucideIcon
-} from 'lucide-react';
+type TabId = 'home' | 'history' | 'coach' | 'profile';
 
-// ===========================================
-// TYPES
-// ===========================================
-
-export type AthleteView = 'home' | 'history' | 'coach' | 'profile';
-
-interface NavItem {
-  id: AthleteView;
-  icon: LucideIcon;
+interface Tab {
+  id: TabId;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
-  badge?: number;
+  showBadge?: boolean;
 }
 
 interface BottomNavProps {
-  currentView: AthleteView;
-  onViewChange: (view: AthleteView) => void;
-  unreadMessages?: number;
+  activeTab: TabId;
+  onTabChange: (tabId: TabId) => void;
 }
 
-// ===========================================
-// CONFIGURATION DES ONGLETS
-// ===========================================
-
-const NAV_ITEMS: NavItem[] = [
+const tabs: Tab[] = [
   { id: 'home', icon: Home, label: 'Accueil' },
-  { id: 'history', icon: BarChart3, label: 'Historique' },
-  // Le FAB est géré séparément (espace vide ici)
-  { id: 'coach', icon: MessageSquare, label: 'Coach' },
+  { id: 'history', icon: History, label: 'Historique' },
+  { id: 'coach', icon: MessageSquare, label: 'Coach', showBadge: true },
   { id: 'profile', icon: User, label: 'Profil' },
 ];
 
-// ===========================================
-// COMPOSANT PRINCIPAL
-// ===========================================
+export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+  const { count: unreadCount } = useUnreadCount();
 
-export const BottomNav: React.FC<BottomNavProps> = ({
-  currentView,
-  onViewChange,
-  unreadMessages = 0,
-}) => {
+  const handleTabClick = (tabId: TabId) => {
+    onTabChange(tabId);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, tabId: TabId) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleTabClick(tabId);
+    }
+    
+    // Arrow navigation
+    const currentIndex = tabs.findIndex(t => t.id === tabId);
+    if (e.key === 'ArrowRight' && currentIndex < tabs.length - 1) {
+      onTabChange(tabs[currentIndex + 1].id);
+    } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+      onTabChange(tabs[currentIndex - 1].id);
+    }
+  };
+
   return (
-    <nav 
-      className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+    <nav
+      className="fixed bottom-0 left-0 right-0 h-[calc(64px+env(safe-area-inset-bottom))] bg-[#16191a] border-t border-[rgba(255,255,255,0.04)] backdrop-blur-sm z-30"
+      role="navigation"
+      aria-label="Navigation principale"
     >
-      <div className="flex items-center justify-around h-16 px-2">
-        {/* Onglets gauche (Home, History) */}
-        {NAV_ITEMS.slice(0, 2).map((item) => (
-          <NavTab
-            key={item.id}
-            item={item}
-            isActive={currentView === item.id}
-            onClick={() => onViewChange(item.id)}
-          />
-        ))}
+      <div className="grid grid-cols-4 h-full">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          const showBadgeCount = tab.showBadge && unreadCount > 0;
 
-        {/* Espace pour le FAB */}
-        <div className="w-16" />
-
-        {/* Onglets droite (Coach, Profile) */}
-        {NAV_ITEMS.slice(2).map((item) => (
-          <NavTab
-            key={item.id}
-            item={{
-              ...item,
-              badge: item.id === 'coach' ? unreadMessages : undefined,
-            }}
-            isActive={currentView === item.id}
-            onClick={() => onViewChange(item.id)}
-          />
-        ))}
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id)}
+              onKeyDown={(e) => handleKeyDown(e, tab.id)}
+              className={`
+                flex flex-col items-center justify-center gap-1 text-sm
+                transition-all duration-150
+                active:scale-95
+                focus:outline-none focus:ring-2 focus:ring-[#89a688]/20 focus:ring-inset
+                ${isActive ? 'text-white/95' : 'text-[#bfc7c5]/80 hover:text-[#bfc7c5]'}
+              `}
+              aria-label={tab.label}
+              aria-current={isActive ? 'page' : undefined}
+              tabIndex={0}
+            >
+              <div className="relative flex flex-col items-center gap-1">
+                {/* Indicateur actif */}
+                {isActive && (
+                  <div 
+                    className="absolute -top-3 w-2 h-2 rounded-full bg-[#89a688]"
+                    aria-hidden="true"
+                  />
+                )}
+                
+                {/* Icône avec badge optionnel */}
+                <div className="relative">
+                  <Icon className="w-6 h-6" aria-hidden="true" />
+                  
+                  {/* Badge non-lus */}
+                  {showBadgeCount && (
+                    <div
+                      className="absolute -top-1 -right-2 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#e85a5a] text-white text-xs font-semibold"
+                      aria-label={`${unreadCount} message${unreadCount > 1 ? 's' : ''} non lu${unreadCount > 1 ? 's' : ''}`}
+                    >
+                      {unreadCount}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Label */}
+                <span className="text-xs">{tab.label}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </nav>
   );
-};
-
-// ===========================================
-// COMPOSANT ONGLET
-// ===========================================
-
-interface NavTabProps {
-  item: NavItem;
-  isActive: boolean;
-  onClick: () => void;
 }
-
-const NavTab: React.FC<NavTabProps> = ({ item, isActive, onClick }) => {
-  const Icon = item.icon;
-  
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        relative flex flex-col items-center justify-center
-        min-w-[64px] h-12 px-3 rounded-xl
-        transition-all duration-200 ease-out
-        active:scale-95
-        ${isActive 
-          ? 'text-blue-500' 
-          : 'text-slate-500 hover:text-slate-400'
-        }
-      `}
-      aria-label={item.label}
-      aria-current={isActive ? 'page' : undefined}
-    >
-      {/* Icône */}
-      <div className="relative">
-        <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
-        
-        {/* Badge de notification */}
-        {item.badge !== undefined && item.badge > 0 && (
-          <span className="absolute -top-1 -right-2 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
-            {item.badge > 9 ? '9+' : item.badge}
-          </span>
-        )}
-      </div>
-      
-      {/* Label */}
-      <span className={`
-        mt-1 text-[10px] font-medium
-        transition-colors duration-200
-        ${isActive ? 'text-blue-500' : 'text-slate-500'}
-      `}>
-        {item.label}
-      </span>
-
-      {/* Indicateur actif (dot) */}
-      {isActive && (
-        <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-blue-500" />
-      )}
-    </button>
-  );
-};
-
-export default BottomNav;

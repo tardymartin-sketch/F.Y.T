@@ -254,19 +254,23 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
 }
 
 // Mapping SessionLog App -> DB (pour insert/update)
-export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<SessionLogRow, 'created_at'> {
+// Note: completed_at n'existe pas dans la table Supabase, on ne l'inclut pas
+export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<SessionLogRow, 'created_at' | 'completed_at' | 'seance_type'> {
+  // Valider les valeurs numériques pour éviter NaN
+  const keyYear = log.sessionKey.annee ? parseInt(log.sessionKey.annee) : null;
+  const keyWeek = log.sessionKey.semaine ? parseInt(log.sessionKey.semaine) : null;
+
   return {
     id: log.id,
     user_id: userId,
     date: log.date,
     duration_minutes: log.durationMinutes ?? null,
-    session_key_year: log.sessionKey.annee ? parseInt(log.sessionKey.annee) : null,
-    session_key_week: log.sessionKey.semaine ? parseInt(log.sessionKey.semaine) : null,
+    session_key_year: isNaN(keyYear as number) ? null : keyYear,
+    session_key_week: isNaN(keyWeek as number) ? null : keyWeek,
     session_key_name: log.sessionKey.seance || null,
     exercises: log.exercises,
     comments: log.comments ?? null,
     session_rpe: log.sessionRpe ?? null,
-    completed_at: log.completedAt ?? null,
   };
 }
 

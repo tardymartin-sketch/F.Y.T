@@ -1,234 +1,267 @@
-// ============================================================
-// F.Y.T - SIDEBAR (avec Session en cours)
-// src/components/Sidebar.tsx
-// Navigation avec menu "Session en cours" pour persistence
-// ============================================================
+import { useState, useEffect, useRef } from 'react';
+import { Home, Download, Users, MessageSquare, Settings, Menu, X, LogOut } from 'lucide-react';
+import { useUnreadCount } from '../hooks/useUnreadCount';
 
-import React from 'react';
-import { 
-  Home, 
-  Play, 
-  History, 
-  Users, 
-  Settings, 
-  LogOut, 
-  Shield,
-  Dumbbell,
-  ChevronRight,
-  X,
-  Download,
-  Timer
-} from 'lucide-react';
-import { User } from '../../types';
-
-interface Props {
-  currentView: string;
-  setCurrentView: (view: string) => void;
-  isAdmin: boolean;
-  isCoach: boolean;
-  onLogout: () => void;
-  user: User | null;
-  isOpen: boolean;
-  onClose: () => void;
-  hasActiveSession?: boolean; // NOUVEAU: indique si une session est en cours
-}
+type ViewId = 'home' | 'import' | 'team' | 'messages' | 'settings';
 
 interface MenuItem {
-  id: string;
+  id: ViewId;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
-  icon: React.ElementType;
-  badge?: string;
-  highlight?: boolean;
+  showBadge?: boolean;
 }
 
-export const Sidebar: React.FC<Props> = ({ 
+interface SidebarProps {
+  currentView: ViewId;
+  onNavigate: (viewId: ViewId) => void;
+  coachName?: string;
+  athletesCount?: number;
+  onLogout?: () => void;
+}
+
+const menuItems: MenuItem[] = [
+  { id: 'home', icon: Home, label: 'Accueil' },
+  { id: 'import', icon: Download, label: 'Importer' },
+  { id: 'team', icon: Users, label: 'Mes Athlètes' },
+  { id: 'messages', icon: MessageSquare, label: 'Messages', showBadge: true },
+  { id: 'settings', icon: Settings, label: 'Paramètres' },
+];
+
+export function Sidebar({ 
   currentView, 
-  setCurrentView, 
-  isAdmin,
-  isCoach, 
-  onLogout, 
-  user,
-  isOpen,
-  onClose,
-  hasActiveSession = false
-}) => {
-  const getMenuItems = (): MenuItem[] => {
-    const items: MenuItem[] = [
-      { id: 'home', label: 'Accueil', icon: Home },
-    ];
+  onNavigate,
+  coachName = 'Coach',
+  athletesCount = 0,
+  onLogout 
+}: SidebarProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const { count: unreadCount } = useUnreadCount();
+  
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout>();
+  const closeTimerRef = useRef<NodeJS.Timeout>();
 
-    // NOUVEAU: Ajouter "Session en cours" si une session est active
-    if (hasActiveSession) {
-      items.push({ 
-        id: 'active', 
-        label: 'Session en cours', 
-        icon: Timer,
-        highlight: true 
-      });
+  // Gérer l'ouverture au hover
+  const handleHoverZoneEnter = () => {
+    if (!isOpen) {
+      hoverTimerRef.current = setTimeout(() => {
+        setIsOpen(true);
+      }, 150);
     }
-
-    items.push({ id: 'history', label: 'Historique', icon: History });
-    items.push({ id: 'import', label: 'Importer', icon: Download });
-
-    if (isCoach || isAdmin) {
-      items.push({ id: 'team', label: 'Mes Athlètes', icon: Users });
-    }
-
-    if (isAdmin) {
-      items.push({ id: 'admin', label: 'Administration', icon: Shield });
-    }
-
-    items.push({ id: 'settings', label: 'Paramètres', icon: Settings });
-
-    return items;
   };
 
-  const menuItems = getMenuItems();
+  const handleHoverZoneLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+  };
 
-  const getRoleBadge = () => {
-    if (!user) return null;
-    const colors = {
-      admin: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      coach: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-      athlete: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  // Gérer la fermeture quand la souris quitte
+  const handleSidebarMouseEnter = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+  };
+
+  const handleSidebarMouseLeave = () => {
+    closeTimerRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 300);
+  };
+
+  // Toggle via hamburger
+  const toggleSidebar = () => {
+    setIsOpen(prev => !prev);
+  };
+
+  // Fermer la sidebar
+  const closeSidebar = () => {
+    setIsOpen(false);
+  };
+
+  // Gérer la navigation
+  const handleNavigate = (viewId: ViewId) => {
+    onNavigate(viewId);
+    closeSidebar();
+  };
+
+  // Gérer le clic en dehors (overlay)
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isOpen && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        const hamburger = document.getElementById('hamburger-button');
+        if (hamburger && hamburger.contains(event.target as Node)) {
+          return;
+        }
+        closeSidebar();
+      }
     };
-    return colors[user.role] || colors.athlete;
-  };
 
-  const handleNavigation = (viewId: string) => {
-    setCurrentView(viewId);
-    if (window.innerWidth < 1024) {
-      onClose();
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
     }
-  };
 
-  // MODIFIÉ: Afficher toujours le prénom
-  const getDisplayName = () => {
-    if (!user) return '';
-    // Priorité au prénom, sinon utiliser le username
-    return user.firstName || user.username?.split('.')[0] || user.username;
-  };
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
 
-  const getInitials = () => {
-    if (!user) return '';
-    if (user.firstName && user.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`;
-    }
-    if (user.firstName) {
-      return user.firstName[0];
-    }
-    return user.username?.[0] || '?';
-  };
+  // Gérer l'accessibilité clavier
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        closeSidebar();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen]);
+
+  // Cleanup timers
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Hamburger button - toujours visible */}
+      <button
+        id="hamburger-button"
+        onClick={toggleSidebar}
+        className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-[#16191a] border border-[rgba(255,255,255,0.04)] text-[#bfc7c5] hover:text-white hover:bg-[rgba(255,255,255,0.02)] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#89a688]/20"
+        aria-label={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+        aria-expanded={isOpen}
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Zone de hover pour ouverture */}
+      {!isOpen && (
+        <div
+          className="fixed top-0 left-0 w-[50px] h-full z-40"
+          onMouseEnter={handleHoverZoneEnter}
+          onMouseLeave={handleHoverZoneLeave}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Overlay */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-          onClick={onClose}
+        <div
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
+          onClick={closeSidebar}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 h-full w-72 bg-slate-900 border-r border-slate-800 z-50 
-        transform transition-transform duration-300 ease-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
-        lg:translate-x-0 lg:static
-        flex flex-col
-      `}>
-        {/* Header */}
-        <div className="p-6 border-b border-slate-800">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 bg-gradient-to-br from-blue-600 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-                <Dumbbell className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="font-bold text-white text-lg">F.Y.T</h1>
-                <div className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 mt-0.5 ${getRoleBadge()}`}>
-                  {user?.role === 'admin' && <Shield className="w-3 h-3" />}
-                  {user?.role?.charAt(0).toUpperCase()}{user?.role?.slice(1)}
-                </div>
-              </div>
-            </div>
-            <button 
-              onClick={onClose}
-              className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+      <aside
+        ref={sidebarRef}
+        onMouseEnter={handleSidebarMouseEnter}
+        onMouseLeave={handleSidebarMouseLeave}
+        className={`
+          fixed top-0 left-0 h-full bg-[#16191a] border-r border-[rgba(255,255,255,0.04)] z-50
+          transition-transform duration-300 ease-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+        style={{ width: 'clamp(256px, 20vw, 320px)' }}
+        role="navigation"
+        aria-label="Navigation coach"
+        aria-hidden={!isOpen}
+      >
+        <div className="flex flex-col h-full">
+          {/* Header avec close button */}
+          <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.04)]">
+            <h2 className="text-lg font-semibold text-white">F.Y.T Coach</h2>
+            <button
+              onClick={closeSidebar}
+              className="p-1 rounded-lg text-[#bfc7c5] hover:text-white hover:bg-[rgba(255,255,255,0.02)] transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#89a688]/20"
+              aria-label="Fermer le menu"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-        </div>
 
-        {/* User Info */}
-        {user && (
-          <div className="px-4 py-4 border-b border-slate-800/50">
-            <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                {getInitials()}
+          {/* Menu items */}
+          <nav className="flex-1 overflow-y-auto py-4">
+            <ul className="space-y-1 px-2">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
+                const showBadgeCount = item.showBadge && unreadCount > 0;
+
+                return (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => handleNavigate(item.id)}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-[#89a688]/20
+                        ${isActive 
+                          ? 'bg-[#89a688]/10 text-white border-l-2 border-[#89a688]' 
+                          : 'text-[#bfc7c5] hover:bg-[rgba(255,255,255,0.02)] hover:text-white'
+                        }
+                      `}
+                      aria-current={isActive ? 'page' : undefined}
+                    >
+                      <div className="relative">
+                        <Icon className="w-5 h-5" aria-hidden="true" />
+                        
+                        {/* Badge non-lus */}
+                        {showBadgeCount && (
+                          <div
+                            className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center rounded-full bg-[#e85a5a] text-white text-xs font-semibold"
+                            aria-label={`${unreadCount} message${unreadCount > 1 ? 's' : ''} non lu${unreadCount > 1 ? 's' : ''}`}
+                          >
+                            {unreadCount}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          {/* Footer */}
+          <div className="border-t border-[rgba(255,255,255,0.04)] p-4 space-y-3">
+            {/* Coach info */}
+            <div className="flex items-center gap-3 px-2">
+              <div className="w-10 h-10 rounded-full bg-[#89a688]/20 flex items-center justify-center">
+                <span className="text-sm font-semibold text-[#89a688]">
+                  {coachName.charAt(0).toUpperCase()}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-medium truncate">
-                  {getDisplayName()} {user.lastName || ''}
+                <p className="text-sm font-medium text-white truncate">{coachName}</p>
+                <p className="text-xs text-[#bfc7c5]">
+                  {athletesCount} athlète{athletesCount !== 1 ? 's' : ''}
                 </p>
-                <p className="text-slate-500 text-sm truncate">@{user.username}</p>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            const isHighlighted = item.highlight;
-            
-            return (
+            {/* Logout button */}
+            {onLogout && (
               <button
-                key={item.id}
-                onClick={() => handleNavigation(item.id)}
-                className={`
-                  w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200
-                  ${isActive 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' 
-                    : isHighlighted
-                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 animate-pulse'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                  }
-                `}
+                onClick={onLogout}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#bfc7c5] hover:bg-[rgba(255,255,255,0.02)] hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#89a688]/20"
+                aria-label="Se déconnecter"
               >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : isHighlighted ? 'text-orange-400' : ''}`} />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-                {isHighlighted && !isActive && (
-                  <span className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
-                )}
-                <ChevronRight className={`w-4 h-4 transition-transform ${isActive ? 'translate-x-1' : ''}`} />
+                <LogOut className="w-5 h-5" aria-hidden="true" />
+                <span className="text-sm font-medium">Déconnexion</span>
               </button>
-            );
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div className="p-4 border-t border-slate-800">
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">Déconnexion</span>
-          </button>
+            )}
+          </div>
         </div>
       </aside>
     </>
   );
-};
+}

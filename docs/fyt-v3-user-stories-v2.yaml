@@ -1,0 +1,1027 @@
+# ============================================
+# F.Y.T V3 — USER STORIES (V2)
+# Format optimisé pour interprétation IA
+# Mis à jour après validation wireframes
+# ============================================
+
+metadata:
+  version: "3.0.1"
+  date: "2025-01-06"
+  total_stories: 48
+  changes_from_v1:
+    - "ATH-002: FAB supprimé, bottom bar 4 onglets égaux"
+    - "ATH-008: Détail champs modifiables/non modifiables"
+    - "ATH-012: Option son supprimée"
+    - "ATH-NEW-001: Modal preview séance complète"
+    - "ATH-NEW-002: Vue 'Choisir ma séance' avec dropdowns"
+    - "COA-001: Messages ajouté dans sidebar"
+    - "COA-010: ProgramEditor complet avec filtres combinables"
+    - "COA-013: Option son supprimée"
+    - "COA-011: Déplacé de TeamView vers écran dédié (sidebar)"
+  categories:
+    - db_migration
+    - athlete_home
+    - athlete_history
+    - athlete_coach
+    - athlete_profile
+    - athlete_badges
+    - coach_sidebar
+    - coach_dashboard
+    - coach_programs
+    - coach_import
+    - coach_messages
+    - coach_settings
+    - shared
+
+# ============================================
+# DATABASE MIGRATION
+# ============================================
+db_migration:
+  - id: DB-001
+    title: Créer table conversations
+    priority: critical
+    model: opus
+    description: |
+      Table pour regrouper les threads de messages par exercice
+    sql: |
+      CREATE TABLE conversations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        athlete_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        coach_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        session_id UUID REFERENCES session_logs(id) ON DELETE SET NULL,
+        exercise_name TEXT,
+        last_message_at TIMESTAMPTZ DEFAULT now(),
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(athlete_id, coach_id, session_id, exercise_name)
+      );
+      CREATE INDEX idx_conversations_athlete ON conversations(athlete_id);
+      CREATE INDEX idx_conversations_coach ON conversations(coach_id);
+
+  - id: DB-002
+    title: Créer table messages
+    priority: critical
+    model: opus
+    description: |
+      Messages individuels liés aux conversations
+    sql: |
+      CREATE TABLE messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        sender_id UUID NOT NULL REFERENCES profiles(id),
+        content TEXT NOT NULL,
+        is_read BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+      CREATE INDEX idx_messages_unread ON messages(sender_id, is_read) WHERE is_read = false;
+
+  - id: DB-003
+    title: Créer table badges
+    priority: critical
+    model: opus
+    description: |
+      Définition des 25 badges avec conditions
+    sql: |
+      CREATE TABLE badges (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        icon_svg TEXT NOT NULL,
+        condition_type TEXT NOT NULL,
+        condition_value INT NOT NULL,
+        order_index INT DEFAULT 0
+      );
+
+  - id: DB-004
+    title: Créer table user_badges
+    priority: critical
+    model: opus
+    description: |
+      Badges débloqués par utilisateur
+    sql: |
+      CREATE TABLE user_badges (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        badge_id UUID NOT NULL REFERENCES badges(id) ON DELETE CASCADE,
+        unlocked_at TIMESTAMPTZ DEFAULT now(),
+        progress_value INT DEFAULT 0,
+        UNIQUE(user_id, badge_id)
+      );
+      CREATE INDEX idx_user_badges_user ON user_badges(user_id);
+
+  - id: DB-005
+    title: Migrer données athlete_comments vers messages
+    priority: high
+    model: opus
+    description: |
+      Script de migration des commentaires existants vers le nouveau système
+    acceptance_criteria:
+      - Créer conversation pour chaque couple athlete/coach/session/exercise unique
+      - Migrer chaque commentaire comme message
+      - Préserver is_read et created_at
+      - Supprimer athlete_comments après validation
+
+  - id: DB-006
+    title: RLS policies pour conversations et messages
+    priority: critical
+    model: opus
+    description: |
+      Politiques de sécurité Row Level Security
+    acceptance_criteria:
+      - Athlète voit ses conversations uniquement
+      - Coach voit conversations de ses athlètes
+      - Sender peut créer messages dans ses conversations
+      - Receiver peut marquer messages comme lus
+
+# ============================================
+# ATHLETE — ACCUEIL
+# ============================================
+athlete_home:
+  - id: ATH-001
+    title: KPI encouragement dynamique
+    priority: high
+    model: sonnet
+    description: |
+      Encart motivationnel basé sur stats douces (pas de streak punitif)
+    logic: |
+      PRIORITÉ AFFICHAGE (1er applicable):
+      1. Séance aujourd'hui → "Bravo pour cette séance ! 💪"
+      2. X séances cette semaine:
+         - 1: "Première séance de la semaine, c'est parti !"
+         - 2: "Deuxième entraînement de la semaine, bravo !"
+         - 3+: "Déjà [X] séances cette semaine, tu assures !"
+      3. Proche palier mensuel (8-9 → 10, 14-15 → 15):
+         "Bientôt [palier] entraînements ce mois-ci !"
+      4. Proche record mensuel (record - 2):
+         "Le record mensuel approche !"
+      5. Record égalé: "Record mensuel égalé ! 🏆"
+      6. Nouveau record: "Nouveau record mensuel ! 🎉"
+      7. Fallback: "Prêt pour ta prochaine séance ?"
+    component: EncouragementKPI
+    location: Home.tsx
+
+  - id: ATH-002
+    title: Navigation mobile bottom bar (SANS FAB)
+    priority: critical
+    model: opus
+    description: |
+      Bottom navigation 4 onglets égaux, PAS de FAB
+    tabs:
+      - id: home
+        icon: Home
+        label: Accueil
+        width: 25%
+      - id: history
+        icon: History
+        label: Historique
+        width: 25%
+      - id: coach
+        icon: MessageSquare
+        label: Coach
+        badge: unreadCount
+        width: 25%
+      - id: profile
+        icon: User
+        label: Profil
+        width: 25%
+    behavior:
+      - Hauteur: 64px + env(safe-area-inset-bottom)
+      - Highlight onglet actif
+      - Badge non-lus sur Coach (pastille rouge)
+      - PAS DE FAB - le démarrage séance se fait via bouton dans Home
+    styling:
+      - "grid-template-columns: repeat(4, 1fr)"
+      - Position fixed bottom
+    component: BottomNavigation
+    location: BottomNavigation.tsx (nouveau)
+
+  - id: ATH-NEW-001
+    title: Modal preview séance complète
+    priority: medium
+    model: sonnet
+    description: |
+      Modal affichant tous les exercices de la séance sélectionnée
+    trigger: Clic sur le SessionPreview (encart preview)
+    content:
+      - Header: Nom de la séance + bouton fermer
+      - Subtitle: Nombre exercices + durée estimée
+      - Liste scrollable: Tous les exercices avec détails
+        - Nom exercice
+        - Séries × Reps
+        - Repos
+        - Tempo (si défini)
+        - Notes coach (si définies)
+      - Footer: Bouton "Démarrer cette séance"
+    behavior:
+      - Modal centré, max-height 85dvh
+      - Scroll interne si contenu dépasse
+      - Fermeture: clic ✕, clic overlay, touche Escape
+      - Bouton démarrer → lance la séance (même logique que bouton principal)
+    component: SessionPreviewModal
+    location: Home.tsx ou composant dédié
+
+  - id: ATH-NEW-002
+    title: Vue "Choisir ma séance" avec filtres
+    priority: medium
+    model: sonnet
+    description: |
+      Vue alternative de l'accueil avec dropdowns de sélection manuelle
+    trigger: Clic sur bouton "📂 Choisir ma séance"
+    content:
+      - Même header + KPI encouragement
+      - Section filtres:
+        - Dropdown Année
+        - Dropdown Mois (filtré par année)
+        - Dropdown Semaine (filtré par mois)
+        - Dropdown Séance (filtré par semaine)
+      - SessionPreview mis à jour selon filtres
+      - Bouton "Démarrer"
+      - Bouton "← Retour séance suggérée"
+    behavior:
+      - Filtres en cascade (année → mois → semaine → séance)
+      - Preview se met à jour automatiquement
+      - Retour = revenir à la vue avec chips suggérés
+    state:
+      - showAdvancedFilters: boolean (toggle entre les deux vues)
+    component: Home.tsx (extension)
+    location: Home.tsx
+
+# ============================================
+# ATHLETE — HISTORIQUE
+# ============================================
+athlete_history:
+  - id: ATH-003
+    title: Encart KPIs agrandissable
+    priority: medium
+    model: sonnet
+    description: |
+      Stats condensées en haut de l'historique, tap pour agrandir
+    states:
+      collapsed:
+        content: "📊 Ce mois: [X] séances • [Y]h • RPE [Z]"
+        height: auto (environ 48px)
+      expanded:
+        content: |
+          - Séances: X (+diff vs mois précédent)
+          - Temps total: Yh (+diff)
+          - RPE moyen: Z (tendance ▲▼●)
+          - Exercices uniques: N
+          - Record: "X séances en 1 semaine (SX)"
+        height: auto
+    animation: height transition 300ms ease-out
+    component: HistoryKPICard
+    location: History.tsx
+
+# ============================================
+# ATHLETE — ONGLET COACH
+# ============================================
+athlete_coach:
+  - id: ATH-004
+    title: Messages coach swipables
+    priority: high
+    model: sonnet
+    description: |
+      Carrousel horizontal des messages WeekOrganizer visibles
+    behavior:
+      - Swipe horizontal natif (CSS scroll-snap)
+      - Indicateurs dots en dessous
+      - Animation incitation au 1er affichage:
+        - keyframes swipe-hint (translateX oscillant)
+        - Durée 2s, joué une seule fois
+        - Flag localStorage pour ne pas rejouer
+    component: CoachMessagesCarousel
+    location: CoachTab.tsx (nouveau)
+
+  - id: ATH-005
+    title: Liste conversations threads
+    priority: high
+    model: opus
+    description: |
+      Interface WhatsApp-like pour discussions avec coach
+    features:
+      - Liste conversations triées par last_message_at DESC
+      - Badge compteur non-lus par conversation (pastille avec nombre)
+      - Preview dernier message tronqué (1 ligne max)
+      - Indicateur lu/non-lu:
+        - ✓ = envoyé
+        - ✓✓ = lu par destinataire
+        - 🔴 = non lu (messages reçus)
+      - Horodatage relatif (• 2h, • hier, • 3j)
+    component: ConversationsList
+    location: CoachTab.tsx
+
+  - id: ATH-006
+    title: Vue thread conversation
+    priority: high
+    model: opus
+    description: |
+      Écran de discussion individuelle style messagerie
+    features:
+      - Header: nom exercice + bouton retour ←
+      - Contexte: "📅 Séance [nom] - [date]"
+      - Bulles messages:
+        - Droite (bleu) = messages de l'athlète (moi)
+        - Gauche (gris) = messages du coach
+      - Horodatage sous chaque message
+      - Statut sous messages envoyés (✓ ou ✓✓)
+      - Input message en bas + bouton envoyer ➤
+      - Auto-scroll au dernier message
+      - Marquer comme lu à l'ouverture (is_read = true)
+    component: ConversationThread
+    location: ConversationThread.tsx (nouveau)
+
+  - id: ATH-007
+    title: Création nouveau thread depuis session
+    priority: medium
+    model: sonnet
+    description: |
+      Bouton commentaire sur exercice dans ActiveSession crée/ouvre thread
+    behavior:
+      - Clic icône commentaire 💬 sur exercice dans ActiveSession
+      - Recherche conversation existante (athlete_id, coach_id, session_id, exercise_name)
+      - Si existe → ouvrir ConversationThread
+      - Sinon → créer conversation + ouvrir ConversationThread
+    integration: ActiveSession.tsx (modification existant)
+
+# ============================================
+# ATHLETE — PROFIL
+# ============================================
+athlete_profile:
+  - id: ATH-008
+    title: Section infos modifiables (PRÉCISÉ)
+    priority: medium
+    model: sonnet
+    description: |
+      Formulaire édition avec distinction modifiable/non modifiable
+    fields_editable:
+      - firstName:
+          type: text
+          required: true
+          label: "Prénom"
+      - lastName:
+          type: text
+          required: true
+          label: "Nom"
+    fields_readonly:
+      - username:
+          label: "Nom d'utilisateur"
+          display: grisé + icône 🔒
+          help: "Contacte le support pour changer"
+      - email:
+          label: "Email"
+          display: grisé + icône 🔒
+          help: "Lié à ton compte Supabase Auth"
+    fields_hidden:
+      - role (géré par admin)
+      - coachId (géré par admin)
+    modal:
+      trigger: Clic sur bouton ✏️ dans la section profil
+      content: Formulaire avec les 4 champs (2 éditables, 2 readonly)
+      actions: Sauvegarder / Annuler (fermer)
+    component: ProfileInfoSection + ProfileEditModal
+    location: ProfileTab.tsx (nouveau)
+
+  - id: ATH-009
+    title: Grille badges avec progression
+    priority: high
+    model: opus
+    description: |
+      Affichage 25 badges en grille 5×5, débloqués/verrouillés
+    display:
+      - 5 lignes par catégorie (Régularité, Endurance, Persévérance, Communauté, Exploration)
+      - Compteur par catégorie "●●●○○ 3/5"
+      - Badge débloqué: couleur + icône visible
+      - Badge verrouillé: grisé + icône silhouette (opacity 0.3)
+      - Compteur global "X/25 débloqués"
+    interaction:
+      - Tap badge → ouvre BadgeModal
+      - Bouton "Voir tous les badges" → scroll vers grille complète
+    component: BadgesGrid
+    location: ProfileTab.tsx
+
+  - id: ATH-010
+    title: Modal détail badge
+    priority: medium
+    model: sonnet
+    description: |
+      Popup affichant badge agrandi + condition + progression
+    content_unlocked:
+      - SVG badge 64×64 (scale up du 16×16)
+      - Nom badge
+      - Description condition
+      - "✅ Débloqué le [date]"
+      - Message félicitation
+    content_locked:
+      - SVG badge 64×64 (grisé)
+      - Nom badge
+      - Description condition
+      - Barre progression "X/Y (Z%)"
+      - Message encouragement "🎯 Plus que X !"
+    component: BadgeModal
+    location: ProfileTab.tsx
+
+  - id: ATH-011
+    title: Service calcul badges
+    priority: critical
+    model: opus
+    description: |
+      Logique backend/frontend pour calculer progression badges
+    logic_streak: |
+      SÉRIE ACTIVE (tolérance 2 jours repos):
+      - Compter jours avec ≥1 séance
+      - ≤2 jours repos consécutifs = série continue
+      - >2 jours repos = série cassée
+      
+      ALGORITHME:
+      1. Récupérer dates des séances triées DESC
+      2. Pour chaque jour, vérifier si séance existe
+      3. Compteur repos consécutifs
+      4. Si repos > 2 → série cassée, retourner compteur actuel
+      5. Si séance → reset compteur repos, incrémenter série
+    condition_types:
+      - streak_tolerant: jours actifs avec tolérance 2j (badges 1-5)
+      - cumulative_hours: heures totales (badges 6-10)
+      - count_rpe_gte: séances avec RPE >= 7 (badges 11-13)
+      - comeback: reprise après 14j inactivité (badge 14)
+      - consistency: 3 mois sans interruption >7j (badge 15)
+      - message_count: messages envoyés (badges 16-20)
+      - unique_exercises: exercices distincts (badges 21-22)
+      - session_types: types séances distincts (badge 23)
+      - strava_connected: booléen (badge 24)
+      - strava_imports: activités importées (badge 25)
+    component: badgeService.ts (nouveau)
+
+# ============================================
+# ATHLETE — PARAMÈTRES
+# ============================================
+athlete_settings:
+  - id: ATH-012
+    title: Préférences entraînement athlète (SANS SON)
+    priority: low
+    model: sonnet
+    description: |
+      Options personnalisation expérience (3 options, son supprimé)
+    options:
+      - show_tempo:
+          type: boolean
+          default: true
+          label: "Afficher le tempo"
+      - show_coach_notes:
+          type: boolean
+          default: true
+          label: "Notes du coach"
+      - auto_rest_timer:
+          type: boolean
+          default: false
+          label: "Timer repos automatique"
+      # SUPPRIMÉ: rest_timer_sound
+    storage: localStorage (clé: 'fyt_athlete_preferences')
+    component: AthleteSettings
+    location: ProfileTab.tsx
+
+# ============================================
+# COACH — SIDEBAR
+# ============================================
+coach_sidebar:
+  - id: COA-001
+    title: Sidebar auto-hide avec hamburger (MESSAGES INCLUS)
+    priority: high
+    model: sonnet
+    description: |
+      Navigation desktop qui se cache automatiquement, Messages dans sidebar
+    behavior:
+      - État fermé par défaut (width 0)
+      - Bouton hamburger ☰ toujours visible (position fixed top-left)
+      - Ouverture:
+        - Hover zone gauche (0-50px) pendant 150ms
+        - OU clic sur hamburger
+      - Fermeture:
+        - Souris quitte sidebar (délai 300ms)
+        - OU clic sur ✕
+        - OU clic sur item menu
+        - OU clic hors sidebar (overlay)
+    menu_items:
+      - id: home
+        icon: Home
+        label: Accueil
+      - id: import
+        icon: Download
+        label: Importer
+      - id: team
+        icon: Users
+        label: Mes Athlètes
+      - id: messages
+        icon: MessageSquare
+        label: Messages
+        badge: unreadCount  # NOUVEAU
+      - id: settings
+        icon: Settings
+        label: Paramètres
+    footer:
+      - Infos coach (nom, nombre athlètes)
+      - Bouton déconnexion
+    styling:
+      - width: clamp(256px, 20vw, 320px)
+      - Transition: transform 300ms ease-out
+      - Overlay: opacity 300ms, background rgba(0,0,0,0.5)
+    component: CoachSidebar
+    location: CoachSidebar.tsx (nouveau, remplace Sidebar pour coach)
+
+# ============================================
+# COACH — DASHBOARD
+# ============================================
+coach_dashboard:
+  - id: COA-002
+    title: Cards KPIs dashboard
+    priority: high
+    model: sonnet
+    description: |
+      4 cartes métriques principales en grid responsive
+    cards:
+      - athletes_count:
+          icon: Users
+          value: count(profiles WHERE coach_id = currentUser.id)
+          label: Athlètes
+      - unread_messages:
+          icon: MessageSquare
+          value: count(messages WHERE receiver = currentUser.id AND is_read = false)
+          label: Non lus
+      - avg_rpe:
+          icon: Gauge
+          value: avg(session_logs.session_rpe) WHERE date >= now() - 7 days
+          label: RPE moyen (7j)
+      - adherence_rate:
+          icon: TrendingUp
+          value: (séances réalisées / séances planifiées) * 100
+          label: Adhésion
+    styling:
+      - "display: grid"
+      - "grid-template-columns: repeat(4, 1fr)"
+      - "gap: clamp(0.5rem, 2vw, 1rem)"
+    component: DashboardKPIs
+    location: CoachHome.tsx (nouveau)
+
+  - id: COA-003
+    title: RPE par groupe expandable
+    priority: medium
+    model: sonnet
+    description: |
+      Liste groupes avec RPE moyen, clic pour détails athlètes
+    display_collapsed:
+      - Pastille couleur groupe
+      - Nom groupe
+      - Barre progression RPE
+      - Valeur RPE
+      - Tendance (▲ +X / ▼ -X / ● stable)
+    display_expanded:
+      - Tableau athlètes du groupe:
+        - Nom athlète
+        - Dernière séance (nom + date)
+        - RPE dernière séance
+        - Tendance individuelle
+    behavior:
+      - Clic sur ligne groupe → toggle expand/collapse
+      - Un seul groupe expanded à la fois (accordion)
+    component: GroupRPECard
+    location: CoachHome.tsx
+
+  - id: COA-004
+    title: Bouton "Voir mes programmes"
+    priority: medium
+    model: sonnet
+    description: |
+      Navigation vers écran programmes
+    behavior: setCurrentView('programs')
+    styling: Card cliquable avec icône → à droite
+    location: CoachHome.tsx
+
+# ============================================
+# COACH — PROGRAMMES
+# ============================================
+coach_programs:
+  - id: COA-005
+    title: Écran liste programmes avec filtres combinables
+    priority: high
+    model: opus
+    description: |
+      Vue d'ensemble des programmes avec système de filtres type Excel
+    filters:
+      - year:
+          type: select
+          source: SELECT DISTINCT year FROM training_plans ORDER BY year DESC
+          placeholder: "Année"
+      - month:
+          type: select
+          source: SELECT DISTINCT Month, Month_num FROM training_plans WHERE year = :year
+          placeholder: "Mois"
+          depends_on: year
+      - week:
+          type: multi-select
+          source: SELECT DISTINCT week FROM training_plans WHERE year = :year AND Month_num = :month
+          placeholder: "Semaine(s)"
+          depends_on: [year, month]
+      - seance:
+          type: multi-select
+          source: SELECT DISTINCT seance_type FROM training_plans (filtré si autres filtres actifs)
+          placeholder: "Séance(s)"
+      - exercise:
+          type: autocomplete
+          source: SELECT DISTINCT exercise_name FROM training_plans
+          placeholder: "🔍 Exercice..."
+    filter_behavior:
+      - Tous optionnels
+      - Cumulatifs (AND)
+      - Cascade: année → mois → semaine
+      - Affichage chips actifs: "[2025 ✕] [Janvier ✕] [S1-S4 ✕]"
+      - Bouton "Réinitialiser" efface tous les filtres
+    display:
+      - Graphique évolution volume (Recharts LineChart)
+      - Tableau détail programmes
+    data_query: |
+      SELECT * FROM training_plans
+      WHERE (:year IS NULL OR year = :year)
+        AND (:month IS NULL OR Month_num = :month)
+        AND (:weeks IS NULL OR week = ANY(:weeks))
+        AND (:seances IS NULL OR seance_type = ANY(:seances))
+        AND (:exercise IS NULL OR exercise_name ILIKE '%' || :exercise || '%')
+      ORDER BY year, week, seance_type, order_index
+    component: ProgramsView
+    location: ProgramsView.tsx (nouveau)
+
+  - id: COA-006
+    title: Calcul KPIs programmes
+    priority: medium
+    model: sonnet
+    description: |
+      Métriques affichées selon filtres
+    metrics:
+      - volume_total: SUM(target_sets::int * target_reps::int) par semaine
+      - exercises_count: COUNT DISTINCT exercise_name
+      - avg_rest: AVG(rest_time_sec)
+    chart:
+      - Type: LineChart (Recharts)
+      - X-axis: Semaines
+      - Y-axis: Volume
+      - Données groupées par semaine
+    component: programsService.ts (extension supabaseService)
+
+  - id: COA-010
+    title: ProgramEditor - Tableau édition inline complet
+    priority: high
+    model: opus
+    description: |
+      Éditeur de programmes avec toutes les fonctionnalités CRUD
+    modes:
+      - lecture: Affichage tableau readonly
+      - edition: Cellules éditables inline
+    toggle: Bouton [👁️ Lecture] / [✏️ Édition]
+    columns:
+      - semaine:
+          type: select
+          options: 1-52
+          width: 8%
+      - seance:
+          type: select
+          options: dynamic (seance_type existants + saisie libre)
+          width: 12%
+      - exercice:
+          type: autocomplete
+          source: exercise_name existants
+          required: true
+          width: 25%
+      - series:
+          type: number
+          min: 1
+          validation: entier > 0
+          width: 10%
+      - reps:
+          type: text
+          placeholder: "8-12, 30s, ..."
+          width: 10%
+      - repos:
+          type: number
+          unit: secondes
+          min: 0
+          width: 10%
+      - actions:
+          width: 15%
+    actions_per_row:
+      - reorder_up: "↑" (modifie order_index, swap avec ligne précédente)
+      - reorder_down: "↓" (modifie order_index, swap avec ligne suivante)
+      - validate: "✓" (sauvegarde modifications de cette ligne)
+      - cancel: "✕" (annule modifications de cette ligne)
+      - delete: "🗑️" (supprime avec confirmation)
+    actions_global:
+      - add_row:
+          label: "+ Ajouter un exercice"
+          behavior: Insère ligne vide à la fin, hérite sem/séance de la dernière ligne
+      - delete_program:
+          label: "🗑️ Supprimer tout ce programme"
+          confirmation: Double confirmation (modal + saisie texte "SUPPRIMER")
+      - cancel_all:
+          label: "Annuler tout"
+          behavior: Reset toutes les modifications non sauvées
+      - save_all:
+          label: "Sauvegarder tout (X modif)"
+          behavior: Batch update vers Supabase
+    validation:
+      - Séries: entier > 0
+      - Reps: non vide (texte libre pour flexibilité)
+      - Repos: entier >= 0
+      - Exercice: requis, non vide
+    feedback:
+      - Lignes modifiées: background jaune clair
+      - Lignes en erreur: background rouge clair + message
+      - Toast succès après sauvegarde: "X lignes modifiées"
+      - Refresh données après save
+    component: ProgramEditor
+    location: ProgramsView.tsx
+
+# ============================================
+# COACH — IMPORT
+# ============================================
+coach_import:
+  - id: COA-007
+    title: Wizard import CSV 3 étapes
+    priority: high
+    model: opus
+    description: |
+      Assistant guidé pour import programmes
+    steps:
+      - step1_template:
+          number: 1
+          title: "Télécharge un template"
+          content:
+            - Texte explicatif
+            - 2 boutons téléchargement (cards cliquables)
+          next: Bouton "Suivant →"
+      - step2_fill:
+          number: 2
+          title: "Remplis-le"
+          content:
+            - Instructions textuelles concises
+            - Liste des colonnes attendues
+            - Tips de formatage
+          next: Bouton "Suivant →"
+          prev: Bouton "← Retour"
+      - step3_upload:
+          number: 3
+          title: "Importe-le"
+          content:
+            - Zone drag & drop
+            - Preview après upload
+            - Validation + bouton import
+          prev: Bouton "← Retour"
+    progress_indicator: Barre étapes avec numéros et états (done/active/pending)
+    component: ImportWizard
+    location: ImportView.tsx (refactoring existant)
+
+  - id: COA-008
+    title: Génération templates CSV
+    priority: medium
+    model: sonnet
+    description: |
+      2 fichiers CSV téléchargeables
+    templates:
+      - empty:
+          filename: fyt_template_vide.csv
+          content: Headers uniquement
+          columns: year,week,seance_type,exercise_name,order_index,target_sets,target_reps,rest_time_sec,Tempo,Notes/Consignes
+      - example:
+          filename: fyt_template_exemple.csv
+          content: Headers + 15-20 lignes variées
+          sample_data:
+            - year: 2025, week: 1, seance_type: Push, exercises: Bench Press, Incline DB, Cable Fly, OHP, Lateral Raises
+            - year: 2025, week: 1, seance_type: Pull, exercises: Deadlift, Rowing, Pulldown, Face Pull, Curl
+            - year: 2025, week: 1, seance_type: Legs, exercises: Squat, Leg Press, RDL, Leg Curl, Calf Raises
+    generation: Généré côté client (Blob + download)
+    component: ImportWizard
+
+  - id: COA-009
+    title: Preview et validation CSV
+    priority: medium
+    model: sonnet
+    description: |
+      Affichage aperçu avant import final
+    features:
+      - Nom fichier uploadé avec ✅
+      - Tableau preview 5 premières lignes
+      - Compteur lignes valides "✅ X lignes valides"
+      - Compteur warnings "⚠️ X warnings: [détails]"
+      - Compteur erreurs "❌ X erreurs: [détails]"
+      - Bouton "Importer X lignes" (disabled si erreurs critiques)
+    validation_rules:
+      - year: requis, entier
+      - week: requis, entier 1-52
+      - seance_type: requis, non vide
+      - exercise_name: requis, non vide
+      - target_sets: optionnel, entier si présent
+      - target_reps: optionnel
+      - rest_time_sec: optionnel, entier si présent (défaut: 60)
+    component: CSVPreview
+    location: ImportView.tsx
+
+# ============================================
+# COACH — MESSAGES (ÉCRAN DÉDIÉ)
+# ============================================
+coach_messages:
+  - id: COA-011
+    title: Écran Messages coach (accessible depuis sidebar)
+    priority: high
+    model: opus
+    description: |
+      Liste toutes les conversations avec tous les athlètes
+      DÉPLACÉ de TeamView vers écran dédié accessible via sidebar
+    features:
+      - Header: "Messages"
+      - Barre recherche + filtre dropdown par athlète
+      - Compteur non-lus total
+      - Liste conversations (même composant ConversationsList que athlète)
+      - Tri par last_message_at DESC
+      - Au clic → ouvre ConversationThread
+    filter:
+      - type: dropdown
+      - options: "Tous" + liste athlètes du coach
+      - behavior: Filtre conversations par athlete_id
+    component: CoachMessagesView
+    location: CoachMessagesView.tsx (nouveau)
+
+  - id: COA-012
+    title: Réponse coach dans thread
+    priority: high
+    model: sonnet
+    description: |
+      Coach peut répondre dans n'importe quel thread
+    behavior:
+      - Même composant ConversationThread que athlète
+      - Identification sender_id = coach (currentUser.id)
+      - Messages du coach affichés à droite (style "moi")
+      - Messages de l'athlète affichés à gauche
+    location: ConversationThread.tsx (shared)
+
+# ============================================
+# COACH — PARAMÈTRES
+# ============================================
+coach_settings:
+  - id: COA-013
+    title: Préférences entraînement coach (SANS SON)
+    priority: low
+    model: sonnet
+    description: |
+      Options personnalisation (3 options, son supprimé)
+    options:
+      - show_tempo:
+          type: boolean
+          default: true
+          label: "Afficher le tempo"
+      - show_coach_notes:
+          type: boolean
+          default: true
+          label: "Afficher les notes"
+      - auto_rest_timer:
+          type: boolean
+          default: false
+          label: "Timer repos automatique"
+      # SUPPRIMÉ: rest_timer_sound
+    storage: localStorage (clé: 'fyt_coach_preferences')
+    component: CoachSettings
+    location: SettingsView.tsx (extension)
+
+  - id: COA-014
+    title: Connexion Strava coach
+    priority: low
+    model: sonnet
+    description: |
+      Permettre au coach de lier son Strava (optionnel)
+    behavior: Réutiliser composant StravaImport existant
+    location: SettingsView.tsx
+
+# ============================================
+# SHARED COMPONENTS
+# ============================================
+shared:
+  - id: SHR-001
+    title: Service messages
+    priority: critical
+    model: opus
+    description: |
+      CRUD conversations et messages
+    functions:
+      - fetchConversations(userId, role):
+          returns: Conversation[]
+          query: |
+            SELECT c.*, 
+              (SELECT COUNT(*) FROM messages m 
+               WHERE m.conversation_id = c.id 
+               AND m.sender_id != :userId 
+               AND m.is_read = false) as unread_count,
+              (SELECT content FROM messages m 
+               WHERE m.conversation_id = c.id 
+               ORDER BY created_at DESC LIMIT 1) as last_message
+            FROM conversations c
+            WHERE c.athlete_id = :userId OR c.coach_id = :userId
+            ORDER BY c.last_message_at DESC
+      - fetchMessages(conversationId):
+          returns: Message[]
+          query: SELECT * FROM messages WHERE conversation_id = :id ORDER BY created_at ASC
+      - sendMessage(conversationId, senderId, content):
+          returns: Message
+          actions:
+            - INSERT INTO messages
+            - UPDATE conversations SET last_message_at = now()
+      - markAsRead(messageIds):
+          returns: void
+          query: UPDATE messages SET is_read = true WHERE id = ANY(:ids)
+      - getUnreadCount(userId):
+          returns: number
+          query: |
+            SELECT COUNT(*) FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE m.sender_id != :userId 
+            AND m.is_read = false
+            AND (c.athlete_id = :userId OR c.coach_id = :userId)
+      - createConversation(athleteId, coachId, sessionId?, exerciseName?):
+          returns: Conversation
+          behavior: INSERT ou SELECT si existe déjà (UPSERT via ON CONFLICT)
+    location: messagesService.ts (nouveau)
+
+  - id: SHR-002
+    title: Types messages et badges
+    priority: critical
+    model: sonnet
+    description: |
+      Interfaces TypeScript
+    types:
+      - Conversation:
+          id: string
+          visibleId: string
+          coachId: string
+          sessionId?: string
+          exerciseName?: string
+          lastMessageAt: string
+          createdAt: string
+          unreadCount?: number
+          lastMessage?: string
+      - Message:
+          id: string
+          conversationId: string
+          senderId: string
+          content: string
+          isRead: boolean
+          createdAt: string
+      - Badge:
+          id: string
+          code: string
+          name: string
+          description: string
+          category: 'regularity' | 'endurance' | 'perseverance' | 'community' | 'exploration'
+          iconSvg: string
+          conditionType: string
+          conditionValue: number
+          orderIndex: number
+      - UserBadge:
+          id: string
+          oderId: string
+          visibleId: string
+          unlockedAt?: string
+          progressValue: number
+      - ConversationRow (DB mapping)
+      - MessageRow (DB mapping)
+    location: types.ts (extension)
+
+  - id: SHR-003
+    title: Hook useUnreadCount
+    priority: medium
+    model: sonnet
+    description: |
+      Hook React pour compteur temps réel non-lus
+    behavior:
+      - Fetch initial au mount
+      - Refresh à chaque navigation vers messages
+      - Expose: { count: number, refresh: () => void }
+    usage:
+      - BottomNavigation (badge sur Coach)
+      - CoachSidebar (badge sur Messages)
+    location: hooks/useUnreadCount.ts (nouveau)
+
+  - id: SHR-004
+    title: Composant DeviceDetector
+    priority: medium
+    model: sonnet
+    description: |
+      Détection device pour affichage conditionnel
+    logic: |
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
+                       .test(navigator.userAgent);
+      const hasTouch = window.matchMedia('(pointer: coarse)').matches;
+      const hasMouse = window.matchMedia('(pointer: fine)').matches;
+      
+      return {
+        isMobile: isMobile || (hasTouch && !hasMouse),
+        isDesktop: !isMobile && hasMouse
+      }
+    usage:
+      - App.tsx: Choisir entre BottomNavigation et CoachSidebar
+    location: hooks/useDeviceDetect.ts (nouveau)
