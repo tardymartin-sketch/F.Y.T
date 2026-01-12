@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase } from '../supabaseClient';
+import { syncUserBadgesProgress } from './badgeService';
 import type {
   StravaTokenResponse,
   StravaActivity,
@@ -509,7 +510,7 @@ class StravaService {
       pace: sportConfig.showPace ? formatPace(activity.distance, activity.moving_time) : null,
       speed: sportConfig.showSpeed ? formatSpeed(activity.distance, activity.moving_time) : null,
       elevation: formatElevation(activity.total_elevation_gain),
-      hasHeartrate: activity.has_heartrate,
+      hasHeartrate: !!activity.has_heartrate,
       avgHeartrate: activity.average_heartrate,
       maxHeartrate: activity.max_heartrate,
       hasMap: !!activity.summary_polyline,
@@ -612,6 +613,14 @@ class StravaService {
       } catch (error) {
         console.error(`Failed to import activity ${activityId}:`, error);
         failed++;
+      }
+    }
+
+    if (success > 0) {
+      try {
+        await syncUserBadgesProgress(userId);
+      } catch (badgeError) {
+        console.error('[StravaService] Erreur sync badges:', badgeError);
       }
     }
 

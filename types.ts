@@ -213,7 +213,6 @@ export interface SessionLog {
   exercises: ExerciseLog[];
   comments?: string;
   sessionRpe?: number;
-  completedAt?: string;
 }
 
 // Type brut depuis Supabase session_logs
@@ -229,7 +228,6 @@ export interface SessionLogRow {
   comments: string | null;
   created_at: string;
   session_rpe: number | null;
-  completed_at?: string | null;
   seance_type?: string | null;
 }
 
@@ -249,13 +247,12 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
     exercises: row.exercises ?? [],
     comments: row.comments ?? undefined,
     sessionRpe: row.session_rpe ?? undefined,
-    completedAt: row.completed_at ?? undefined,
   };
 }
 
 // Mapping SessionLog App -> DB (pour insert/update)
 // Note: completed_at n'existe pas dans la table Supabase, on ne l'inclut pas
-export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<SessionLogRow, 'created_at' | 'completed_at' | 'seance_type'> {
+export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<SessionLogRow, 'created_at' | 'seance_type'> {
   // Valider les valeurs numériques pour éviter NaN
   const keyYear = log.sessionKey.annee ? parseInt(log.sessionKey.annee) : null;
   const keyWeek = log.sessionKey.semaine ? parseInt(log.sessionKey.semaine) : null;
@@ -553,6 +550,7 @@ export type BadgeCategory =
   | 'exploration';
 
 export type BadgeConditionType =
+  | 'cumulative_sessions'
   | 'streak_tolerant'
   | 'cumulative_hours'
   | 'count_rpe_gte'

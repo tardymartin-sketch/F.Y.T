@@ -147,12 +147,17 @@ export interface StravaActivityDB {
   name: string;
   sport_type: StravaSportType;
   start_date: string;
+  start_date_local?: string | null;
+  timezone?: string | null;
+  start_latlng?: [number, number] | null;
+  end_latlng?: [number, number] | null;
   distance: number | null;
   moving_time: number;
   elapsed_time: number;
   total_elevation_gain: number | null;
   average_speed: number | null;
   max_speed: number | null;
+  has_heartrate?: boolean | null;
   average_heartrate: number | null;
   max_heartrate: number | null;
   summary_polyline: string | null;

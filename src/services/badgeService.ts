@@ -14,6 +14,32 @@ import type {
   BadgeConditionType,
 } from '../../types';
 
+function parseSessionLogDate(dateStr: string): Date {
+  return new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
+}
+
+async function fetchAthleteStats(userId: string): Promise<{
+  message_count: number | null;
+  cumulative_minutes: number | null;
+  unique_exercise_count: number | null;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from('athlete_stats')
+      .select('message_count,cumulative_minutes,unique_exercise_count')
+      .eq('athlete_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      return null;
+    }
+
+    return (data as any) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -37,10 +63,9 @@ export async function calculateStreakTolerant(userId: string): Promise<number> {
     // Récupérer toutes les dates de séances triées DESC
     const { data: sessions, error } = await supabase
       .from('session_logs')
-      .select('completed_at')
+      .select('date')
       .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: false });
+      .order('date', { ascending: false });
 
     if (error) throw error;
     if (!sessions || sessions.length === 0) return 0;
@@ -48,7 +73,7 @@ export async function calculateStreakTolerant(userId: string): Promise<number> {
     // Extraire les dates uniques (un jour = une entrée max)
     const uniqueDates = new Set<string>();
     sessions.forEach((s) => {
-      const date = new Date(s.completed_at).toISOString().split('T')[0];
+      const date = parseSessionLogDate(s.date).toISOString().split('T')[0];
       uniqueDates.add(date);
     });
 
@@ -111,6 +136,28 @@ export async function calculateStreakTolerant(userId: string): Promise<number> {
 }
 
 // ============================================
+// SÉANCES CUMULÉES
+// ============================================
+
+/**
+ * Compte le nombre total de séances complétées
+ */
+export async function calculateCumulativeSessions(userId: string): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('session_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return count ?? 0;
+  } catch (error) {
+    console.error('Error calculating cumulative sessions:', error);
+    return 0;
+  }
+}
+
+// ============================================
 // HEURES CUMULÉES
 // ============================================
 
@@ -119,11 +166,16 @@ export async function calculateStreakTolerant(userId: string): Promise<number> {
  */
 export async function calculateCumulativeHours(userId: string): Promise<number> {
   try {
+    const stats = await fetchAthleteStats(userId);
+    const statsMinutes = stats?.cumulative_minutes;
+    if (typeof statsMinutes === 'number') {
+      return Math.floor(statsMinutes / 60);
+    }
+
     const { data, error } = await supabase
       .from('session_logs')
       .select('duration_minutes')
-      .eq('user_id', userId)
-      .not('completed_at', 'is', null);
+      .eq('user_id', userId);
 
     if (error) throw error;
     if (!data) return 0;
@@ -152,7 +204,6 @@ export async function calculateRPECount(
       .from('session_logs')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .not('completed_at', 'is', null)
       .gte('session_rpe', minRPE);
 
     if (error) throw error;
@@ -178,18 +229,17 @@ export async function checkComeback(
   try {
     const { data: sessions, error } = await supabase
       .from('session_logs')
-      .select('completed_at')
+      .select('date')
       .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: true });
+      .order('date', { ascending: true });
 
     if (error) throw error;
     if (!sessions || sessions.length < 2) return 0;
 
     // Chercher un gap de plus de minDays suivi d'une reprise
     for (let i = 1; i < sessions.length; i++) {
-      const prevDate = new Date(sessions[i - 1].completed_at);
-      const currDate = new Date(sessions[i].completed_at);
+      const prevDate = parseSessionLogDate(sessions[i - 1].date);
+      const currDate = parseSessionLogDate(sessions[i].date);
       const daysDiff = Math.floor(
         (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
       );
@@ -224,20 +274,19 @@ export async function checkConsistency(
 
     const { data: sessions, error } = await supabase
       .from('session_logs')
-      .select('completed_at')
+      .select('date')
       .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .gte('completed_at', startDate.toISOString())
-      .order('completed_at', { ascending: true });
+      .gte('date', startDate.toISOString())
+      .order('date', { ascending: true });
 
     if (error) throw error;
     if (!sessions || sessions.length === 0) return 0;
 
     // Vérifier qu'il n'y a pas de gap > 7 jours
-    let prevDate = new Date(sessions[0].completed_at);
+    let prevDate = parseSessionLogDate(sessions[0].date);
 
     for (let i = 1; i < sessions.length; i++) {
-      const currDate = new Date(sessions[i].completed_at);
+      const currDate = parseSessionLogDate(sessions[i].date);
       const daysDiff = Math.floor(
         (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
       );
@@ -249,7 +298,7 @@ export async function checkConsistency(
     }
 
     // Vérifier que la dernière séance n'est pas trop ancienne
-    const lastSession = new Date(sessions[sessions.length - 1].completed_at);
+    const lastSession = parseSessionLogDate(sessions[sessions.length - 1].date);
     const daysSinceLast = Math.floor(
       (Date.now() - lastSession.getTime()) / (1000 * 60 * 60 * 24)
     );
@@ -259,7 +308,7 @@ export async function checkConsistency(
     }
 
     // Vérifier que la période couvre bien X mois
-    const firstSession = new Date(sessions[0].completed_at);
+    const firstSession = parseSessionLogDate(sessions[0].date);
     const monthsCovered = (Date.now() - firstSession.getTime()) / (1000 * 60 * 60 * 24 * 30);
 
     return monthsCovered >= months ? 1 : 0;
@@ -278,10 +327,16 @@ export async function checkConsistency(
  */
 export async function calculateMessageCount(userId: string): Promise<number> {
   try {
+    const stats = await fetchAthleteStats(userId);
+    const statsCount = stats?.message_count;
+    if (typeof statsCount === 'number') {
+      return statsCount;
+    }
+
     const { count, error } = await supabase
-      .from('messages')
+      .from('athlete_comments')
       .select('*', { count: 'exact', head: true })
-      .eq('sender_id', userId);
+      .eq('user_id', userId);
 
     if (error) throw error;
     return count ?? 0;
@@ -352,15 +407,58 @@ export async function calculateResponsiveCount(userId: string): Promise<number> 
  */
 export async function calculateUniqueExercises(userId: string): Promise<number> {
   try {
-    const { data, error } = await supabase
-      .from('exercise_logs')
-      .select('exercise_name')
-      .eq('user_id', userId);
+    const stats = await fetchAthleteStats(userId);
+    const statsCount = stats?.unique_exercise_count;
+    if (typeof statsCount === 'number') {
+      return statsCount;
+    }
 
-    if (error) throw error;
-    if (!data) return 0;
+    const parseReps = (value: unknown): number => {
+      if (typeof value !== 'string') return 0;
+      const m = value.match(/\d+/);
+      return m ? parseInt(m[0], 10) : 0;
+    };
 
-    const uniqueExercises = new Set(data.map((e) => e.exercise_name.toLowerCase()));
+    const isExercisePerformed = (exercise: any): boolean => {
+      const sets = exercise?.sets;
+      if (!Array.isArray(sets)) return false;
+
+      return sets.some((s: any) => {
+        const completed = s?.completed === true;
+        const reps = parseReps(s?.reps);
+        return completed && reps >= 1;
+      });
+    };
+
+    const pageSize = 1000;
+    const uniqueExercises = new Set<string>();
+
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('session_logs')
+        .select('exercises')
+        .eq('user_id', userId)
+        .range(from, from + pageSize - 1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      for (const row of data as Array<{ exercises?: unknown }>) {
+        const exercises = row?.exercises;
+        if (!Array.isArray(exercises)) continue;
+
+        for (const ex of exercises as any[]) {
+          if (!isExercisePerformed(ex)) continue;
+          const name = typeof ex?.exerciseName === 'string' ? ex.exerciseName.trim().toLowerCase() : '';
+          if (name) uniqueExercises.add(name);
+        }
+      }
+
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+
     return uniqueExercises.size;
   } catch (error) {
     console.error('Error calculating unique exercises:', error);
@@ -381,7 +479,7 @@ export async function calculateSessionTypes(userId: string): Promise<number> {
       .from('session_logs')
       .select('seance_type')
       .eq('user_id', userId)
-      .not('completed_at', 'is', null);
+      ;
 
     if (error) throw error;
     if (!data) return 0;
@@ -513,8 +611,12 @@ async function calculateProgressForType(
   conditionType: BadgeConditionType
 ): Promise<number> {
   switch (conditionType) {
+    case 'cumulative_sessions':
+      return calculateCumulativeSessions(userId);
     case 'streak_tolerant':
-      return calculateStreakTolerant(userId);
+      // Convertir jours en semaines (badges endurance attendent des semaines)
+      const streakDays = await calculateStreakTolerant(userId);
+      return Math.floor(streakDays / 7);
     case 'cumulative_hours':
       return calculateCumulativeHours(userId);
     case 'count_rpe_gte':
@@ -536,22 +638,37 @@ async function calculateProgressForType(
     case 'strava_imports':
       return calculateStravaImports(userId);
     default:
+      console.warn(`[BadgeService] Unknown condition type: ${conditionType}`);
       return 0;
   }
 }
 
 // ============================================
-// GET USER BADGES WITH PROGRESS
+// GET USER BADGES WITH PROGRESS (avec cache)
 // ============================================
+
+// Cache simple avec TTL de 5 minutes
+const badgesCache = new Map<string, { data: BadgeWithProgress[]; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Calcule et retourne tous les badges avec leur progression
  * Met à jour user_badges en DB
+ * @param forceRefresh - Force le recalcul même si le cache est valide
  */
 export async function getUserBadgesProgress(
-  userId: string
+  userId: string,
+  forceRefresh = false
 ): Promise<BadgeWithProgress[]> {
   try {
+    // Vérifier le cache
+    const cached = badgesCache.get(userId);
+    const now = Date.now();
+
+    if (!forceRefresh && cached && (now - cached.timestamp) < CACHE_TTL) {
+      return cached.data;
+    }
+
     const badges = await getAllBadges();
     const userBadges = await getUserBadges(userId);
 
@@ -585,15 +702,79 @@ export async function getUserBadgesProgress(
         isUnlocked,
         unlockedAt: userBadge?.unlockedAt,
       });
-
-      // Mettre à jour la progression en DB (upsert)
-      await upsertUserBadgeProgress(userId, badge.id, progress, isUnlocked);
     }
+
+    // Mettre en cache
+    badgesCache.set(userId, { data: result, timestamp: now });
 
     return result;
   } catch (error) {
     console.error('Error getting user badges progress:', error);
     return [];
+  }
+}
+
+/**
+ * Invalide le cache des badges pour un utilisateur
+ * À appeler après complétion d'une séance
+ */
+export function invalidateBadgesCache(userId: string): void {
+  badgesCache.delete(userId);
+}
+
+export async function syncUserBadgesProgress(userId: string): Promise<void> {
+  try {
+    invalidateBadgesCache(userId);
+
+    const badges = await getAllBadges();
+    const userBadges = await getUserBadges(userId);
+
+    const unlockedMap = new Map<string, UserBadge>();
+    userBadges.forEach((ub) => {
+      unlockedMap.set(ub.badgeId, ub);
+    });
+
+    const progressByType = new Map<BadgeConditionType, number>();
+    for (const badge of badges) {
+      if (!progressByType.has(badge.conditionType)) {
+        const progress = await calculateProgressForType(userId, badge.conditionType);
+        progressByType.set(badge.conditionType, progress);
+      }
+    }
+
+    const upsertRows: Array<Pick<UserBadgeRow, 'user_id' | 'badge_id' | 'progress_value' | 'unlocked_at'>> = badges.map(
+      (badge) => {
+        const existing = unlockedMap.get(badge.id);
+        const progress = progressByType.get(badge.conditionType) ?? 0;
+        const isUnlocked = existing?.unlockedAt !== undefined || progress >= badge.conditionValue;
+
+        return {
+          user_id: userId,
+          badge_id: badge.id,
+          progress_value: progress,
+          unlocked_at: isUnlocked
+            ? (existing?.unlockedAt ?? new Date().toISOString())
+            : null,
+        };
+      }
+    );
+
+    const { error } = await supabase
+      .from('user_badges')
+      .upsert(upsertRows, { onConflict: 'user_id,badge_id' });
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    try {
+      const badgesWithProgress = await getUserBadgesProgress(userId, true);
+      for (const badge of badgesWithProgress) {
+        await upsertUserBadgeProgress(userId, badge.id, badge.progress ?? 0, badge.isUnlocked);
+      }
+    } catch (fallbackError) {
+      console.error('Error syncing user badges progress:', fallbackError);
+    }
   }
 }
 

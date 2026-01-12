@@ -70,6 +70,7 @@ import { StravaImport } from './src/components/StravaImport';
 import { BottomNav } from './src/components/athlete/BottomNav';
 import { HomeAthlete } from './src/components/athlete/HomeAthlete';
 import { CoachTab } from './src/components/athlete/CoachTab';
+import { ProfileTab } from './src/components/athlete/ProfileTab';
 
 // Composants V3 Coach
 import { CoachConversationsView } from './src/components/coach/CoachConversationsView';
@@ -781,12 +782,15 @@ const App: React.FC = () => {
                 />
               )}
 
-              {/* Vue Profil pour athlète (placeholder pour étape ultérieure) */}
+              {/* V3: Vue Profil Athlète (Étape 7A - ATH-008, ATH-012) */}
               {currentView === 'profile' && behavesAsAthlete && (
-                <div className="text-white">
-                  <h1 className="text-2xl font-bold mb-4">Profil</h1>
-                  <p className="text-slate-400">Informations de profil (à venir étape 6+)</p>
-                </div>
+                <ProfileTab
+                  user={currentUser}
+                  onUpdateProfile={async (updates) => {
+                    await handleUpdateProfile(updates);
+                  }}
+                  onLogout={handleLogout}
+                />
               )}
 
               {currentView === 'team' && behavesAsCoach && (

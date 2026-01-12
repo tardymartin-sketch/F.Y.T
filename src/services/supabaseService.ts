@@ -27,6 +27,7 @@ import {
   AthleteGroupWithCount,
   mapAthleteGroupRowToGroup,
 } from '../../types';
+import { syncUserBadgesProgress } from './badgeService';
 
 // ===========================================
 // AUTH & PROFILE
@@ -126,10 +127,26 @@ export async function saveSessionLog(log: SessionLog, userId: string): Promise<S
   }
 
   console.log('[saveSessionLog] Sauvegarde réussie:', data);
+  try {
+    await syncUserBadgesProgress(userId);
+  } catch (badgeError) {
+    console.error('[saveSessionLog] Erreur sync badges:', badgeError);
+  }
   return mapSessionLogRowToSessionLog(data as SessionLogRow);
 }
 
 export async function deleteSessionLog(sessionId: string): Promise<void> {
+  // Récupérer l'utilisateur propriétaire avant suppression (utile pour resync badges)
+  const { data: existing, error: fetchError } = await supabase
+    .from('session_logs')
+    .select('user_id')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('Error fetching session log before delete:', fetchError);
+  }
+
   const { error } = await supabase
     .from('session_logs')
     .delete()
@@ -138,6 +155,15 @@ export async function deleteSessionLog(sessionId: string): Promise<void> {
   if (error) {
     console.error('Error deleting session log:', error);
     throw error;
+  }
+
+  const userId = existing?.user_id;
+  if (userId) {
+    try {
+      await syncUserBadgesProgress(userId);
+    } catch (badgeError) {
+      console.error('[deleteSessionLog] Erreur sync badges:', badgeError);
+    }
   }
 }
 
@@ -532,6 +558,12 @@ export async function saveAthleteComment(comment: Omit<AthleteComment, 'id' | 'c
     console.error('[saveAthleteComment] Message:', error.message);
     console.error('[saveAthleteComment] Details:', error.details);
     throw error;
+  }
+
+  try {
+    void syncUserBadgesProgress(comment.userId);
+  } catch (badgeError) {
+    console.error('[saveAthleteComment] Erreur sync badges:', badgeError);
   }
 
   console.log('[saveAthleteComment] Réponse Supabase:', data);
