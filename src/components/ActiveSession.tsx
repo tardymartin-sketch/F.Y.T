@@ -5,15 +5,15 @@
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
-import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey } from '../../types';
-import { 
-  Save, 
-  Clock, 
+import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, AthleteComment } from '../../types';
+import {
+  Save,
+  Clock,
   ChevronDown,
-  X, 
-  AlertTriangle, 
-  Video, 
-  ExternalLink, 
+  X,
+  AlertTriangle,
+  Video,
+  ExternalLink,
   Calendar,
   History,
   Plus,
@@ -23,6 +23,8 @@ import {
   Send
 } from 'lucide-react';
 import { RpeSelector, SessionRpeModal, RpeBadge } from './RpeSelector';
+import { ConversationThread, ThreadMessage } from './ConversationThread';
+import { useTempData } from '../hooks/useUIState';
 
 interface Props {
   sessionData: WorkoutRow[];
@@ -32,16 +34,22 @@ interface Props {
   initialLog?: SessionLog | null;
   userId?: string;
   onSaveComment?: (exerciseName: string, comment: string, sessionId: string) => Promise<void>;
+  existingComments?: AthleteComment[];
+  onMarkCommentsAsRead?: (commentIds: string[]) => Promise<void>;
+  onNavigateToCoachTab?: (exerciseName: string) => void;
 }
 
-export const ActiveSession: React.FC<Props> = ({ 
-  sessionData, 
-  history, 
-  onSave, 
-  onCancel, 
+export const ActiveSession: React.FC<Props> = ({
+  sessionData,
+  history,
+  onSave,
+  onCancel,
   initialLog,
   userId,
-  onSaveComment
+  onSaveComment,
+  existingComments = [],
+  onMarkCommentsAsRead,
+  onNavigateToCoachTab
 }) => {
   const [logs, setLogs] = useState<ExerciseLog[]>([]);
   const [startTime] = useState<number>(Date.now());
@@ -57,14 +65,21 @@ export const ActiveSession: React.FC<Props> = ({
   // Modal historique
   const [historyModalExercise, setHistoryModalExercise] = useState<string | null>(null);
 
-  // Comments state
-  const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
+  // Comments state (avec persistance via store singleton)
+  const [persistedComments, setPersistedComments] = useTempData<Record<string, string>>('active-session-comments');
+  const exerciseComments = persistedComments || {};
+  const setExerciseComments = (updater: (prev: Record<string, string>) => Record<string, string>) => {
+    setPersistedComments(updater(exerciseComments));
+  };
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
 
   // État pour le modal RPE de fin de séance
   const [showSessionRpeModal, setShowSessionRpeModal] = useState(false);
   const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(null);
+
+  // V3: État pour le thread de conversation (ATH-006)
+  const [activeThreadExercise, setActiveThreadExercise] = useState<string | null>(null);
 
   const isEditMode = !!initialLog;
 
@@ -82,6 +97,19 @@ export const ActiveSession: React.FC<Props> = ({
           
           if (savedSessionIds === currentSessionIds) {
             setLogs(parsed.logs);
+            
+            // Restaurer l'exercice déplié
+            if (typeof parsed.expandedExercise === 'number') {
+              setExpandedExercise(parsed.expandedExercise);
+            }
+            
+            // Restaurer la position de scroll après le rendu
+            if (typeof parsed.scrollPosition === 'number') {
+              setTimeout(() => {
+                window.scrollTo(0, parsed.scrollPosition);
+              }, 100);
+            }
+            
             return;
           }
         }
@@ -132,8 +160,39 @@ export const ActiveSession: React.FC<Props> = ({
   // PERSISTENCE: Sauvegarder dans localStorage à chaque changement
   useEffect(() => {
     if (logs.length > 0 && !isEditMode) {
-      saveToLocalStorage(logs);
+      saveToLocalStorage(logs, expandedExercise);
     }
+  }, [logs, isEditMode, expandedExercise]);
+
+  // Sauvegarder la position de scroll périodiquement
+  useEffect(() => {
+    const handleScroll = () => {
+      if (logs.length > 0 && !isEditMode) {
+        const savedSession = localStorage.getItem('F.Y.T_active_session');
+        if (savedSession) {
+          try {
+            const parsed = JSON.parse(savedSession);
+            parsed.scrollPosition = window.scrollY;
+            localStorage.setItem('F.Y.T_active_session', JSON.stringify(parsed));
+          } catch (e) {
+            // Ignorer les erreurs
+          }
+        }
+      }
+    };
+
+    // Debounce le scroll pour éviter trop d'écritures
+    let scrollTimeout: NodeJS.Timeout;
+    const debouncedScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(handleScroll, 300);
+    };
+
+    window.addEventListener('scroll', debouncedScroll);
+    return () => {
+      window.removeEventListener('scroll', debouncedScroll);
+      clearTimeout(scrollTimeout);
+    };
   }, [logs, isEditMode]);
 
   const formatTime = (seconds: number): string => {
@@ -157,11 +216,13 @@ export const ActiveSession: React.FC<Props> = ({
     setLogs(newLogs);
   };
 
-  const saveToLocalStorage = (logsToSave: ExerciseLog[]) => {
+  const saveToLocalStorage = (logsToSave: ExerciseLog[], currentExpandedExercise: number | null) => {
     localStorage.setItem('F.Y.T_active_session', JSON.stringify({
       logs: logsToSave,
       sessionData: sessionData.map(s => ({ seance: s.seance, annee: s.annee, moisNum: s.moisNum, semaine: s.semaine })),
-      startTime
+      startTime,
+      expandedExercise: currentExpandedExercise,
+      scrollPosition: window.scrollY
     }));
   };
 
@@ -228,17 +289,21 @@ export const ActiveSession: React.FC<Props> = ({
 
   const handleSessionRpeSubmit = async (sessionRpe: number) => {
     if (!pendingSessionLog) return;
-    
+
     setSaving(true);
     const finalLog = { ...pendingSessionLog, sessionRpe };
+    console.log('[ActiveSession] Sauvegarde avec RPE:', finalLog);
 
     try {
       await onSave(finalLog);
       localStorage.removeItem('F.Y.T_active_session');
       setShowSessionRpeModal(false);
-    } catch (e) {
-      console.error("Erreur sauvegarde:", e);
-      alert("Erreur lors de la sauvegarde. Veuillez réessayer.");
+    } catch (e: any) {
+      console.error("[ActiveSession] Erreur sauvegarde:", e);
+      console.error("[ActiveSession] Erreur message:", e?.message);
+      console.error("[ActiveSession] Erreur code:", e?.code);
+      const errorMsg = e?.message || "Erreur inconnue";
+      alert(`Erreur lors de la sauvegarde: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -246,16 +311,20 @@ export const ActiveSession: React.FC<Props> = ({
 
   const handleSkipSessionRpe = async () => {
     if (!pendingSessionLog) return;
-    
+
     setSaving(true);
+    console.log('[ActiveSession] Sauvegarde sans RPE:', pendingSessionLog);
 
     try {
       await onSave(pendingSessionLog);
       localStorage.removeItem('F.Y.T_active_session');
       setShowSessionRpeModal(false);
-    } catch (e) {
-      console.error("Erreur sauvegarde:", e);
-      alert("Erreur lors de la sauvegarde. Veuillez réessayer.");
+    } catch (e: any) {
+      console.error("[ActiveSession] Erreur sauvegarde:", e);
+      console.error("[ActiveSession] Erreur message:", e?.message);
+      console.error("[ActiveSession] Erreur code:", e?.code);
+      const errorMsg = e?.message || "Erreur inconnue";
+      alert(`Erreur lors de la sauvegarde: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -304,6 +373,52 @@ export const ActiveSession: React.FC<Props> = ({
     } finally {
       setCommentSending(null);
     }
+  };
+
+  // V3: Fonctions pour le thread de conversation (ATH-006)
+  const getThreadMessages = (exerciseName: string): ThreadMessage[] => {
+    return existingComments
+      .filter(c => c.exerciseName === exerciseName)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map(c => ({
+        id: c.id,
+        content: c.comment,
+        from: c.userId === userId ? 'me' : 'other',
+        timestamp: c.createdAt,
+        isRead: c.isRead
+      })) as ThreadMessage[];
+  };
+
+  const handleOpenThread = (exerciseName: string) => {
+    // Si onNavigateToCoachTab est fourni, naviguer vers l'onglet Coach avec la conversation ciblée
+    if (onNavigateToCoachTab) {
+      onNavigateToCoachTab(exerciseName);
+    } else {
+      // Sinon, ouvrir le thread local (comportement legacy)
+      setActiveThreadExercise(exerciseName);
+    }
+  };
+
+  const handleCloseThread = () => {
+    setActiveThreadExercise(null);
+  };
+
+  const handleSendThreadMessage = async (content: string) => {
+    if (!activeThreadExercise || !onSaveComment) return;
+    const sessionId = initialLog?.id || 'pending-session';
+    await onSaveComment(activeThreadExercise, content, sessionId);
+  };
+
+  const handleMarkThreadAsRead = async (messageIds: string[]) => {
+    if (onMarkCommentsAsRead) {
+      await onMarkCommentsAsRead(messageIds);
+    }
+  };
+
+  const getUnreadCountForExercise = (exerciseName: string): number => {
+    return existingComments.filter(
+      c => c.exerciseName === exerciseName && c.userId !== userId && !c.isRead
+    ).length;
   };
 
   const sessionTitle = Array.from(new Set(sessionData.map(d => d.seance))).join(' + ');
@@ -475,6 +590,20 @@ export const ActiveSession: React.FC<Props> = ({
                       >
                         <History className="w-3 h-3" /> Historique
                       </button>
+                      {/* V3: Bouton Chat (ATH-007) */}
+                      {onSaveComment && (
+                        <button
+                          onClick={() => handleOpenThread(exercise.exerciseName)}
+                          className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded-lg flex items-center gap-1 relative"
+                        >
+                          <MessageSquare className="w-3 h-3" /> Coach
+                          {getUnreadCountForExercise(exercise.exerciseName) > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+                              {getUnreadCountForExercise(exercise.exerciseName)}
+                            </span>
+                          )}
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -490,43 +619,45 @@ export const ActiveSession: React.FC<Props> = ({
                     {exercise.sets.map((set, setIndex) => (
                       <div 
                         key={setIndex}
-                        className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                        className={`flex items-center gap-2 p-2 sm:p-3 rounded-xl transition-all ${
                           set.completed 
                             ? 'bg-emerald-500/20 border border-emerald-500/30' 
                             : 'bg-slate-800/50'
                         }`}
                       >
-                        <span className="w-8 text-center text-slate-400 font-medium">
+                        <span className="w-7 sm:w-8 text-center text-slate-400 font-medium text-sm sm:text-base flex-shrink-0">
                           S{set.setNumber}
                         </span>
                         <input
                           type="text"
+                          inputMode="numeric"
                           placeholder="Reps"
                           value={set.reps}
                           onChange={(e) => updateSet(exerciseIndex, setIndex, 'reps', e.target.value)}
-                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-16 sm:w-20 min-w-0 bg-slate-700 border border-slate-600 rounded-lg px-2 sm:px-3 py-2 text-white text-center text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <input
                           type="text"
-                          placeholder="Charge"
+                          inputMode="decimal"
+                          placeholder="Kg"
                           value={set.weight}
                           onChange={(e) => updateSet(exerciseIndex, setIndex, 'weight', e.target.value)}
-                          className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-16 sm:w-20 min-w-0 bg-slate-700 border border-slate-600 rounded-lg px-2 sm:px-3 py-2 text-white text-center text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <button
                           onClick={() => updateSet(exerciseIndex, setIndex, 'completed', !set.completed)}
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
                             set.completed
                               ? 'bg-emerald-500 text-white'
                               : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                           }`}
                         >
-                          <Check className="w-5 h-5" />
+                          <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                         {exercise.sets.length > 1 && (
                           <button
                             onClick={() => removeSet(exerciseIndex, setIndex)}
-                            className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                            className="p-1.5 sm:p-2 text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
                           >
                             <Minus className="w-4 h-4" />
                           </button>
@@ -668,6 +799,22 @@ export const ActiveSession: React.FC<Props> = ({
           durationMinutes={pendingSessionLog.durationMinutes || 0}
           exerciseCount={logs.length}
         />
+      )}
+
+      {/* V3: Thread de conversation (ATH-006) */}
+      {activeThreadExercise && (
+        <div className="fixed inset-0 z-50 bg-slate-950">
+          <ConversationThread
+            exerciseName={activeThreadExercise}
+            sessionName={sessionTitle}
+            sessionDate={initialLog?.date}
+            messages={getThreadMessages(activeThreadExercise)}
+            currentUserId={userId || ''}
+            onBack={handleCloseThread}
+            onSendMessage={handleSendThreadMessage}
+            onMarkAsRead={handleMarkThreadAsRead}
+          />
+        </div>
       )}
     </div>
   );

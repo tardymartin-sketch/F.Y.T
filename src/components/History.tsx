@@ -6,12 +6,12 @@
 
 import React, { useState, useMemo, useRef, TouchEvent } from 'react';
 import { SessionLog, getRpeColor, getRpeBgColor, getRpeInfo } from '../../types';
-import { 
-  Clock, 
-  ChevronDown, 
-  ChevronUp, 
-  Dumbbell, 
-  Trash2, 
+import {
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Dumbbell,
+  Trash2,
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { RpeBadge } from './RpeSelector';
 import { StravaHistoryCard } from './StravaHistoryCard';
+import { HistoryKPICard } from './HistoryKPICard';
 
 interface Props {
   history: SessionLog[];
@@ -67,27 +68,6 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
     return result;
   }, [history, searchTerm, selectedMonth, currentYear]);
 
-  const monthStats = useMemo(() => {
-    const now = new Date();
-    const thisMonth = history.filter(h => {
-      const d = new Date(h.date);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    
-    const sessionsWithRpe = thisMonth.filter(h => h.sessionRpe !== undefined);
-    const avgRpe = sessionsWithRpe.length > 0 
-      ? Math.round((sessionsWithRpe.reduce((acc, h) => acc + (h.sessionRpe || 0), 0) / sessionsWithRpe.length) * 10) / 10
-      : null;
-    
-    const totalDuration = thisMonth.reduce((acc, h) => acc + (h.durationMinutes || 0), 0);
-    
-    return {
-      count: thisMonth.length,
-      totalHours: Math.round(totalDuration / 60),
-      avgRpe
-    };
-  }, [history]);
-
   const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
   const handleTouchStart = (id: string, e: TouchEvent) => {
@@ -124,35 +104,8 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Stats Header */}
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700/50 rounded-2xl p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Ce mois-ci</h2>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <p className="text-3xl font-bold text-blue-400">{monthStats.count}</p>
-            <p className="text-sm text-slate-400">séances</p>
-          </div>
-          <div className="text-center">
-            <p className="text-3xl font-bold text-emerald-400">{monthStats.totalHours}h</p>
-            <p className="text-sm text-slate-400">d'entraînement</p>
-          </div>
-          <div className="text-center">
-            {monthStats.avgRpe ? (
-              <>
-                <p className={`text-3xl font-bold ${getRpeColor(Math.round(monthStats.avgRpe))}`}>
-                  {monthStats.avgRpe}
-                </p>
-                <p className="text-sm text-slate-400">RPE moyen</p>
-              </>
-            ) : (
-              <>
-                <p className="text-3xl font-bold text-slate-500">—</p>
-                <p className="text-sm text-slate-400">RPE moyen</p>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* V3: Stats Header agrandissable (ATH-003) */}
+      <HistoryKPICard history={history} />
 
       {/* Filters */}
       <div className="space-y-4">

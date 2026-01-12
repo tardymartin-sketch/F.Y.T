@@ -1,7 +1,7 @@
 // ============================================================
-// F.Y.T - APP PRINCIPAL (Version avec Session en cours persistante)
+// F.Y.T - APP PRINCIPAL (Version V3 avec Navigation Responsive)
 // App.tsx
-// Gestion de la session active avec persistence localStorage
+// Fusion ancien code fonctionnel + nouveautés étapes 1-4
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -31,25 +31,30 @@ import {
   updateGroupMembers,
   fetchAthleteGroupWithMembers,
   fetchAthleteGroupsForAthlete,
-  fetchActiveWeekOrganizersForAthlete, // MODIFIÉ: nouvelle fonction pour obtenir tous les messages
+  fetchActiveWeekOrganizersForAthlete,
+  fetchAthleteOwnComments,
 } from './src/services/supabaseService';
 
 import type { AthleteGroupWithCount } from './types';
-import { 
+import {
   canAthleteViewMessage,
-  filterVisibleMessages 
+  filterVisibleMessages
 } from './types';
-import { 
-  WorkoutRow, 
-  SessionLog, 
-  User, 
+import {
+  WorkoutRow,
+  SessionLog,
+  User,
   FilterState,
   ProfileRow,
   WeekOrganizerLog,
   AthleteComment
 } from './types';
 
-// Components
+// Hooks V3
+import { useDeviceDetect } from './src/hooks/useDeviceDetect';
+import { useCurrentView, useScrollPersistence } from './src/hooks/useUIState';
+
+// Components existants
 import { Auth } from './src/components/Auth';
 import { LoadingScreen } from './src/components/LoadingScreen';
 import { Sidebar } from './src/components/Sidebar';
@@ -60,21 +65,37 @@ import { TeamView } from './src/components/TeamView';
 import { AdminUsersView } from './src/components/AdminUsersView';
 import { SettingsView } from './src/components/SettingsView';
 import { StravaImport } from './src/components/StravaImport';
-import { Menu } from 'lucide-react';
+
+// Composants V3 Athlète
+import { BottomNav } from './src/components/athlete/BottomNav';
+import { HomeAthlete } from './src/components/athlete/HomeAthlete';
+import { CoachTab } from './src/components/athlete/CoachTab';
+import { ProfileTab } from './src/components/athlete/ProfileTab';
+
+// Composants V3 Coach
+import { CoachConversationsView } from './src/components/coach/CoachConversationsView';
+
 
 const App: React.FC = () => {
-  // Auth State
+  // ===========================================
+  // AUTH STATE
+  // ===========================================
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // User State
+  // ===========================================
+  // USER STATE
+  // ===========================================
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Navigation
-  const [currentView, setCurrentView] = useState<string>('home');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // ===========================================
+  // NAVIGATION (V3: avec store singleton)
+  // ===========================================
+  const [currentView, setCurrentView] = useCurrentView();
 
-  // Data States
+  // ===========================================
+  // DATA STATES
+  // ===========================================
   const [trainingData, setTrainingData] = useState<WorkoutRow[]>([]);
   const [history, setHistory] = useState<SessionLog[]>([]);
   const [filters, setFilters] = useState<FilterState>({
@@ -84,20 +105,88 @@ const App: React.FC = () => {
     selectedSeances: [],
   });
   const [dataLoading, setDataLoading] = useState(false);
-  
-  // Active Session State - MODIFIÉ: Persistence via localStorage
+
+  // ===========================================
+  // ACTIVE SESSION STATE
+  // ===========================================
   const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
   const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
 
-  // Week Organizer State - MODIFIÉ: tableau au lieu d'un seul
+  // ===========================================
+  // WEEK ORGANIZER STATE
+  // ===========================================
   const [activeWeekOrganizers, setActiveWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
   const [pastWeekOrganizers, setPastWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
 
   // ===========================================
+  // V3: ATHLETE COMMENTS STATE (Étape 6A)
+  // ===========================================
+  const [athleteComments, setAthleteComments] = useState<AthleteComment[]>([]);
+
+  // ===========================================
+  // V3: NAVIGATION VERS COACH TAB AVEC CONVERSATION CIBLÉE
+  // ===========================================
+  const [targetExerciseName, setTargetExerciseName] = useState<string | null>(null);
+
+  // ===========================================
+  // V3: COACH COMMENTS STATE (pour CoachConversationsView)
+  // ===========================================
+  const [coachTeamComments, setCoachTeamComments] = useState<AthleteComment[]>([]);
+
+  // ===========================================
+  // V3: ROLE DETECTION STATE
+  // Logique: hasCoachId → athlète, hasLinkedAthletes → coach
+  // ===========================================
+  const [hasLinkedAthletes, setHasLinkedAthletes] = useState<boolean>(false);
+
+  // ===========================================
+  // V3: DEVICE DETECTION (Étape 2)
+  // ===========================================
+  const { isMobile, isDesktop } = useDeviceDetect();
+
+  // ===========================================
+  // V3: VIEW VALIDATION ON LOAD
+  // Corriger la vue persistée si elle n'est pas valide pour le rôle
+  // ===========================================
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const hasCoachAssigned = !!currentUser.coachId;
+    const effectiveBehavesAsAthlete = hasCoachAssigned || currentUser.role === 'athlete';
+    const effectiveUseMobileLayout = isMobile || effectiveBehavesAsAthlete;
+
+    // Vues valides selon le contexte
+    const validAthleteViews = ['home', 'history', 'coach', 'profile', 'active'];
+    const validCoachMobileViews = ['home', 'history', 'coach', 'profile', 'team', 'messages', 'active'];
+    const validCoachDesktopViews = ['home', 'history', 'team', 'messages', 'import', 'settings', 'active', 'admin'];
+
+    let validViews: string[];
+    if (effectiveBehavesAsAthlete) {
+      validViews = validAthleteViews;
+    } else if (effectiveUseMobileLayout) {
+      validViews = validCoachMobileViews;
+    } else {
+      validViews = validCoachDesktopViews;
+    }
+
+    // Si la vue actuelle n'est pas valide, rediriger vers home
+    if (!validViews.includes(currentView)) {
+      console.log(`[App] Vue '${currentView}' invalide pour ce contexte, redirection vers 'home'`);
+      setCurrentView('home');
+    }
+  }, [currentUser, hasLinkedAthletes, isMobile]);
+
+  // ===========================================
+  // V3: SCROLL PERSISTENCE (via store singleton)
+  // ===========================================
+  useScrollPersistence(currentView);
+
+  // ===========================================
   // AUTH EFFECTS
   // ===========================================
-  
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -115,7 +204,6 @@ const App: React.FC = () => {
   // PERSISTENCE DE LA SESSION EN COURS
   // ===========================================
 
-  // Vérifier au chargement s'il y a une session en cours
   useEffect(() => {
     const savedSession = localStorage.getItem('F.Y.T_active_session');
     if (savedSession) {
@@ -131,14 +219,12 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Observer les changements dans localStorage
   useEffect(() => {
     const handleStorageChange = () => {
       const savedSession = localStorage.getItem('F.Y.T_active_session');
       setHasActiveSession(!!savedSession);
     };
 
-    // Vérifier périodiquement (pour les changements dans le même onglet)
     const interval = setInterval(handleStorageChange, 1000);
 
     window.addEventListener('storage', handleStorageChange);
@@ -170,10 +256,14 @@ const App: React.FC = () => {
 
   const loadUserProfile = async () => {
     if (!session?.user?.id) return;
-    
+
     try {
       const profile = await fetchCurrentUserProfile(session.user.id);
       setCurrentUser(profile);
+
+      // V3: Vérifier si l'utilisateur a des athlètes liés (pour déterminer s'il est coach)
+      const athletes = await fetchTeamAthletes(session.user.id);
+      setHasLinkedAthletes(athletes.length > 0);
     } catch (error) {
       console.error("Erreur chargement profil:", error);
     }
@@ -181,14 +271,14 @@ const App: React.FC = () => {
 
   const loadUserData = async () => {
     if (!currentUser) return;
-    
+
     setDataLoading(true);
     try {
       const [plans, logs] = await Promise.all([
         fetchTrainingPlans(currentUser.id),
         fetchSessionLogs(currentUser.id)
       ]);
-      
+
       setTrainingData(plans);
       setHistory(logs);
     } catch (error) {
@@ -212,9 +302,9 @@ const App: React.FC = () => {
   };
 
   const handleUpdateAthleteGroup = async (
-    groupId: string, 
-    name: string, 
-    description: string, 
+    groupId: string,
+    name: string,
+    description: string,
     color: string
   ) => {
     await updateAthleteGroup(groupId, name, description, color);
@@ -232,51 +322,79 @@ const App: React.FC = () => {
     return await fetchAthleteGroupWithMembers(groupId);
   };
 
-  // MODIFIÉ: Charger TOUS les week organizers pour les athlètes
+  // ===========================================
+  // WEEK ORGANIZERS
+  // ===========================================
+
   useEffect(() => {
     const loadWeekOrganizers = async () => {
       if (!currentUser || !currentUser.coachId) return;
-      
+
       try {
-        // Utiliser la nouvelle fonction qui retourne TOUS les messages visibles
         const activeMessages = await fetchActiveWeekOrganizersForAthlete(
           currentUser.coachId,
           currentUser.id
         );
         setActiveWeekOrganizers(activeMessages);
-        
-        // Charger les messages passés visibles
+
         const athleteGroupIds = await fetchAthleteGroupsForAthlete(currentUser.id);
         const all = await fetchWeekOrganizerLogs(currentUser.coachId);
-        
+
         const activeIds = new Set(activeMessages.map(m => m.id));
         const visible = all.filter(log => {
           const endDate = new Date(log.endDate);
           const isVisible = canAthleteViewMessage(log, currentUser.id, athleteGroupIds);
           return endDate < new Date() && isVisible && !activeIds.has(log.id);
         });
-        
+
         setPastWeekOrganizers(visible.slice(0, 5));
       } catch (error) {
         console.error("Erreur chargement week organizers:", error);
       }
     };
 
+    // V3: Charger les commentaires de l'athlète (pour CoachTab)
+    const loadAthleteComments = async () => {
+      if (!currentUser) return;
+
+      try {
+        const comments = await fetchAthleteOwnComments(currentUser.id);
+        setAthleteComments(comments);
+      } catch (error) {
+        console.error("Erreur chargement commentaires athlète:", error);
+      }
+    };
+
+    // V3: Charger les commentaires de l'équipe pour le coach
+    const loadCoachTeamComments = async () => {
+      if (!currentUser || (currentUser.role !== 'coach' && currentUser.role !== 'admin')) return;
+
+      try {
+        const comments = await fetchTeamComments(currentUser.id, false);
+        setCoachTeamComments(comments);
+      } catch (error) {
+        console.error("Erreur chargement commentaires équipe:", error);
+      }
+    };
+
     loadWeekOrganizers();
+    loadAthleteComments();
+    loadCoachTeamComments();
   }, [currentUser]);
 
   // ===========================================
   // SESSION HANDLERS
   // ===========================================
 
+  // Handler pour démarrer depuis Home (coach) avec filtres
   const handleStartSession = () => {
-    const sessionData = trainingData.filter(d => 
-      d.annee === filters.selectedAnnee && 
-      d.moisNum === filters.selectedMois && 
-      d.semaine === filters.selectedSemaine && 
+    const sessionData = trainingData.filter(d =>
+      d.annee === filters.selectedAnnee &&
+      d.moisNum === filters.selectedMois &&
+      d.semaine === filters.selectedSemaine &&
       filters.selectedSeances.includes(d.seance)
     );
-    
+
     if (sessionData.length > 0) {
       setActiveSessionData(sessionData);
       setEditingSession(null);
@@ -285,19 +403,27 @@ const App: React.FC = () => {
     }
   };
 
-  // Reprendre une session en cours depuis localStorage
+  // V3: Handler pour démarrer depuis HomeAthlete (reçoit directement les exercices)
+  const handleStartSessionFromExercises = (exercises: WorkoutRow[]) => {
+    if (exercises.length > 0) {
+      setActiveSessionData(exercises);
+      setEditingSession(null);
+      setCurrentView('active');
+      setHasActiveSession(true);
+    }
+  };
+
   const handleResumeSession = () => {
     const savedSession = localStorage.getItem('F.Y.T_active_session');
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
-        // Reconstruire les données de session
         if (parsed.sessionData) {
           const sessionData = trainingData.filter(d => {
-            return parsed.sessionData.some((s: any) => 
-              s.seance === d.seance && 
-              s.annee === d.annee && 
-              s.moisNum === d.moisNum && 
+            return parsed.sessionData.some((s: any) =>
+              s.seance === d.seance &&
+              s.annee === d.annee &&
+              s.moisNum === d.moisNum &&
               s.semaine === d.semaine
             );
           });
@@ -314,7 +440,7 @@ const App: React.FC = () => {
 
   const handleSaveSession = async (log: SessionLog) => {
     if (!currentUser) return;
-    
+
     try {
       await saveSessionLog(log, currentUser.id);
       await loadUserData();
@@ -398,11 +524,11 @@ const App: React.FC = () => {
 
   const handleUpdateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return;
-    
+
     const dbUpdates: Partial<ProfileRow> = {};
     if (updates.firstName) dbUpdates.first_name = updates.firstName;
     if (updates.lastName) dbUpdates.last_name = updates.lastName;
-    
+
     await updateUserProfile(currentUser.id, dbUpdates);
     setCurrentUser({ ...currentUser, ...updates });
   };
@@ -438,12 +564,30 @@ const App: React.FC = () => {
   const handleSaveAthleteComment = async (exerciseName: string, comment: string, sessionId: string) => {
     if (!currentUser) return;
     await saveAthleteComment({
-      oderId: currentUser.id,
+      userId: currentUser.id,
       sessionId,
       exerciseName,
       comment,
       isRead: false,
     });
+    // Recharger les commentaires après envoi
+    const comments = await fetchAthleteOwnComments(currentUser.id);
+    setAthleteComments(comments);
+  };
+
+  // V3: Handler pour envoyer un message en tant que coach
+  const handleCoachSendMessage = async (_athleteId: string, exerciseName: string, message: string, sessionId?: string) => {
+    if (!currentUser) return;
+    await saveAthleteComment({
+      userId: currentUser.id,
+      sessionId: sessionId || '',
+      exerciseName,
+      comment: message,
+      isRead: false,
+    });
+    // Recharger les commentaires après envoi
+    const comments = await fetchTeamComments(currentUser.id, false);
+    setCoachTeamComments(comments);
   };
 
   // ===========================================
@@ -456,11 +600,10 @@ const App: React.FC = () => {
   };
 
   // ===========================================
-  // NAVIGATION HANDLER - MODIFIÉ pour session en cours
+  // NAVIGATION HANDLER
   // ===========================================
 
   const handleViewChange = (view: string) => {
-    // Si on clique sur "active" depuis le menu et qu'il y a une session en cours
     if (view === 'active' && hasActiveSession && !activeSessionData) {
       handleResumeSession();
     } else {
@@ -469,7 +612,20 @@ const App: React.FC = () => {
   };
 
   // ===========================================
-  // RENDER
+  // V3: NAVIGATION VERS COACH TAB AVEC CONVERSATION CIBLÉE
+  // ===========================================
+
+  const handleNavigateToCoachTab = (exerciseName: string) => {
+    setTargetExerciseName(exerciseName);
+    setCurrentView('coach');
+  };
+
+  const handleClearTargetExercise = () => {
+    setTargetExerciseName(null);
+  };
+
+  // ===========================================
+  // RENDER GUARDS
   // ===========================================
 
   if (authLoading) {
@@ -477,44 +633,71 @@ const App: React.FC = () => {
   }
 
   if (!session) {
-    return <Auth onAuth={() => {}} />;
+    return <Auth />;
   }
 
   if (!currentUser) {
     return <LoadingScreen />;
   }
 
+  // ===========================================
+  // V3: NAVIGATION LOGIC (Étapes 2-3)
+  // Logique basée sur les relations, pas sur le rôle en base:
+  // - Si user a un coachId → comportement athlète (voit les fonctionnalités athlète)
+  // - Si user a des athlètes liés → comportement coach
+  // - Si user est coach en base sans athlètes → comportement coach
+  // - Sinon → utiliser le rôle en base
+  // ===========================================
+
+  const hasCoachAssigned = !!currentUser.coachId;
+  const isCoachByRole = currentUser.role === 'coach' || currentUser.role === 'admin';
+
+  // Comportement effectif:
+  // - behavesAsAthlete: l'utilisateur voit les fonctionnalités athlète (CoachTab, etc.)
+  // - behavesAsCoach: l'utilisateur voit les fonctionnalités coach (CoachConversationsView, etc.)
+  const behavesAsAthlete = hasCoachAssigned || currentUser.role === 'athlete';
+  const behavesAsCoach = hasLinkedAthletes || (isCoachByRole && !hasCoachAssigned);
+
   const isAdmin = currentUser.role === 'admin';
-  const isCoach = currentUser.role === 'coach';
+
+  // Navigation responsive:
+  // - Si behavesAsAthlete → layout mobile (BottomNav + HomeAthlete)
+  // - Si behavesAsCoach sur desktop → layout coach (Sidebar + Home)
+  // - Si behavesAsCoach sur mobile → layout mobile avec fonctionnalités coach
+  const useMobileLayout = isMobile || behavesAsAthlete;
+  const showBottomNav = useMobileLayout;
+  const showSidebar = behavesAsCoach && isDesktop && !behavesAsAthlete;
+
+  // ===========================================
+  // RENDER
+  // ===========================================
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
-      <Sidebar
-        currentView={currentView}
-        setCurrentView={handleViewChange}
-        isAdmin={isAdmin}
-        isCoach={isCoach}
-        onLogout={handleLogout}
-        user={currentUser}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        hasActiveSession={hasActiveSession} // NOUVEAU: passer l'état de session active
-      />
-      
-      <main className="flex-1 lg:ml-0 overflow-y-auto">
-        {/* Mobile header */}
-        <div className="lg:hidden sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-            <h1 className="font-bold text-white">F.Y.T</h1>
-            <div className="w-10" />
+      {/* Sidebar Coach (desktop uniquement) */}
+      {showSidebar && (
+        <Sidebar
+          currentView={currentView as 'home' | 'import' | 'team' | 'messages' | 'settings'}
+          onNavigate={handleViewChange}
+          coachName={`${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.username}
+          onLogout={handleLogout}
+        />
+      )}
+
+      <main
+        className={`
+          flex-1 lg:ml-0 overflow-y-auto
+          ${showBottomNav ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : ''}
+        `}
+      >
+        {/* Mobile header (si layout mobile) */}
+        {useMobileLayout && (
+          <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
+            <div className="flex items-center justify-center">
+              <h1 className="font-bold text-white text-lg">F.Y.T</h1>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="p-4 lg:p-8">
           {dataLoading ? (
@@ -523,17 +706,30 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
+              {/* V3: Home différent selon layout (mobile/athlete vs desktop/coach) */}
               {currentView === 'home' && (
-                <Home
-                  data={trainingData}
-                  filters={filters}
-                  setFilters={setFilters}
-                  onStartSession={handleStartSession}
-                  user={currentUser}
-                  history={history}
-                  activeWeekOrganizers={activeWeekOrganizers} // MODIFIÉ: tableau
-                  pastWeekOrganizers={pastWeekOrganizers}
-                />
+                useMobileLayout ? (
+                  <HomeAthlete
+                    user={currentUser}
+                    trainingData={trainingData}
+                    history={history}
+                    activeWeekOrganizers={activeWeekOrganizers}
+                    onStartSession={handleStartSessionFromExercises}
+                    onResumeSession={handleResumeSession}
+                    hasActiveSession={hasActiveSession}
+                  />
+                ) : (
+                  <Home
+                    data={trainingData}
+                    filters={filters}
+                    setFilters={setFilters}
+                    onStartSession={handleStartSession}
+                    user={currentUser}
+                    history={history}
+                    activeWeekOrganizers={activeWeekOrganizers}
+                    pastWeekOrganizers={pastWeekOrganizers}
+                  />
+                )
               )}
 
               {currentView === 'active' && activeSessionData && (
@@ -545,6 +741,9 @@ const App: React.FC = () => {
                   initialLog={editingSession}
                   userId={currentUser.id}
                   onSaveComment={handleSaveAthleteComment}
+                  existingComments={athleteComments}
+                  onMarkCommentsAsRead={handleMarkCommentsAsRead}
+                  onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
                 />
               )}
 
@@ -557,7 +756,44 @@ const App: React.FC = () => {
                 />
               )}
 
-              {currentView === 'team' && (isCoach || isAdmin) && (
+              {/* V3: Vue Coach pour athlète (Étape 6A) */}
+              {currentView === 'coach' && useMobileLayout && behavesAsAthlete && (
+                <CoachTab
+                  userId={currentUser.id}
+                  coachId={currentUser.coachId}
+                  weekOrganizerMessages={activeWeekOrganizers}
+                  athleteComments={athleteComments}
+                  onSendMessage={async (exerciseName, message) => {
+                    await handleSaveAthleteComment(exerciseName, message, '');
+                  }}
+                  onMarkAsRead={handleMarkCommentsAsRead}
+                  initialExerciseName={targetExerciseName}
+                  onClearInitialExercise={handleClearTargetExercise}
+                />
+              )}
+
+              {/* V3: Vue Messages Coach en mode mobile */}
+              {currentView === 'coach' && useMobileLayout && behavesAsCoach && (
+                <CoachConversationsView
+                  comments={coachTeamComments}
+                  currentUserId={currentUser.id}
+                  onSendMessage={handleCoachSendMessage}
+                  onMarkAsRead={handleMarkCommentsAsRead}
+                />
+              )}
+
+              {/* V3: Vue Profil Athlète (Étape 7A - ATH-008, ATH-012) */}
+              {currentView === 'profile' && behavesAsAthlete && (
+                <ProfileTab
+                  user={currentUser}
+                  onUpdateProfile={async (updates) => {
+                    await handleUpdateProfile(updates);
+                  }}
+                  onLogout={handleLogout}
+                />
+              )}
+
+              {currentView === 'team' && behavesAsCoach && (
                 <TeamView
                   coachId={currentUser.id}
                   fetchTeam={handleFetchTeam}
@@ -576,10 +812,20 @@ const App: React.FC = () => {
                 />
               )}
 
+              {/* V3: Vue Messages Coach avec hiérarchie athlète/séance */}
+              {currentView === 'messages' && behavesAsCoach && (
+                <CoachConversationsView
+                  comments={coachTeamComments}
+                  currentUserId={currentUser.id}
+                  onSendMessage={handleCoachSendMessage}
+                  onMarkAsRead={handleMarkCommentsAsRead}
+                />
+              )}
+
               {currentView === 'admin' && isAdmin && (
                 <AdminUsersView
                   fetchAllUsers={handleFetchAllUsers}
-                  updateCoach={handleUpdateCoach}
+                  onUpdateCoach={handleUpdateCoach}
                 />
               )}
 
@@ -598,6 +844,14 @@ const App: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* V3: Bottom Navigation Athlète (Étape 3) */}
+      {showBottomNav && (
+        <BottomNav
+          activeTab={currentView as 'home' | 'history' | 'coach' | 'profile'}
+          onTabChange={handleViewChange}
+        />
+      )}
     </div>
   );
 };

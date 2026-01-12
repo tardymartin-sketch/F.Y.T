@@ -1,5 +1,5 @@
 // ===========================================
-// F.Y.T - TYPES COMPLET (avec RPE)
+// F.Y.T - TYPES COMPLET (V3 avec Messages & Badges)
 // types.ts
 // ===========================================
 
@@ -12,9 +12,13 @@ export interface User {
   firstName?: string;
   lastName?: string;
   role: 'admin' | 'coach' | 'athlete';
+  secondaryRoles?: UserRole[];
   coachId?: string;
   email?: string;
 }
+
+// Type pour le mode actif (stocké dans localStorage)
+export type ActiveMode = 'athlete' | 'coach' | 'admin';
 
 export type UserRole = 'admin' | 'coach' | 'athlete';
 
@@ -26,6 +30,7 @@ export interface ProfileRow {
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  secondary_roles: string[] | null;
   coach_id: string | null;
   created_at: string;
 }
@@ -39,8 +44,58 @@ export function mapProfileToUser(row: ProfileRow): User {
     firstName: row.first_name ?? undefined,
     lastName: row.last_name ?? undefined,
     role: (row.role as UserRole) ?? 'athlete',
+    secondaryRoles: (row.secondary_roles as UserRole[]) ?? [],
     coachId: row.coach_id ?? undefined,
   };
+}
+
+// ===========================================
+// HELPERS MULTI-RÔLES
+// ===========================================
+
+/**
+ * Vérifie si un utilisateur peut accéder au mode coach/admin
+ */
+export function canAccessCoachMode(user: User): boolean {
+  return (
+    user.role === 'coach' ||
+    user.role === 'admin' ||
+    user.secondaryRoles?.includes('coach') ||
+    user.secondaryRoles?.includes('admin') ||
+    false
+  );
+}
+
+/**
+ * Vérifie si un utilisateur peut accéder au mode athlète
+ */
+export function canAccessAthleteMode(user: User): boolean {
+  return (
+    user.role === 'athlete' ||
+    user.secondaryRoles?.includes('athlete') ||
+    false
+  );
+}
+
+/**
+ * Retourne tous les modes disponibles pour un utilisateur
+ */
+export function getAvailableModes(user: User): ActiveMode[] {
+  const modes: ActiveMode[] = [];
+  
+  // Mode principal toujours disponible
+  modes.push(user.role);
+  
+  // Modes secondaires
+  if (user.secondaryRoles) {
+    user.secondaryRoles.forEach(role => {
+      if (!modes.includes(role)) {
+        modes.push(role);
+      }
+    });
+  }
+  
+  return modes;
 }
 
 // ===========================================
@@ -63,6 +118,8 @@ export interface TrainingPlanRow {
   Month_num: number | null;
   Tempo: string | null;
   "Notes/Consignes": string | null;
+  week_start_date: string | null;
+  week_end_date: string | null;
 }
 
 // Type utilisé dans l'application (camelCase, valeurs par défaut)
@@ -81,7 +138,12 @@ export interface WorkoutRow {
   tempoRpe: string;
   notes: string;
   video: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
+
+// Alias pour compatibilité
+export type WorkoutRowFull = WorkoutRow;
 
 // Mapping Training Plan DB -> WorkoutRow App
 export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
@@ -100,6 +162,8 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     tempoRpe: row.Tempo ?? '',
     notes: row["Notes/Consignes"] ?? '',
     video: row.video_url ?? '',
+    weekStartDate: row.week_start_date ?? undefined,
+    weekEndDate: row.week_end_date ?? undefined,
   };
 }
 
@@ -141,7 +205,7 @@ export interface SessionKey {
 // Type utilisé dans l'application
 export interface SessionLog {
   id: string;
-  oderId?: string;
+  userId?: string;
   athleteName?: string;
   date: string;
   durationMinutes?: number;
@@ -164,13 +228,14 @@ export interface SessionLogRow {
   comments: string | null;
   created_at: string;
   session_rpe: number | null;
+  seance_type?: string | null;
 }
 
 // Mapping SessionLog DB -> App
 export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
   return {
     id: row.id,
-    oderId: row.user_id,
+    userId: row.user_id,
     date: row.date,
     durationMinutes: row.duration_minutes ?? undefined,
     sessionKey: {
@@ -186,14 +251,19 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
 }
 
 // Mapping SessionLog App -> DB (pour insert/update)
-export function mapSessionLogToRow(log: SessionLog, oderId: string): Omit<SessionLogRow, 'created_at'> {
+// Note: completed_at n'existe pas dans la table Supabase, on ne l'inclut pas
+export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<SessionLogRow, 'created_at' | 'seance_type'> {
+  // Valider les valeurs numériques pour éviter NaN
+  const keyYear = log.sessionKey.annee ? parseInt(log.sessionKey.annee) : null;
+  const keyWeek = log.sessionKey.semaine ? parseInt(log.sessionKey.semaine) : null;
+
   return {
     id: log.id,
-    user_id: oderId,
+    user_id: userId,
     date: log.date,
     duration_minutes: log.durationMinutes ?? null,
-    session_key_year: log.sessionKey.annee ? parseInt(log.sessionKey.annee) : null,
-    session_key_week: log.sessionKey.semaine ? parseInt(log.sessionKey.semaine) : null,
+    session_key_year: isNaN(keyYear as number) ? null : keyYear,
+    session_key_week: isNaN(keyWeek as number) ? null : keyWeek,
     session_key_name: log.sessionKey.seance || null,
     exercises: log.exercises,
     comments: log.comments ?? null,
@@ -267,7 +337,7 @@ export function mapWeekOrganizerLogToRow(log: WeekOrganizerLog): Omit<WeekOrgani
 // ===========================================
 export interface AthleteComment {
   id: string;
-  oderId: string;
+  userId: string;
   sessionId?: string;
   exerciseName: string;
   comment: string;
@@ -302,7 +372,7 @@ export interface AthleteCommentRow {
 export function mapAthleteCommentRowToComment(row: AthleteCommentRow): AthleteComment {
   return {
     id: row.id,
-    oderId: row.user_id,
+    userId: row.user_id,
     sessionId: row.session_id ?? undefined,
     exerciseName: row.exercise_name,
     comment: row.comment,
@@ -320,7 +390,7 @@ export function mapAthleteCommentToRow(
   comment: Omit<AthleteComment, 'id' | 'createdAt' | 'username' | 'firstName' | 'lastName' | 'sessionName'>
 ): Omit<AthleteCommentRow, 'id' | 'created_at' | 'profiles' | 'session_logs'> {
   return {
-    user_id: comment.oderId,
+    user_id: comment.userId,
     session_id: comment.sessionId ?? null,
     exercise_name: comment.exerciseName,
     comment: comment.comment,
@@ -466,4 +536,232 @@ export function getRpeBgColor(rpe: number): string {
 
 export function getRpeInfo(rpe: number) {
   return RPE_SCALE.find(r => r.value === rpe) || RPE_SCALE[4];
+}
+
+// ===========================================
+// V3 — TYPES BADGES
+// ===========================================
+
+export type BadgeCategory = 
+  | 'regularity' 
+  | 'endurance' 
+  | 'perseverance' 
+  | 'community' 
+  | 'exploration';
+
+export type BadgeConditionType =
+  | 'cumulative_sessions'
+  | 'streak_tolerant'
+  | 'cumulative_hours'
+  | 'count_rpe_gte'
+  | 'comeback'
+  | 'consistency'
+  | 'message_count'
+  | 'responsive'
+  | 'unique_exercises'
+  | 'session_types'
+  | 'strava_connected'
+  | 'strava_imports';
+
+export interface Badge {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  category: BadgeCategory;
+  iconSvg: string;
+  conditionType: BadgeConditionType;
+  conditionValue: number;
+  orderIndex: number;
+}
+
+export interface UserBadge {
+  id: string;
+  userId: string;
+  badgeId: string;
+  unlockedAt?: string;
+  progressValue: number;
+}
+
+export interface BadgeWithProgress extends Badge {
+  progress: number;
+  isUnlocked: boolean;
+  unlockedAt?: string;
+}
+
+// Types DB pour badges
+export interface BadgeRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon_svg: string;
+  condition_type: string;
+  condition_value: number;
+  order_index: number;
+}
+
+export interface UserBadgeRow {
+  id: string;
+  user_id: string;
+  badge_id: string;
+  unlocked_at: string | null;
+  progress_value: number;
+}
+
+// Mapping Badge DB -> App
+export function mapBadgeRowToBadge(row: BadgeRow): Badge {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    category: row.category as BadgeCategory,
+    iconSvg: row.icon_svg,
+    conditionType: row.condition_type as BadgeConditionType,
+    conditionValue: row.condition_value,
+    orderIndex: row.order_index,
+  };
+}
+
+export function mapUserBadgeRowToUserBadge(row: UserBadgeRow): UserBadge {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    badgeId: row.badge_id,
+    unlockedAt: row.unlocked_at ?? undefined,
+    progressValue: row.progress_value,
+  };
+}
+
+// Métadonnées des catégories de badges
+export const BADGE_CATEGORIES: Record<BadgeCategory, {
+  name: string;
+  icon: string;
+  color: string;
+  description: string;
+}> = {
+  regularity: {
+    name: 'Régularité',
+    icon: '🔥',
+    color: '#f97316',
+    description: 'Récompense la constance dans l\'entraînement',
+  },
+  endurance: {
+    name: 'Endurance',
+    icon: '⏱️',
+    color: '#3b82f6',
+    description: 'Récompense le temps total investi',
+  },
+  perseverance: {
+    name: 'Persévérance',
+    icon: '💪',
+    color: '#dc2626',
+    description: 'Récompense l\'effort et la détermination',
+  },
+  community: {
+    name: 'Communauté',
+    icon: '🤝',
+    color: '#8b5cf6',
+    description: 'Récompense la communication avec le coach',
+  },
+  exploration: {
+    name: 'Exploration',
+    icon: '🗺️',
+    color: '#10b981',
+    description: 'Récompense la diversité des entraînements',
+  },
+};
+
+// ===========================================
+// V3 — TYPES CONVERSATIONS & MESSAGES
+// ===========================================
+
+export interface Conversation {
+  id: string;
+  athleteId: string;
+  coachId: string;
+  sessionId?: string;
+  exerciseName?: string;
+  lastMessageAt: string;
+  createdAt: string;
+  unreadCount?: number;
+  lastMessage?: string;
+  // Données jointes
+  athleteName?: string;
+  coachName?: string;
+  sessionName?: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: string;
+  isRead: boolean;
+  createdAt: string;
+  // Données jointes
+  senderName?: string;
+}
+
+// Types DB pour conversations et messages
+export interface ConversationRow {
+  id: string;
+  athlete_id: string;
+  coach_id: string;
+  session_id: string | null;
+  exercise_name: string | null;
+  last_message_at: string;
+  created_at: string;
+}
+
+export interface MessageRow {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+// Mapping Conversation DB -> App
+export function mapConversationRowToConversation(
+  row: ConversationRow & { 
+    unread_count?: number; 
+    last_message?: string;
+    athlete_name?: string;
+    coach_name?: string;
+    session_name?: string;
+  }
+): Conversation {
+  return {
+    id: row.id,
+    athleteId: row.athlete_id,
+    coachId: row.coach_id,
+    sessionId: row.session_id ?? undefined,
+    exerciseName: row.exercise_name ?? undefined,
+    lastMessageAt: row.last_message_at,
+    createdAt: row.created_at,
+    unreadCount: row.unread_count,
+    lastMessage: row.last_message,
+    athleteName: row.athlete_name,
+    coachName: row.coach_name,
+    sessionName: row.session_name,
+  };
+}
+
+// Mapping Message DB -> App
+export function mapMessageRowToMessage(
+  row: MessageRow & { sender_name?: string }
+): Message {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    content: row.content,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+    senderName: row.sender_name,
+  };
 }

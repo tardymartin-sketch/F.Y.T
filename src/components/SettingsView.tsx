@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User } from '../../types';
+import { User, ActiveMode } from '../../types';
 import { 
   User as UserIcon, 
   Mail, 
@@ -10,16 +10,31 @@ import {
   ChevronRight,
   Check,
   Save,
-  AlertCircle
+  AlertCircle,
+  Users,
+  Dumbbell,
+  RefreshCw
 } from 'lucide-react';
 
 interface Props {
   user: User;
   onUpdateProfile?: (updates: Partial<User>) => Promise<void>;
   onLogout: () => void;
+  activeMode?: ActiveMode;
+  canSwitchToCoach?: boolean;
+  canSwitchToAthlete?: boolean;
+  onSwitchMode?: (mode: ActiveMode) => void;
 }
 
-export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout }) => {
+export const SettingsView: React.FC<Props> = ({ 
+  user, 
+  onUpdateProfile, 
+  onLogout,
+  activeMode,
+  canSwitchToCoach = false,
+  canSwitchToAthlete = false,
+  onSwitchMode,
+}) => {
   const [firstName, setFirstName] = useState(user.firstName || '');
   const [lastName, setLastName] = useState(user.lastName || '');
   const [saving, setSaving] = useState(false);
@@ -51,7 +66,23 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
     }
   };
 
+  const getModeBadge = () => {
+    switch (activeMode) {
+      case 'admin':
+        return { label: 'Mode Admin', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+      case 'coach':
+        return { label: 'Mode Coach', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+      default:
+        return { label: 'Mode Athlète', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+    }
+  };
+
   const roleBadge = getRoleBadge();
+  const modeBadge = getModeBadge();
+
+  // Déterminer si on peut afficher le bouton switch
+  const showSwitchToCoach = activeMode === 'athlete' && canSwitchToCoach;
+  const showSwitchToAthlete = (activeMode === 'coach' || activeMode === 'admin') && canSwitchToAthlete;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -75,7 +106,7 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Avatar et badge */}
+          {/* Avatar et badges */}
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-2xl flex items-center justify-center text-white font-bold text-2xl">
               {firstName?.[0] || user.username[0]}{lastName?.[0] || ''}
@@ -85,9 +116,16 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
                 {firstName || lastName ? `${firstName} ${lastName}` : user.username}
               </p>
               <p className="text-slate-400">@{user.username}</p>
-              <span className={`inline-block mt-2 px-3 py-1 rounded-full text-sm border ${roleBadge.color}`}>
-                {roleBadge.label}
-              </span>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className={`inline-block px-3 py-1 rounded-full text-sm border ${roleBadge.color}`}>
+                  {roleBadge.label}
+                </span>
+                {activeMode && activeMode !== user.role && (
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm border ${modeBadge.color}`}>
+                    {modeBadge.label}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -150,6 +188,51 @@ export const SettingsView: React.FC<Props> = ({ user, onUpdateProfile, onLogout 
           )}
         </div>
       </div>
+
+      {/* Section Changer de mode */}
+      {onSwitchMode && (showSwitchToCoach || showSwitchToAthlete) && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="p-6 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-white">Changer de mode</h2>
+                <p className="text-sm text-slate-400">Basculer vers une autre interface</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {showSwitchToCoach && (
+              <button
+                onClick={() => onSwitchMode(user.role === 'admin' ? 'admin' : 'coach')}
+                className="w-full flex items-center justify-between gap-3 p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 font-medium transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-5 h-5" />
+                  <span>Passer en mode Coach</span>
+                </div>
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
+
+            {showSwitchToAthlete && (
+              <button
+                onClick={() => onSwitchMode('athlete')}
+                className="w-full flex items-center justify-between gap-3 p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-400 font-medium transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <Dumbbell className="w-5 h-5" />
+                  <span>Passer en mode Athlète</span>
+                </div>
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Déconnexion */}
       <button
