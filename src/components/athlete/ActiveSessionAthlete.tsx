@@ -5,14 +5,13 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey } from '../../../types';
+import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, SetLoad, RPE_SCALE } from '../../../types';
 import { 
   Play,
   Pause,
   Clock, 
   X, 
   Video, 
-  ExternalLink, 
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -41,6 +40,72 @@ interface Props {
   initialLog?: SessionLog | null;
   userId?: string;
   onSaveComment?: (exerciseName: string, comment: string, sessionId: string) => Promise<void>;
+}
+
+function parseKgLikeToNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const m = trimmed.replace(',', '.').match(/\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = parseFloat(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getLoadTotalKg(load: SetLoad | undefined): number | null {
+  if (!load) return null;
+  if (load.type === 'single' || load.type === 'machine') {
+    return typeof load.weightKg === 'number' ? load.weightKg : null;
+  }
+  if (load.type === 'double') {
+    return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
+  }
+  const added = typeof load.addedKg === 'number' ? load.addedKg : null;
+  if (typeof load.barKg !== 'number') return null;
+  if (added === null) return null;
+  return load.barKg + added;
+}
+
+function getLoadLabel(load: SetLoad | undefined): string {
+  if (!load) return 'Charge';
+  if (load.type === 'single') return 'Haltère / KB';
+  if (load.type === 'double') return '2x Haltères / KB';
+  if (load.type === 'barbell') return 'Barre + poids';
+  return 'Machine';
+}
+
+function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number | null = null): SetLoad {
+  if (type === 'barbell') {
+    const barKg = 20;
+    const addedKg = typeof fromTotalKg === 'number' ? Math.max(fromTotalKg - barKg, 0) : null;
+    return { type: 'barbell', unit: 'kg', barKg, addedKg };
+  }
+  if (type === 'double') {
+    const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg / 2 : null;
+    return { type: 'double', unit: 'kg', weightKg };
+  }
+  if (type === 'machine') {
+    const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
+    return { type: 'machine', unit: 'kg', weightKg };
+  }
+  const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
+  return { type: 'single', unit: 'kg', weightKg };
+}
+
+function normalizeExerciseLogs(exercises: ExerciseLog[]): ExerciseLog[] {
+  return exercises.map(ex => ({
+    ...ex,
+    sets: (Array.isArray(ex.sets) ? ex.sets : []).map((s) => {
+      const anySet = s as any;
+      const weightStr = typeof anySet.weight === 'string' ? anySet.weight : '';
+      const existingLoad = anySet.load as SetLoad | undefined;
+      if (existingLoad) return s;
+      const inferredKg = weightStr ? parseKgLikeToNumber(weightStr) : null;
+      return {
+        ...s,
+        load: createDefaultLoad('single', inferredKg),
+      };
+    })
+  }));
 }
 
 type SessionPhase = 'recap' | 'focus';
@@ -114,6 +179,121 @@ function getLastPerformance(exerciseName: string, history: SessionLog[]): { reps
   return null;
 }
 
+function formatSetWeight(set: SetLog): React.ReactNode {
+  // Si pas de données JSONB (load), afficher simplement le poids
+  if (!set.load) {
+    const weight = set.weight || '-';
+    return weight === '-' ? '-' : `${weight} kg.`;
+  }
+
+  const load = set.load;
+  const smallTextClass = "text-xs text-slate-400 font-normal block mt-0.5 leading-tight";
+  
+  if (load.type === 'single') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>{weight} kg.</span>
+        <span className={smallTextClass}>(Haltères/Kettlebell)</span>
+      </div>
+    );
+  }
+  
+  if (load.type === 'double') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>2 X {weight} kg.</span>
+        <span className={smallTextClass}>(2 X Haltères/Kettlebell)</span>
+      </div>
+    );
+  }
+  
+  if (load.type === 'barbell') {
+    const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
+    const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
+    const total = addedKg !== null ? barKg + addedKg : barKg;
+    if (addedKg === null) {
+      return (
+        <div className="flex flex-col items-center justify-center w-full">
+          <span>{total} kg.</span>
+          <span className={smallTextClass}>(Barre: {barKg} + Poids: 0)</span>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>{total} kg.</span>
+        <span className={smallTextClass}>(Barre: {barKg} + Poids: {addedKg})</span>
+      </div>
+    );
+  }
+  
+  if (load.type === 'machine') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>{weight} kg.</span>
+        <span className={smallTextClass}>(Sur machine)</span>
+      </div>
+    );
+  }
+  
+  const weightText = set.weight || '-';
+  return weightText === '-' ? '-' : `${weightText} kg.`;
+}
+
+function getLastExerciseHistory(
+  exerciseName: string,
+  history: SessionLog[]
+): { date: string; sets: SetLog[]; rpe?: number } | null {
+  // Chercher la dernière exécution complétée (toutes les séries complétées)
+  for (const session of history) {
+    const exercise = session.exercises.find(
+      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+    );
+    if (exercise && exercise.sets.length > 0) {
+      // Vérifier si toutes les séries sont complétées
+      const allCompleted = exercise.sets.every(s => s.completed);
+      if (allCompleted) {
+        return {
+          date: session.date,
+          sets: exercise.sets,
+          rpe: exercise.rpe
+        };
+      }
+    }
+  }
+  
+  // Si aucune exécution complétée, prendre la dernière (même incomplète)
+  for (const session of history) {
+    const exercise = session.exercises.find(
+      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+    );
+    if (exercise && exercise.sets.length > 0) {
+      return {
+        date: session.date,
+        sets: exercise.sets,
+        rpe: exercise.rpe
+      };
+    }
+  }
+  
+  return null;
+}
+
 // ===========================================
 // COMPONENT
 // ===========================================
@@ -139,20 +319,33 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // Mode focus state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [currentSetIndexes, setCurrentSetIndexes] = useState<Record<number, number>>({});
+  const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
   
   // Modals
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showSessionRpeModal, setShowSessionRpeModal] = useState(false);
   const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(null);
-  const [showVideoModal, setShowVideoModal] = useState<string | null>(null);
   
   // Comments
   const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
+  const [recapOpenConsignes, setRecapOpenConsignes] = useState<Record<number, boolean>>({});
+  const [recapOpenHistory, setRecapOpenHistory] = useState<Record<number, boolean>>({});
+  const [focusOpenConsignes, setFocusOpenConsignes] = useState<Record<number, boolean>>({});
+  const [focusOpenHistory, setFocusOpenHistory] = useState<Record<number, boolean>>({});
+  const [showForceFinishModal, setShowForceFinishModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState<number | null>(null);
+  const [showConsignesModal, setShowConsignesModal] = useState<number | null>(null);
 
   const isEditMode = !!initialLog;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const rpeSectionRef = useRef<HTMLDivElement>(null);
+  const scrollToRpeOnNextCompletedRef = useRef(false);
+  const focusRpeRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const focusCardRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const pendingScrollToRpeExerciseIndexRef = useRef<number | null>(null);
 
   // ===========================================
   // INITIALIZATION
@@ -160,7 +353,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   
   useEffect(() => {
     // Vérifier s'il y a une session en cours dans localStorage
-    const savedSession = localStorage.getItem('F.Y.T_active_session_athlete');
+    const savedSession = localStorage.getItem('F.Y.T_active_session');
     if (savedSession && !initialLog) {
       try {
         const parsed = JSON.parse(savedSession);
@@ -173,11 +366,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           ).sort().join(',');
           
           if (savedSessionIds === currentSessionIds) {
-            setLogs(parsed.logs);
+            setLogs(normalizeExerciseLogs(parsed.logs));
             setPhase(parsed.phase || 'recap');
             setStartTime(parsed.startTime || null);
             setCurrentExerciseIndex(parsed.currentExerciseIndex || 0);
             setCurrentSetIndex(parsed.currentSetIndex || 0);
+            setCurrentSetIndexes(parsed.currentSetIndexes || {});
+            setExpandedExercises(parsed.expandedExercises || {});
             return;
           }
         }
@@ -188,7 +383,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
     // Initialiser les logs depuis sessionData
     if (initialLog) {
-      setLogs(initialLog.exercises);
+      setLogs(normalizeExerciseLogs(initialLog.exercises));
       setPhase('focus');
       setStartTime(Date.now());
     } else {
@@ -203,14 +398,19 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         const row = rows[0];
         const numSets = parseInt(row.series) || 3;
         const suggestedWeight = getSuggestedWeight(name, history);
-        
+        const suggestedKg = suggestedWeight ? parseKgLikeToNumber(suggestedWeight) : null;
+        const defaultReps = row.repsDuree
+          ? row.repsDuree.replace(/[^0-9]/g, '')
+          : '';
+
         return {
           exerciseName: name,
           originalSession: row.seance,
           sets: Array.from({ length: numSets }, (_, i) => ({
             setNumber: i + 1,
-            reps: '',
+            reps: defaultReps,
             weight: suggestedWeight || '',
+            load: createDefaultLoad('single', suggestedKg),
             completed: false,
           })),
           notes: row.notes || '',
@@ -220,6 +420,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       setLogs(initialLogs);
     }
   }, [sessionData, initialLog, history]);
+
+  useEffect(() => {
+    if (!scrollToRpeOnNextCompletedRef.current) return;
+    const ex = logs[currentExerciseIndex];
+    if (!ex) return;
+    const allCompleted = ex.sets.every(s => s.completed);
+    if (!allCompleted) return;
+    scrollToRpeOnNextCompletedRef.current = false;
+    rpeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [logs, currentExerciseIndex]);
 
   // ===========================================
   // TIMER
@@ -243,10 +453,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (logs.length > 0 && !isEditMode) {
       saveToLocalStorage();
     }
-  }, [logs, phase, currentExerciseIndex, currentSetIndex]);
+  }, [logs, phase, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises]);
 
   const saveToLocalStorage = useCallback(() => {
-    localStorage.setItem('F.Y.T_active_session_athlete', JSON.stringify({
+    localStorage.setItem('F.Y.T_active_session', JSON.stringify({
       logs,
       sessionData: sessionData.map(s => ({ 
         seance: s.seance, 
@@ -257,12 +467,48 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       phase,
       startTime,
       currentExerciseIndex,
-      currentSetIndex
+      currentSetIndex,
+      currentSetIndexes,
+      expandedExercises
     }));
-  }, [logs, sessionData, phase, startTime, currentExerciseIndex, currentSetIndex]);
+  }, [logs, sessionData, phase, startTime, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises]);
+
+  useEffect(() => {
+    const idx = pendingScrollToRpeExerciseIndexRef.current;
+    if (idx === null) return;
+    const el = focusRpeRefs.current[idx];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pendingScrollToRpeExerciseIndexRef.current = null;
+    }
+  }, [logs]);
 
   const clearLocalStorage = useCallback(() => {
-    localStorage.removeItem('F.Y.T_active_session_athlete');
+    localStorage.removeItem('F.Y.T_active_session');
+  }, []);
+
+  const getSetIndexForExercise = useCallback((exerciseIndex: number): number => {
+    return typeof currentSetIndexes[exerciseIndex] === 'number' ? currentSetIndexes[exerciseIndex] : 0;
+  }, [currentSetIndexes]);
+
+  const setSetIndexForExercise = useCallback((exerciseIndex: number, nextIndex: number) => {
+    setCurrentSetIndexes(prev => ({
+      ...prev,
+      [exerciseIndex]: nextIndex
+    }));
+  }, []);
+
+  const toggleExerciseExpanded = useCallback((exerciseIndex: number) => {
+    setExpandedExercises(prev => ({
+      ...prev,
+      [exerciseIndex]: !prev[exerciseIndex]
+    }));
+  }, []);
+
+  const scrollToExerciseCard = useCallback((exerciseIndex: number) => {
+    const el = focusCardRefs.current[exerciseIndex];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
 
   // ===========================================
@@ -296,6 +542,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     return seances.join(' + ');
   }, [sessionData]);
 
+  const allExercisesCompleted = useMemo(() => {
+    if (logs.length === 0) return false;
+    return logs.every(ex => {
+      const allSetsDone = ex.sets.length > 0 && ex.sets.every(s => s.completed);
+      const hasRpe = typeof ex.rpe === 'number';
+      return allSetsDone && hasRpe;
+    });
+  }, [logs]);
+
   // ===========================================
   // HANDLERS
   // ===========================================
@@ -305,6 +560,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     setStartTime(Date.now());
     setCurrentExerciseIndex(0);
     setCurrentSetIndex(0);
+    setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 100);
   }, []);
 
   const updateSet = useCallback((field: keyof SetLog, value: any) => {
@@ -312,6 +572,68 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     (newLogs[currentExerciseIndex].sets[currentSetIndex] as any)[field] = value;
     setLogs(newLogs);
   }, [logs, currentExerciseIndex, currentSetIndex]);
+
+  const updateCurrentSetLoad = useCallback((load: SetLoad) => {
+    const totalKg = getLoadTotalKg(load);
+    const newLogs = [...logs];
+    const set = newLogs[currentExerciseIndex].sets[currentSetIndex];
+    (set as any).load = load;
+    (set as any).weight = typeof totalKg === 'number' ? String(Math.round(totalKg * 100) / 100) : '';
+    setLogs(newLogs);
+  }, [logs, currentExerciseIndex, currentSetIndex]);
+
+  const updateSetForExercise = useCallback((exerciseIndex: number, setIndex: number, field: keyof SetLog, value: any) => {
+    const newLogs = [...logs];
+    const set = newLogs[exerciseIndex]?.sets?.[setIndex];
+    if (!set) return;
+    (set as any)[field] = value;
+    setLogs(newLogs);
+  }, [logs]);
+
+  const updateSetLoadForExercise = useCallback((exerciseIndex: number, setIndex: number, load: SetLoad) => {
+    const totalKg = getLoadTotalKg(load);
+    const newLogs = [...logs];
+    const set = newLogs[exerciseIndex]?.sets?.[setIndex];
+    if (!set) return;
+    (set as any).load = load;
+    (set as any).weight = typeof totalKg === 'number' ? String(Math.round(totalKg * 100) / 100) : '';
+    setLogs(newLogs);
+  }, [logs]);
+
+  const cycleSetLoadTypeForExercise = useCallback((exerciseIndex: number, setIndex: number) => {
+    const set = logs[exerciseIndex]?.sets?.[setIndex];
+    if (!set) return;
+    const currentLoad = set.load;
+    const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
+    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine'];
+    const currentType = currentLoad?.type ?? 'single';
+    const idx = typeOrder.indexOf(currentType);
+    const nextType = typeOrder[(idx + 1) % typeOrder.length];
+    updateSetLoadForExercise(exerciseIndex, setIndex, createDefaultLoad(nextType, totalKg));
+  }, [logs, updateSetLoadForExercise]);
+
+  const cycleCurrentSetLoadType = useCallback(() => {
+    const set = logs[currentExerciseIndex]?.sets[currentSetIndex];
+    if (!set) return;
+    const currentLoad = set.load;
+    const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
+    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine'];
+    const currentType = currentLoad?.type ?? 'single';
+    const idx = typeOrder.indexOf(currentType);
+    const nextType = typeOrder[(idx + 1) % typeOrder.length];
+    updateCurrentSetLoad(createDefaultLoad(nextType, totalKg));
+  }, [logs, currentExerciseIndex, currentSetIndex, updateCurrentSetLoad]);
+
+  const goToPreviousSet = useCallback(() => {
+    if (currentSetIndex > 0) setCurrentSetIndex(currentSetIndex - 1);
+  }, [currentSetIndex]);
+
+  const goToNextSet = useCallback(() => {
+    if (!currentExercise) return;
+    if (currentSetIndex < currentExercise.sets.length - 1) {
+      setCurrentSetIndex(currentSetIndex + 1);
+    }
+  }, [currentExercise, currentSetIndex]);
 
   // ===========================================
   // COMMENT AUTO-SAVE ON EXERCISE CHANGE
@@ -347,14 +669,63 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (currentSetIndex < currentExercise.sets.length - 1) {
       // Prochaine série du même exercice
       setCurrentSetIndex(currentSetIndex + 1);
-    } else if (currentExerciseIndex < logs.length - 1) {
-      // Prochain exercice - sauvegarder le commentaire avant de changer
-      await saveCurrentExerciseCommentIfNeeded();
-      setCurrentExerciseIndex(currentExerciseIndex + 1);
-      setCurrentSetIndex(0);
+    } else {
+      scrollToRpeOnNextCompletedRef.current = true;
     }
     // Sinon on reste sur la dernière série (l'utilisateur peut terminer)
   }, [logs, currentExerciseIndex, currentSetIndex, currentExercise, saveCurrentExerciseCommentIfNeeded]);
+
+  const validateSetForExercise = useCallback((exerciseIndex: number) => {
+    const setIndex = getSetIndexForExercise(exerciseIndex);
+    const ex = logs[exerciseIndex];
+    const set = ex?.sets?.[setIndex];
+    if (!ex || !set) return;
+
+    const newLogs = [...logs];
+    newLogs[exerciseIndex].sets[setIndex].completed = true;
+
+    // Pré-remplir la prochaine série avec les valeurs de la série actuelle
+    const hasNextSet = setIndex < newLogs[exerciseIndex].sets.length - 1;
+    if (hasNextSet) {
+      const nextSet = newLogs[exerciseIndex].sets[setIndex + 1];
+      nextSet.reps = set.reps;
+      (nextSet as any).weight = (set as any).weight;
+      if ((set as any).load) {
+        (nextSet as any).load = { ...(set as any).load };
+      }
+    }
+
+    setLogs(newLogs);
+
+    const isLastSet = setIndex === newLogs[exerciseIndex].sets.length - 1;
+    if (!isLastSet) {
+      setSetIndexForExercise(exerciseIndex, setIndex + 1);
+      return;
+    }
+
+    if (typeof newLogs[exerciseIndex].rpe !== 'number') {
+      pendingScrollToRpeExerciseIndexRef.current = exerciseIndex;
+      return;
+    }
+
+    setExpandedExercises(prev => ({ ...prev, [exerciseIndex]: false }));
+    const nextExerciseIndex = Math.min(exerciseIndex + 1, newLogs.length - 1);
+    if (nextExerciseIndex !== exerciseIndex) {
+      setExpandedExercises(prev => ({ ...prev, [nextExerciseIndex]: false }));
+      setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
+    }
+  }, [logs, getSetIndexForExercise, setSetIndexForExercise, scrollToExerciseCard]);
+
+  const toggleSetValidationForExercise = useCallback((exerciseIndex: number) => {
+    const setIndex = getSetIndexForExercise(exerciseIndex);
+    const ex = logs[exerciseIndex];
+    const set = ex?.sets?.[setIndex];
+    if (!ex || !set) return;
+
+    const newLogs = [...logs];
+    newLogs[exerciseIndex].sets[setIndex].completed = !newLogs[exerciseIndex].sets[setIndex].completed;
+    setLogs(newLogs);
+  }, [logs, getSetIndexForExercise]);
 
   const toggleSetValidation = useCallback(() => {
     const newLogs = [...logs];
@@ -384,14 +755,35 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const addSet = useCallback(() => {
     const newLogs = [...logs];
     const currentSets = newLogs[currentExerciseIndex].sets;
+    const prev = currentSets[currentSets.length - 1];
+    const prevTotalKg = prev?.load ? getLoadTotalKg(prev.load) : (prev?.weight ? parseKgLikeToNumber(prev.weight) : null);
+    const nextLoad = prev?.load ? ({ ...prev.load } as SetLoad) : createDefaultLoad('single', prevTotalKg);
     currentSets.push({
       setNumber: currentSets.length + 1,
       reps: '',
-      weight: currentSets[currentSets.length - 1]?.weight || '',
+      weight: prev?.weight || '',
+      load: nextLoad,
       completed: false
     });
     setLogs(newLogs);
   }, [logs, currentExerciseIndex]);
+
+  const addSetForExercise = useCallback((exerciseIndex: number) => {
+    const newLogs = [...logs];
+    const sets = newLogs[exerciseIndex]?.sets;
+    if (!sets) return;
+    const prev = sets[sets.length - 1];
+    const prevTotalKg = prev?.load ? getLoadTotalKg(prev.load) : (prev?.weight ? parseKgLikeToNumber(prev.weight) : null);
+    const nextLoad = prev?.load ? ({ ...prev.load } as SetLoad) : createDefaultLoad('single', prevTotalKg);
+    sets.push({
+      setNumber: sets.length + 1,
+      reps: '',
+      weight: prev?.weight || '',
+      load: nextLoad,
+      completed: false
+    });
+    setLogs(newLogs);
+  }, [logs]);
 
   const removeCurrentSet = useCallback(() => {
     if (currentExercise.sets.length <= 1) return;
@@ -406,11 +798,41 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     }
   }, [logs, currentExerciseIndex, currentSetIndex, currentExercise]);
 
-  const updateExerciseRpe = useCallback((rpe: number) => {
+  const removeSetForExercise = useCallback((exerciseIndex: number) => {
+    const setIndex = getSetIndexForExercise(exerciseIndex);
+    const ex = logs[exerciseIndex];
+    if (!ex || ex.sets.length <= 1) return;
+
+    const newLogs = [...logs];
+    newLogs[exerciseIndex].sets.splice(setIndex, 1);
+    newLogs[exerciseIndex].sets.forEach((s, i) => s.setNumber = i + 1);
+    setLogs(newLogs);
+
+    const nextSetIndex = Math.min(setIndex, newLogs[exerciseIndex].sets.length - 1);
+    setSetIndexForExercise(exerciseIndex, nextSetIndex);
+  }, [logs, getSetIndexForExercise, setSetIndexForExercise]);
+
+  const updateExerciseRpe = useCallback((rpe: number | undefined) => {
     const newLogs = [...logs];
     newLogs[currentExerciseIndex].rpe = rpe;
     setLogs(newLogs);
   }, [logs, currentExerciseIndex]);
+
+  const updateExerciseRpeForExercise = useCallback((exerciseIndex: number, rpe: number | undefined) => {
+    const newLogs = [...logs];
+    if (!newLogs[exerciseIndex]) return;
+    newLogs[exerciseIndex].rpe = rpe;
+    setLogs(newLogs);
+
+    if (typeof rpe === 'number' && newLogs[exerciseIndex].sets.every(s => s.completed)) {
+      setExpandedExercises(prev => ({ ...prev, [exerciseIndex]: false }));
+      const nextExerciseIndex = Math.min(exerciseIndex + 1, newLogs.length - 1);
+      if (nextExerciseIndex !== exerciseIndex) {
+        setExpandedExercises(prev => ({ ...prev, [nextExerciseIndex]: false }));
+        setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
+      }
+    }
+  }, [logs, scrollToExerciseCard]);
 
   const handleFinish = useCallback(async () => {
     // Sauvegarder le commentaire du dernier exercice avant de terminer
@@ -427,7 +849,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       id: isEditMode && initialLog ? initialLog.id : crypto.randomUUID(),
       date: new Date().toISOString(),
       sessionKey,
-      exercises: logs,
+      exercises: logs.map(ex => ({
+        ...ex,
+        sets: ex.sets.map(s => {
+          if (s.completed) return s;
+          return {
+            ...s,
+            reps: '-',
+            weight: '-',
+            load: undefined
+          };
+        })
+      })),
       durationMinutes: Math.round(elapsedTime / 60),
       sessionRpe: undefined
     };
@@ -458,7 +891,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     
     setSaving(true);
     try {
-      await onSave(pendingSessionLog);
+      // Conserver le RPE existant si présent (mode édition)
+      const finalLog = initialLog?.sessionRpe !== undefined 
+        ? { ...pendingSessionLog, sessionRpe: initialLog.sessionRpe }
+        : pendingSessionLog;
+      await onSave(finalLog);
       clearLocalStorage();
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
@@ -466,7 +903,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       setSaving(false);
       setShowSessionRpeModal(false);
     }
-  }, [pendingSessionLog, onSave, clearLocalStorage]);
+  }, [pendingSessionLog, initialLog, onSave, clearLocalStorage]);
 
   const handleCancel = useCallback(() => {
     clearLocalStorage();
@@ -494,7 +931,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   
   const renderRecapPhase = () => (
-    <div className="min-h-screen bg-slate-950 pb-24">
+    <div className="min-h-screen bg-slate-950 pb-32">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 px-4 py-3">
         <div className="flex items-center justify-between">
@@ -512,28 +949,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
       {/* Content */}
       <div className="p-4 space-y-4">
-        {/* Stats Summary */}
-        <div className="flex items-center justify-center gap-6 py-4">
-          <div className="text-center">
-            <p className="text-3xl font-bold text-white">{logs.length}</p>
-            <p className="text-sm text-slate-400">exercices</p>
-          </div>
-          <div className="w-px h-12 bg-slate-700" />
-          <div className="text-center">
-            <p className="text-3xl font-bold text-white">
-              {logs.reduce((acc, ex) => acc + ex.sets.length, 0)}
-            </p>
-            <p className="text-sm text-slate-400">séries</p>
-          </div>
-          <div className="w-px h-12 bg-slate-700" />
-          <div className="text-center">
-            <p className="text-3xl font-bold text-white">
-              {formatDuration(estimateSessionDuration(sessionData)).replace('~', '')}
-            </p>
-            <p className="text-sm text-slate-400">estimé</p>
-          </div>
-        </div>
-
         {/* Exercise List */}
         <div className="space-y-2">
           <h2 className="text-sm font-medium text-slate-400 flex items-center gap-2">
@@ -543,44 +958,45 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           
           {logs.map((exercise, index) => {
             const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
-            const lastPerf = getLastPerformance(exercise.exerciseName, history);
             
             return (
               <Card key={index} variant="default" className="p-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-medium text-slate-400">{index + 1}</span>
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-white truncate">
-                      {exercise.exerciseName}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-sm text-slate-400">
-                        {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
-                      </span>
-                      {lastPerf && (
-                        <span className="text-xs text-blue-400">
-                          Dernier: {lastPerf.reps}×{lastPerf.weight}
-                        </span>
-                      )}
+                <div className="min-w-0">
+                  <h3 className="font-medium text-white line-clamp-3">
+                    {exercise.exerciseName}
+                  </h3>
+                  <div className="mt-3 text-center">
+                    <div className="text-xl font-semibold text-white">
+                      {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
                     </div>
-                    {exercise.notes && (
-                      <p className="text-xs text-slate-500 mt-1 truncate">
-                        {exercise.notes}
-                      </p>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 justify-center">
+                    <button
+                      onClick={() => setShowHistoryModal(index)}
+                      className="px-3 py-1.5 border border-red-500/40 text-red-300 hover:text-white hover:border-red-400 rounded-lg text-xs font-semibold transition-colors"
+                      type="button"
+                    >
+                      Historique
+                    </button>
+                    <button
+                      onClick={() => setShowConsignesModal(index)}
+                      className="px-3 py-1.5 border border-yellow-500/40 text-yellow-200 hover:text-white hover:border-yellow-400 rounded-lg text-xs font-semibold transition-colors"
+                      type="button"
+                    >
+                      Consignes
+                    </button>
+                    {exerciseData?.video && (
+                      <a
+                        href={exerciseData.video}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 bg-blue-500/20 border border-blue-500/40 rounded-full text-blue-300 hover:text-white hover:bg-blue-500/30 transition-colors"
+                      >
+                        <Video className="w-4 h-4" />
+                      </a>
                     )}
                   </div>
-                  
-                  {exerciseData?.video && (
-                    <button
-                      onClick={() => setShowVideoModal(exerciseData.video)}
-                      className="p-2 text-slate-400 hover:text-white transition-colors"
-                    >
-                      <Video className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
               </Card>
             );
@@ -589,13 +1005,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       </div>
 
       {/* Fixed Bottom CTA */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
+      <div
+        className="fixed right-4 z-20"
+        style={{ bottom: 'calc(16px + env(safe-area-inset-bottom) + 64px)' }}
+      >
         <button
           onClick={handleStartSession}
-          className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-xl font-semibold shadow-lg shadow-blue-600/25 transition-all active:scale-[0.98]"
+          className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white font-bold shadow-xl shadow-blue-600/25 transition-all active:scale-[0.98]"
+          type="button"
         >
-          <Play className="w-6 h-6 fill-current" />
-          <span className="text-lg">Lancer la séance</span>
+          Go
         </button>
       </div>
     </div>
@@ -606,34 +1025,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   
   const renderFocusPhase = () => {
-    if (!currentExercise || !currentSet) {
+    if (logs.length === 0) {
       return <div className="p-4 text-white">Chargement...</div>;
     }
-
-    const isLastSet = currentSetIndex === currentExercise.sets.length - 1;
-    const isLastExercise = currentExerciseIndex === logs.length - 1;
-    const allSetsCompleted = currentExercise.sets.every(s => s.completed);
 
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <button
-              onClick={() => setShowCancelModal(true)}
-              className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
-            >
-              <Pause className="w-5 h-5" />
-              <span>Pause</span>
-            </button>
-            <div className="flex items-center gap-2 text-white">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span className="font-mono text-lg">{formatTime(elapsedTime)}</span>
-            </div>
-          </div>
-          
+        <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 pt-4 pb-3">
           {/* Progress Bar */}
-          <div className="px-4 pb-3">
+          <div className="px-4 mb-3">
             <div className="flex items-center gap-3">
               <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
                 <div 
@@ -643,282 +1044,385 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               </div>
               <span className="text-sm text-slate-400 w-12 text-right">{progress}%</span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Exercice {currentExerciseIndex + 1}/{logs.length}
-            </p>
+          </div>
+          
+          <div className="px-4 flex items-center justify-between">
+             <h1 className="text-lg font-semibold text-white truncate flex-1">{sessionTitle}</h1>
+             <button
+              onClick={() => setShowCancelModal(true)}
+              className="p-2 -mr-2 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
           </div>
         </div>
 
         {/* Main Content */}
         <div className="flex-1 p-4 overflow-y-auto" ref={scrollContainerRef}>
-          {/* Exercise Card */}
-          <Card variant="gradient" className="overflow-hidden">
-            <CardContent className="p-0">
-              {/* Exercise Header */}
-              <div className="bg-gradient-to-r from-blue-600/20 to-emerald-600/20 px-4 py-3 border-b border-slate-700/50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-bold text-white">
-                      {currentExercise.exerciseName}
-                    </h2>
-                    <p className="text-sm text-slate-400 mt-0.5">
-                      {originalExerciseData?.series} × {originalExerciseData?.repsDuree}
-                      {originalExerciseData?.tempoRpe && originalExerciseData.tempoRpe !== '-' && (
-                        <span className="ml-2 text-slate-500">
-                          Tempo: {originalExerciseData.tempoRpe}
-                        </span>
+          <div className="space-y-3">
+            {logs.map((exercise, exerciseIndex) => {
+              const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+              const setIndex = getSetIndexForExercise(exerciseIndex);
+              const set = exercise.sets[setIndex];
+              const isExpanded = !!expandedExercises[exerciseIndex];
+              const allSetsCompletedForExercise = exercise.sets.every(s => s.completed);
+              const isLastSetIndex = setIndex === exercise.sets.length - 1;
+              const isExerciseDone = allSetsCompletedForExercise && typeof exercise.rpe === 'number';
+              const lastPerf = getLastPerformance(exercise.exerciseName, history);
+              const isConsignesOpen = !!focusOpenConsignes[exerciseIndex];
+              const isHistoryOpen = !!focusOpenHistory[exerciseIndex];
+
+              if (!set) return null;
+
+              return (
+                <div key={exerciseIndex} className="relative" ref={(el) => { focusCardRefs.current[exerciseIndex] = el; }}>
+                  {isExerciseDone && (
+                    <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-2 pointer-events-none">
+                      <div className="w-8 h-8 flex items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg">
+                        <Check className="w-5 h-5" />
+                      </div>
+                      {typeof exercise.rpe === 'number' && (
+                        <div className={`w-8 h-8 flex items-center justify-center rounded-lg text-white font-bold shadow-lg text-sm ${RPE_SCALE.find(r => r.value === exercise.rpe)?.color || 'bg-slate-700'}`}>
+                          {exercise.rpe}
+                        </div>
                       )}
-                    </p>
-                  </div>
-                  {originalExerciseData?.video && (
-                    <button
-                      onClick={() => setShowVideoModal(originalExerciseData.video)}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
-                    >
-                      <Video className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Notes */}
-              {currentExercise.notes && (
-                <div className="px-4 py-3 bg-yellow-500/10 border-b border-yellow-500/20">
-                  <div className="flex items-start gap-2">
-                    <Info className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-yellow-200">{currentExercise.notes}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Series Selector */}
-              <div className="px-4 py-3 border-b border-slate-700/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-slate-400">Séries</span>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={addSet}
-                      className="p-1 text-slate-400 hover:text-white transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {currentExercise.sets.map((set, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setCurrentSetIndex(idx)}
-                      className={`
-                        w-10 h-10 rounded-lg font-medium transition-all
-                        ${idx === currentSetIndex
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
-                          : set.completed
-                            ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                        }
-                      `}
-                    >
-                      {set.completed ? <Check className="w-4 h-4 mx-auto" /> : idx + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Current Set Inputs */}
-              <div className="p-4 space-y-4">
-                <div className="text-center mb-4">
-                  <span className="text-lg font-semibold text-white">
-                    Série {currentSetIndex + 1}
-                  </span>
-                  {currentSet.completed && (
-                    <span className="ml-2 text-emerald-400 text-sm">✓ Validée</span>
-                  )}
-                </div>
-
-                {/* Reps Input - Numeric Keyboard */}
-                <div>
-                  <label className="block text-sm text-slate-400 mb-2">Répétitions</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder={originalExerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
-                    value={currentSet.reps}
-                    onChange={(e) => updateSet('reps', e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-4 text-white text-center text-2xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                {/* Weight Input - Full Keyboard */}
-                <div>
-                  <label className="block text-sm text-slate-400 mb-2">Charge</label>
-                  <input
-                    type="text"
-                    placeholder="ex: 80kg, PDC, élastique..."
-                    value={currentSet.weight}
-                    onChange={(e) => updateSet('weight', e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-4 text-white text-center text-xl font-medium placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                {/* Validate Button */}
-                <button
-                  onClick={currentSet.completed ? toggleSetValidation : validateCurrentSet}
-                  className={`
-                    w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
-                    ${currentSet.completed
-                      ? 'bg-emerald-600 text-white'
-                      : isLastSet && isLastExercise
-                        ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white shadow-lg shadow-blue-600/25'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/25'
-                    }
-                  `}
-                >
-                  <Check className="w-5 h-5" />
-                  <span>
-                    {currentSet.completed 
-                      ? 'Validée (tap pour annuler)' 
-                      : isLastSet && isLastExercise
-                        ? 'Valider & Terminer'
-                        : 'Valider la série'
-                    }
-                  </span>
-                </button>
-
-                {/* Remove Set Button */}
-                {currentExercise.sets.length > 1 && (
-                  <button
-                    onClick={removeCurrentSet}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-slate-500 hover:text-red-400 transition-colors"
-                  >
-                    <Minus className="w-4 h-4" />
-                    <span className="text-sm">Supprimer cette série</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Exercise RPE */}
-              {allSetsCompleted && (
-                <div className="px-4 py-3 border-t border-slate-700/50">
-                  <RpeSelector
-                    value={currentExercise.rpe}
-                    onChange={updateExerciseRpe}
-                    compact
-                  />
-                </div>
-              )}
-
-              {/* Comment for Coach */}
-              {onSaveComment && (
-                <div className="px-4 py-3 border-t border-slate-700/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-400">Message au coach</span>
                     </div>
-                    {sentComments.has(currentExercise.exerciseName) ? (
-                      <span className="text-xs text-emerald-400 flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Envoyé
-                      </span>
-                    ) : exerciseComments[currentExercise.exerciseName]?.trim() ? (
-                      <span className="text-xs text-blue-400">Sera envoyé au changement d'exercice</span>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Douleur, sensation, question..."
-                      value={exerciseComments[currentExercise.exerciseName] || ''}
-                      onChange={(e) => setExerciseComments(prev => ({
-                        ...prev,
-                        [currentExercise.exerciseName]: e.target.value
-                      }))}
-                      disabled={sentComments.has(currentExercise.exerciseName)}
-                      className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    />
+                  )}
+                  <Card
+                    variant={isExpanded ? 'gradient' : 'default'}
+                    className={`overflow-hidden relative ${isExerciseDone ? 'border-2 border-emerald-500/50 bg-emerald-500/10' : ''}`}
+                  >
+                  <CardContent className="p-0">
                     <button
-                      onClick={() => handleSendComment(currentExercise.exerciseName)}
-                      disabled={!exerciseComments[currentExercise.exerciseName]?.trim() || commentSending === currentExercise.exerciseName || sentComments.has(currentExercise.exerciseName)}
-                      className="p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                      title="Envoyer maintenant"
+                      onClick={() => toggleExerciseExpanded(exerciseIndex)}
+                      className="w-full text-left"
+                      type="button"
                     >
-                      <Send className="w-4 h-4" />
+                      <div className={`${isExpanded ? 'bg-gradient-to-r from-blue-600/20 to-emerald-600/20' : ''} px-4 py-3 border-b border-slate-700/50`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <h2 className="text-lg font-bold text-white line-clamp-3">
+                              {exercise.exerciseName}
+                            </h2>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="px-3 py-1.5 border border-emerald-500/40 text-emerald-400 rounded-lg text-xs font-semibold">
+                                {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
+                              </div>
+                              {exerciseData?.repos && (
+                                <div className="px-3 py-1.5 border border-emerald-500/40 text-emerald-400 rounded-lg text-xs font-semibold">
+                                  {exerciseData.repos}s
+                                </div>
+                              )}
+                              {exerciseData?.tempoRpe && (
+                                <div className="px-3 py-1.5 border border-emerald-500/40 text-emerald-400 rounded-lg text-xs font-semibold">
+                                  {exerciseData.tempoRpe}
+                                </div>
+                              )}
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setShowHistoryModal(exerciseIndex);
+                                }}
+                                className="px-3 py-1.5 border border-red-500/40 text-red-300 hover:text-white hover:border-red-400 rounded-lg text-xs font-semibold transition-colors"
+                                type="button"
+                              >
+                                Historique
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setShowConsignesModal(exerciseIndex);
+                                }}
+                                className="px-3 py-1.5 border border-yellow-500/40 text-yellow-200 hover:text-white hover:border-yellow-400 rounded-lg text-xs font-semibold transition-colors"
+                                type="button"
+                              >
+                                Consignes
+                              </button>
+                              {exerciseData?.video && (
+                                <a
+                                  href={exerciseData.video}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                  }}
+                                  className="p-2 bg-blue-500/20 border border-blue-500/40 rounded-full text-blue-300 hover:text-white hover:bg-blue-500/30 transition-colors"
+                                >
+                                  <Video className="w-5 h-5" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* Last Performance */}
-          {lastPerformance && (
-            <div className="mt-4 p-3 bg-slate-900/50 border border-slate-800 rounded-xl">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-400">💡 Dernière fois:</span>
-                <span className="text-white font-medium">
-                  {lastPerformance.reps} × {lastPerformance.weight}
-                </span>
-                {lastPerformance.rpe && (
-                  <RpeBadge rpe={lastPerformance.rpe} size="sm" />
-                )}
-              </div>
-            </div>
-          )}
+                    {isExpanded && (
+                      <>
+                        <div className="px-4 py-3 border-b border-slate-700/50">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm text-slate-300">
+                                Série {setIndex + 1}/{exercise.sets.length}
+                              </div>
+                              {set.completed && (
+                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white">
+                                  <Check className="w-5 h-5" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => removeSetForExercise(exerciseIndex)}
+                                className="p-1 text-slate-400 hover:text-white transition-colors"
+                                type="button"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => addSetForExercise(exerciseIndex)}
+                                className="p-1 text-slate-400 hover:text-white transition-colors"
+                                type="button"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                          <div className="text-center">
+                            <div className="text-2xl font-bold text-white">
+                              Série {setIndex + 1}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm text-slate-400 mb-2">Répétitions</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
+                                value={set.reps}
+                                onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="block text-sm text-slate-400">Charge</label>
+                                <button
+                                  onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, setIndex)}
+                                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors"
+                                  type="button"
+                                  aria-label="Changer type de charge"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {set.load?.type === 'barbell' ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      placeholder="20"
+                                      value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
+                                        const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
+                                        const next: SetLoad = {
+                                          type: 'barbell',
+                                          unit: 'kg',
+                                          barKg: Number.isFinite(n) ? n : 20,
+                                          addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null
+                                        };
+                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                      }}
+                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    />
+                                    <div className="text-sm text-slate-500 text-center mt-1">Barre</div>
+                                  </div>
+                                  <div>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      placeholder="0"
+                                      value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        const n = v === '' ? null : Number(v.replace(',', '.'));
+                                        const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
+                                        const next: SetLoad = {
+                                          type: 'barbell',
+                                          unit: 'kg',
+                                          barKg: prev.barKg,
+                                          addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                        };
+                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                      }}
+                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    />
+                                    <div className="text-sm text-slate-500 text-center mt-1">Poids ajoutés</div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="0"
+                                    value={typeof set.load?.weightKg === 'number' ? String(set.load.weightKg) : ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      const t: 'single' | 'double' | 'machine' = set.load?.type === 'double'
+                                        ? 'double'
+                                        : (set.load?.type === 'machine' ? 'machine' : 'single');
+                                      const next: SetLoad = t === 'double'
+                                        ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
+                                        : t === 'machine'
+                                          ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
+                                          : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
+                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                    }}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  />
+                                  <div className="text-sm text-slate-500 text-center mt-1">
+                                    {set.load?.type === 'double' ? '2x Haltères / Kettlebell' : set.load?.type === 'machine' ? 'Machine' : 'Haltère / Kettlebell'}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => (set.completed ? toggleSetValidationForExercise(exerciseIndex) : validateSetForExercise(exerciseIndex))}
+                            className={`
+                              w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+                              ${set.completed
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/25'
+                              }
+                            `}
+                            type="button"
+                          >
+                            <Check className="w-5 h-5" />
+                            <span>
+                              {setIndex === exercise.sets.length - 1 ? "Finir l'exercice" : 'Valider la série'}
+                            </span>
+                          </button>
+
+                          <div className="flex items-center justify-center gap-6">
+                            <button
+                              onClick={() => setSetIndexForExercise(exerciseIndex, Math.max(setIndex - 1, 0))}
+                              disabled={setIndex === 0}
+                              className="p-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white rounded-xl transition-colors"
+                              aria-label="Série précédente"
+                              type="button"
+                            >
+                              <ChevronLeft className="w-6 h-6" />
+                            </button>
+                            <button
+                              onClick={() => setSetIndexForExercise(exerciseIndex, Math.min(setIndex + 1, exercise.sets.length - 1))}
+                              disabled={setIndex === exercise.sets.length - 1}
+                              className="p-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white rounded-xl transition-colors"
+                              aria-label="Série suivante"
+                              type="button"
+                            >
+                              <ChevronRight className="w-6 h-6" />
+                            </button>
+                          </div>
+
+                          {onSaveComment && (
+                            <div className="pt-2">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <MessageSquare className="w-4 h-4 text-slate-400" />
+                                  <span className="text-sm text-slate-400">Message au coach</span>
+                                </div>
+                                {sentComments.has(exercise.exerciseName) ? (
+                                  <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                    <Check className="w-3 h-3" />
+                                    Envoyé
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Douleur, sensation, question..."
+                                  value={exerciseComments[exercise.exerciseName] || ''}
+                                  onChange={(e) => setExerciseComments(prev => ({
+                                    ...prev,
+                                    [exercise.exerciseName]: e.target.value
+                                  }))}
+                                  disabled={sentComments.has(exercise.exerciseName)}
+                                  className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                                />
+                                <button
+                                  onClick={() => handleSendComment(exercise.exerciseName)}
+                                  disabled={!exerciseComments[exercise.exerciseName]?.trim() || commentSending === exercise.exerciseName || sentComments.has(exercise.exerciseName)}
+                                  className="p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                                  title="Envoyer maintenant"
+                                  type="button"
+                                >
+                                  <Send className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-2">
+                            <div ref={(el) => { focusRpeRefs.current[exerciseIndex] = el; }} />
+                            <RpeSelector
+                              value={exercise.rpe}
+                              onChange={(rpe) => updateExerciseRpeForExercise(exerciseIndex, rpe)}
+                              size="sm"
+                            />
+                          </div>
+
+                          {allSetsCompletedForExercise && (
+                            <div className="text-center text-xs text-emerald-400">Toutes les séries sont validées</div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Bottom Navigation */}
         <div className="sticky bottom-0 bg-slate-950/95 backdrop-blur-sm border-t border-slate-800 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={goToPreviousExercise}
-              disabled={currentExerciseIndex === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-              <span className="hidden sm:inline">Précédent</span>
-            </button>
-
-            {/* Dots Indicator */}
-            <div className="flex gap-1.5">
-              {logs.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setCurrentExerciseIndex(idx);
-                    setCurrentSetIndex(0);
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    idx === currentExerciseIndex
-                      ? 'bg-blue-500 w-4'
-                      : logs[idx].sets.every(s => s.completed)
-                        ? 'bg-emerald-500'
-                        : 'bg-slate-600'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {isLastExercise && allSetsCompleted ? (
-              <button
-                onClick={handleFinish}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-xl font-semibold transition-colors"
-              >
-                <span>Terminer</span>
-                <Check className="w-5 h-5" />
-              </button>
-            ) : (
-              <button
-                onClick={goToNextExercise}
-                disabled={currentExerciseIndex === logs.length - 1}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
-              >
-                <span className="hidden sm:inline">Suivant</span>
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            )}
-          </div>
+          <button
+            onClick={() => {
+              if (!allExercisesCompleted) {
+                setShowForceFinishModal(true);
+                return;
+              }
+              void handleFinish();
+            }}
+            disabled={saving}
+            className={`
+              w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-colors
+              ${allExercisesCompleted ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}
+            `}
+            type="button"
+          >
+            <span>Terminer</span>
+            <Check className="w-5 h-5" />
+          </button>
         </div>
       </div>
     );
@@ -959,29 +1463,161 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     </div>
   );
 
-  const renderVideoModal = () => {
-    if (!showVideoModal) return null;
-    
+
+  const renderForceFinishModal = () => {
+    if (!showForceFinishModal) return null;
+
+    const incompleteExercises = logs.filter(ex => {
+      const allSetsDone = ex.sets.length > 0 && ex.sets.every(s => s.completed);
+      const hasRpe = typeof ex.rpe === 'number';
+      return !(allSetsDone && hasRpe);
+    });
+
     return (
-      <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-lg">
-          <div className="flex justify-end mb-4">
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Séance incomplète</h3>
+              <p className="text-sm text-slate-400">
+                Certains exercices ne sont pas entièrement validés.
+              </p>
+            </div>
+          </div>
+
+          {incompleteExercises.length > 0 && (
+            <div className="mb-4 max-h-40 overflow-y-auto">
+              <p className="text-xs text-slate-500 mb-1">
+                Exercices incomplets :
+              </p>
+              <ul className="text-sm text-slate-300 list-disc list-inside space-y-1">
+                {incompleteExercises.map((ex, idx) => (
+                  <li key={idx}>{ex.exerciseName}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
             <button
-              onClick={() => setShowVideoModal(null)}
-              className="p-2 text-white hover:bg-slate-800 rounded-lg transition-colors"
+              onClick={() => setShowForceFinishModal(false)}
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+              type="button"
             >
-              <X className="w-6 h-6" />
+              Je modifie ma séance
+            </button>
+            <button
+              onClick={() => {
+                setShowForceFinishModal(false);
+                void handleFinish();
+              }}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-medium transition-colors"
+              type="button"
+            >
+              J&apos;ai fini ma séance
             </button>
           </div>
-          <a
-            href={showVideoModal}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-3 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-colors"
-          >
-            <ExternalLink className="w-5 h-5" />
-            Ouvrir la vidéo
-          </a>
+        </div>
+      </div>
+    );
+  };
+
+  // ===========================================
+  // MODALS: HISTORY & CONSIGNES
+  // ===========================================
+  
+  const renderHistoryModal = () => {
+    if (showHistoryModal === null) return null;
+    const exercise = logs[showHistoryModal];
+    if (!exercise) return null;
+    
+    const lastHistory = getLastExerciseHistory(exercise.exerciseName, history);
+    
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white">
+              Historique {exercise.exerciseName}
+            </h3>
+            <button
+              onClick={() => setShowHistoryModal(null)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {lastHistory ? (
+            <div>
+              <p className="text-sm text-slate-400 mb-4">
+                Dernière exécution {new Date(lastHistory.date).toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+              <div className="space-y-2">
+                {lastHistory.sets.map((set, idx) => (
+                  <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-lg p-3">
+                    <span className="text-sm text-slate-400">Série {set.setNumber}</span>
+                    <span className="text-white font-medium">{set.reps || '-'}</span>
+                    <span className="text-slate-500">×</span>
+                    <span className="text-emerald-400 font-medium">{formatSetWeight(set)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500 text-center py-8">
+              Aucun historique pour cet exercice
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderConsignesModal = () => {
+    if (showConsignesModal === null) return null;
+    const exercise = logs[showConsignesModal];
+    if (!exercise) return null;
+    
+    const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+    const notes = exercise.notes || exerciseData?.notes;
+    
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white">
+              Consignes {exercise.exerciseName}
+            </h3>
+            <button
+              onClick={() => setShowConsignesModal(null)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {notes ? (
+            <div className="px-3 py-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+              <div className="flex items-start gap-2">
+                <Info className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-yellow-200">{notes}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500 text-center py-8">
+              Aucune consigne pour cet exercice
+            </p>
+          )}
         </div>
       </div>
     );
@@ -996,7 +1632,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       {phase === 'recap' ? renderRecapPhase() : renderFocusPhase()}
       
       {showCancelModal && renderCancelModal()}
-      {showVideoModal && renderVideoModal()}
+      {showForceFinishModal && renderForceFinishModal()}
+      {showHistoryModal !== null && renderHistoryModal()}
+      {showConsignesModal !== null && renderConsignesModal()}
       
       {showSessionRpeModal && pendingSessionLog && (
         <SessionRpeModal

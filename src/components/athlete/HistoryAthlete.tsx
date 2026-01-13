@@ -5,7 +5,8 @@
 // ============================================================
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { SessionLog, ExerciseLog } from '../../../types';
+import { createPortal } from 'react-dom';
+import { SessionLog, ExerciseLog, SetLog, SetLoad } from '../../../types';
 import { Card, CardContent } from '../shared/Card';
 import {
   Calendar,
@@ -86,6 +87,58 @@ function getCompletionRate(exercises: ExerciseLog[]): number {
     0
   );
   return totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
+}
+
+function formatSetWeight(set: SetLog): string {
+  // Si pas de données JSONB (load), afficher simplement le poids
+  if (!set.load) {
+    const weight = set.weight || '-';
+    return weight === '-' ? '-' : `${weight} kg.`;
+  }
+
+  const load = set.load;
+  
+  if (load.type === 'single') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      // Fallback sur le poids texte si pas de données
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `${weight} kg. (Haltères/Kettlebell)`;
+  }
+  
+  if (load.type === 'double') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `2 X ${weight} kg. (2 X Haltères/Kettlebell)`;
+  }
+  
+  if (load.type === 'barbell') {
+    const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
+    const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
+    const total = addedKg !== null ? barKg + addedKg : barKg;
+    if (addedKg === null) {
+      return `${total} kg. (Barre: ${barKg} + Poids: 0)`;
+    }
+    return `${total} kg. (Barre: ${barKg} + Poids: ${addedKg})`;
+  }
+  
+  if (load.type === 'machine') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `${weight} kg. (Sur machine)`;
+  }
+  
+  // Fallback final
+  const weightText = set.weight || '-';
+  return weightText === '-' ? '-' : `${weightText} kg.`;
 }
 
 function groupSessionsByPeriod(sessions: SessionLog[]): GroupedSessions[] {
@@ -314,8 +367,8 @@ export const HistoryAthlete: React.FC<Props> = ({
                           }`}
                         >
                           <span>Série {set.setNumber}</span>
-                          <span>
-                            {set.reps || '-'} × {set.weight || '-'}
+                          <span className="text-right">
+                            {set.reps || '-'} × {formatSetWeight(set)}
                             {set.completed && (
                               <span className="ml-2 text-emerald-400">✓</span>
                             )}
@@ -469,36 +522,60 @@ export const HistoryAthlete: React.FC<Props> = ({
       )}
       
       {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+      {(() => {
+        if (!deleteConfirm) return null;
+        const sessionToDelete = history.find(s => s.id === deleteConfirm);
+        if (!sessionToDelete) return null;
+        const dateInfo = formatDate(sessionToDelete.date);
+
+        return createPortal(
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Supprimer ?</h3>
+                  <p className="text-sm text-slate-400">Cette action est irréversible</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-white">Supprimer ?</h3>
-                <p className="text-sm text-slate-400">Cette action est irréversible</p>
+              
+              <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700/50">
+                <h4 className="font-semibold text-white text-lg mb-1">
+                  {sessionToDelete.sessionKey.seance}
+                </h4>
+                <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
+                  <Calendar className="w-4 h-4" />
+                  {dateInfo.full}
+                </div>
+                {sessionToDelete.sessionRpe && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 uppercase font-bold">RPE</span>
+                    <RpeBadge rpe={sessionToDelete.sessionRpe} size="sm" />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => handleDelete(deleteConfirm)}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-colors"
+                >
+                  Supprimer
+                </button>
               </div>
             </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-colors"
-              >
-                Supprimer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 };

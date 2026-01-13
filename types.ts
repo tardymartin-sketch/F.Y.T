@@ -180,10 +180,37 @@ export interface FilterState {
 // ===========================================
 // TYPES HISTORIQUE & LOGS (avec RPE)
 // ===========================================
+
+export type LoadUnit = 'kg';
+
+export type SetLoad =
+  | {
+      type: 'single';
+      unit: LoadUnit;
+      weightKg: number | null;
+    }
+  | {
+      type: 'double';
+      unit: LoadUnit;
+      weightKg: number | null;
+    }
+  | {
+      type: 'barbell';
+      unit: LoadUnit;
+      barKg: number;
+      addedKg: number | null;
+    }
+  | {
+      type: 'machine';
+      unit: LoadUnit;
+      weightKg: number | null;
+    };
+
 export interface SetLog {
   setNumber: number;
   reps: string;
   weight: string;
+  load?: SetLoad;
   completed: boolean;
 }
 
