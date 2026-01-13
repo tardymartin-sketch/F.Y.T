@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useMemo } from 'react';
-import { SessionLog } from '../../../types';
+import { SessionLog, SetLoad } from '../../../types';
 import { Card, CardContent } from '../shared/Card';
 import {
   Trophy,
@@ -40,14 +40,31 @@ function formatDuration(minutes: number): string {
 }
 
 function calculateTotalVolume(exercises: SessionLog['exercises']): number {
+  const getLoadTotalKg = (load: SetLoad | undefined): number | null => {
+    if (!load) return null;
+    if (load.type === 'single' || load.type === 'machine') {
+      return typeof load.weightKg === 'number' ? load.weightKg : null;
+    }
+    if (load.type === 'double') {
+      return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
+    }
+    if (typeof load.barKg !== 'number') return null;
+    const added = typeof load.addedKg === 'number' ? load.addedKg : null;
+    if (added === null) return null;
+    return load.barKg + added;
+  };
+
   let total = 0;
   exercises.forEach(ex => {
     ex.sets.forEach(set => {
-      if (set.completed && set.reps && set.weight) {
+      if (!set.completed || !set.reps) return;
+
         const reps = parseInt(set.reps) || 0;
-        const weight = parseFloat(set.weight.replace(/[^0-9.]/g, '')) || 0;
+        const totalKgFromLoad = getLoadTotalKg(set.load);
+        const weight = typeof totalKgFromLoad === 'number'
+          ? totalKgFromLoad
+          : (set.weight ? (parseFloat(set.weight.replace(/[^0-9.]/g, '')) || 0) : 0);
         total += reps * weight;
-      }
     });
   });
   return Math.round(total);

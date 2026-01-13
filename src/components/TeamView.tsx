@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
-import { User, SessionLog, AthleteComment, WeekOrganizerLog, getRpeColor, getRpeBgColor, getRpeInfo } from '../../types';
+import { User, SessionLog, AthleteComment, WeekOrganizerLog, getRpeColor, getRpeBgColor, getRpeInfo, SetLog, SetLoad } from '../../types';
 import type { AthleteGroupWithCount, VisibilityType } from '../../types';
 import { RichTextEditor } from './RichTextEditor';
 import { AthleteGroupsManager } from './AthleteGroupsManager';
@@ -37,6 +37,56 @@ import {
 const isStravaSession = (log: SessionLog): boolean => {
   return log.sessionKey.seance.toLowerCase().includes('strava');
 };
+
+function formatSetWeight(set: SetLog): string {
+  // Si pas de données JSONB (load), afficher simplement le poids
+  if (!set.load) {
+    const weight = set.weight || '-';
+    return weight === '-' ? '-' : `${weight} kg.`;
+  }
+
+  const load = set.load;
+  
+  if (load.type === 'single') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `${weight} kg. (Haltères/Kettlebell)`;
+  }
+  
+  if (load.type === 'double') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `2 X ${weight} kg. (2 X Haltères/Kettlebell)`;
+  }
+  
+  if (load.type === 'barbell') {
+    const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
+    const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
+    const total = addedKg !== null ? barKg + addedKg : barKg;
+    if (addedKg === null) {
+      return `${total} kg. (Barre: ${barKg} + Poids: 0)`;
+    }
+    return `${total} kg. (Barre: ${barKg} + Poids: ${addedKg})`;
+  }
+  
+  if (load.type === 'machine') {
+    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+    if (weight === null) {
+      const weightText = set.weight || '-';
+      return weightText === '-' ? '-' : `${weightText} kg.`;
+    }
+    return `${weight} kg. (Sur machine)`;
+  }
+  
+  const weightText = set.weight || '-';
+  return weightText === '-' ? '-' : `${weightText} kg.`;
+}
 
 interface Props {
   coachId: string;
@@ -806,7 +856,7 @@ export const TeamView: React.FC<Props> = ({
                                         #{set.setNumber}
                                       </span>
                                       <span className="text-white">{set.reps || '—'}</span>
-                                      <span className="text-white">{set.weight ? `${set.weight} kg` : '—'}</span>
+                                      <span className="text-white">{formatSetWeight(set)}</span>
                                     </React.Fragment>
                                   ))}
                                 </div>

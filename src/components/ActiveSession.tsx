@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
-import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, AthleteComment } from '../../types';
+import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, AthleteComment, SetLoad } from '../../types';
 import {
   Save,
   Clock,
@@ -339,13 +339,76 @@ export const ActiveSession: React.FC<Props> = ({
     }
   };
 
+  const formatSetWeight = (set: SetLog): string => {
+    // Si pas de données JSONB (load), afficher simplement le poids
+    if (!set.load) {
+      const weight = set.weight || '-';
+      return weight === '-' ? '-' : `${weight} kg.`;
+    }
+
+    const load = set.load;
+    
+    if (load.type === 'single') {
+      const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+      if (weight === null) {
+        const weightText = set.weight || '-';
+        return weightText === '-' ? '-' : `${weightText} kg.`;
+      }
+      return `${weight} kg. (Haltères/Kettlebell)`;
+    }
+    
+    if (load.type === 'double') {
+      const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+      if (weight === null) {
+        const weightText = set.weight || '-';
+        return weightText === '-' ? '-' : `${weightText} kg.`;
+      }
+      return `2 X ${weight} kg. (2 X Haltères/Kettlebell)`;
+    }
+    
+    if (load.type === 'barbell') {
+      const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
+      const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
+      const total = addedKg !== null ? barKg + addedKg : barKg;
+      if (addedKg === null) {
+        return `${total} kg. (Barre: ${barKg} + Poids: 0)`;
+      }
+      return `${total} kg. (Barre: ${barKg} + Poids: ${addedKg})`;
+    }
+    
+    if (load.type === 'machine') {
+      const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+      if (weight === null) {
+        const weightText = set.weight || '-';
+        return weightText === '-' ? '-' : `${weightText} kg.`;
+      }
+      return `${weight} kg. (Sur machine)`;
+    }
+    
+    const weightText = set.weight || '-';
+    return weightText === '-' ? '-' : `${weightText} kg.`;
+  };
+
   const getLastExerciseHistory = (name: string) => {
+    // Chercher la dernière exécution complétée (toutes les séries complétées)
     for (const session of history) {
       const ex = session.exercises.find(e => e.exerciseName === name);
-      if (ex) {
+      if (ex && ex.sets.length > 0) {
+        const allCompleted = ex.sets.every(s => s.completed);
+        if (allCompleted) {
+          return { date: session.date, sets: ex.sets, rpe: ex.rpe };
+        }
+      }
+    }
+    
+    // Si aucune exécution complétée, prendre la dernière (même incomplète)
+    for (const session of history) {
+      const ex = session.exercises.find(e => e.exerciseName === name);
+      if (ex && ex.sets.length > 0) {
         return { date: session.date, sets: ex.sets, rpe: ex.rpe };
       }
     }
+    
     return null;
   };
 
@@ -749,8 +812,9 @@ export const ActiveSession: React.FC<Props> = ({
                   {currentHistoryData.sets.map((set, idx) => (
                     <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-lg p-3">
                       <span className="text-sm text-slate-400">Série {set.setNumber}</span>
-                      <span className="text-white font-medium">{set.reps} reps</span>
-                      <span className="text-emerald-400">{set.weight} kg</span>
+                      <span className="text-white font-medium">{set.reps || '-'}</span>
+                      <span className="text-slate-500">×</span>
+                      <span className="text-emerald-400 font-medium">{formatSetWeight(set)}</span>
                     </div>
                   ))}
                 </div>

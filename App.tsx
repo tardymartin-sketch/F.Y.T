@@ -69,6 +69,7 @@ import { StravaImport } from './src/components/StravaImport';
 // Composants V3 Athlète
 import { BottomNav } from './src/components/athlete/BottomNav';
 import { HomeAthlete } from './src/components/athlete/HomeAthlete';
+import { ActiveSessionAthlete } from './src/components/athlete/ActiveSessionAthlete';
 import { CoachTab } from './src/components/athlete/CoachTab';
 import { ProfileTab } from './src/components/athlete/ProfileTab';
 
@@ -733,18 +734,30 @@ const App: React.FC = () => {
               )}
 
               {currentView === 'active' && activeSessionData && (
-                <ActiveSession
-                  sessionData={activeSessionData}
-                  history={history}
-                  onSave={handleSaveSession}
-                  onCancel={handleCancelSession}
-                  initialLog={editingSession}
-                  userId={currentUser.id}
-                  onSaveComment={handleSaveAthleteComment}
-                  existingComments={athleteComments}
-                  onMarkCommentsAsRead={handleMarkCommentsAsRead}
-                  onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
-                />
+                behavesAsAthlete ? (
+                  <ActiveSessionAthlete
+                    sessionData={activeSessionData}
+                    history={history}
+                    onSave={handleSaveSession}
+                    onCancel={handleCancelSession}
+                    initialLog={editingSession}
+                    userId={currentUser.id}
+                    onSaveComment={handleSaveAthleteComment}
+                  />
+                ) : (
+                  <ActiveSession
+                    sessionData={activeSessionData}
+                    history={history}
+                    onSave={handleSaveSession}
+                    onCancel={handleCancelSession}
+                    initialLog={editingSession}
+                    userId={currentUser.id}
+                    onSaveComment={handleSaveAthleteComment}
+                    existingComments={athleteComments}
+                    onMarkCommentsAsRead={handleMarkCommentsAsRead}
+                    onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
+                  />
+                )
               )}
 
               {currentView === 'history' && (

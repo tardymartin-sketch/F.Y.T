@@ -179,7 +179,7 @@ export const HomeAthlete: React.FC<Props> = ({
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState<string | null>(null);
   const [filterWeek, setFilterWeek] = useState<string | null>(null);
-  const [filterSession, setFilterSession] = useState<string | null>(null);
+  const [filterSessions, setFilterSessions] = useState<Set<string>>(new Set());
 
   // ===========================================
   // COMPUTED: Week Info & Session Chips (Vue suggérée)
@@ -307,7 +307,7 @@ export const HomeAthlete: React.FC<Props> = ({
     }
 
     // Séances disponibles
-    const sessions = [...new Set(filteredData.map(d => d.seance))];
+    const sessions = [...new Set(filteredData.map(d => d.seance))].sort((a, b) => a.localeCompare(b));
 
     return { years, months, weeks, sessions };
   }, [trainingData, filterYear, filterMonth, filterWeek]);
@@ -330,21 +330,25 @@ export const HomeAthlete: React.FC<Props> = ({
     if (filterWeek) {
       filtered = filtered.filter(d => d.semaine === filterWeek);
     }
-    if (filterSession) {
-      filtered = filtered.filter(d => d.seance === filterSession);
+    
+    // Filtre sur les séances sélectionnées (multi-sélection)
+    if (filterSessions.size > 0) {
+      filtered = filtered.filter(d => filterSessions.has(d.seance));
+    } else {
+      // Si aucune séance sélectionnée, on ne retourne rien pour la preview
+      return [];
     }
 
     return filtered.sort((a, b) => a.ordre - b.ordre);
-  }, [trainingData, showAdvancedFilters, filterYear, filterMonth, filterWeek, filterSession]);
+  }, [trainingData, showAdvancedFilters, filterYear, filterMonth, filterWeek, filterSessions]);
 
   const filteredSessionName = useMemo(() => {
-    if (filterSession) return filterSession;
-    if (filteredExercises.length > 0) {
-      const sessions = [...new Set(filteredExercises.map(e => e.seance))];
-      return sessions.length === 1 ? sessions[0] : sessions.join(' + ');
+    if (filterSessions.size > 0) {
+      const names = Array.from(filterSessions);
+      return names.length === 1 ? names[0] : names.join(' + ');
     }
     return 'Séance';
-  }, [filterSession, filteredExercises]);
+  }, [filterSessions]);
 
   // ===========================================
   // EFFECTS
@@ -357,20 +361,45 @@ export const HomeAthlete: React.FC<Props> = ({
     }
   }, [suggestedSessionName, showAdvancedFilters]);
 
+  // Pré-remplir les filtres avec la date du jour lors de l'ouverture
+  useEffect(() => {
+    if (showAdvancedFilters) {
+      const now = new Date();
+      // Trouver la semaine correspondante dans les données
+      const matchingWeek = trainingData.find(d => {
+        if (d.weekStartDate && d.weekEndDate) {
+          const start = new Date(d.weekStartDate);
+          const end = new Date(d.weekEndDate);
+          // On compare les dates en ignorant l'heure pour être sûr
+          start.setHours(0,0,0,0);
+          end.setHours(23,59,59,999);
+          return now >= start && now <= end;
+        }
+        return false;
+      });
+
+      if (matchingWeek) {
+        setFilterYear(matchingWeek.annee);
+        setFilterMonth(matchingWeek.moisNum);
+        setFilterWeek(matchingWeek.semaine);
+      }
+    }
+  }, [showAdvancedFilters, trainingData]);
+
   // Réinitialiser les filtres dépendants lors du changement
   useEffect(() => {
     setFilterMonth(null);
     setFilterWeek(null);
-    setFilterSession(null);
+    setFilterSessions(new Set());
   }, [filterYear]);
 
   useEffect(() => {
     setFilterWeek(null);
-    setFilterSession(null);
+    setFilterSessions(new Set());
   }, [filterMonth]);
 
   useEffect(() => {
-    setFilterSession(null);
+    setFilterSessions(new Set());
   }, [filterWeek]);
 
   // ===========================================
@@ -434,9 +463,35 @@ export const HomeAthlete: React.FC<Props> = ({
       setFilterYear(null);
       setFilterMonth(null);
       setFilterWeek(null);
-      setFilterSession(null);
+      setFilterSessions(new Set());
     }
   }, [showAdvancedFilters]);
+
+  const toggleFilterSession = useCallback((sessionName: string) => {
+    setFilterSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionName)) {
+        next.delete(sessionName);
+      } else {
+        next.add(sessionName);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleQuickStart = useCallback((sessionName: string) => {
+    let filtered = trainingData;
+    if (filterYear) filtered = filtered.filter(d => d.annee === filterYear);
+    if (filterMonth) filtered = filtered.filter(d => d.moisNum === filterMonth);
+    if (filterWeek) filtered = filtered.filter(d => d.semaine === filterWeek);
+    
+    filtered = filtered.filter(d => d.seance === sessionName);
+    filtered = filtered.sort((a, b) => a.ordre - b.ordre);
+    
+    if (filtered.length > 0) {
+      onStartSession(filtered);
+    }
+  }, [trainingData, filterYear, filterMonth, filterWeek, onStartSession]);
 
   // ===========================================
   // COMPUTED: Selected Stats
@@ -519,7 +574,7 @@ export const HomeAthlete: React.FC<Props> = ({
                         Semaine {weekInfo?.weekNumber}
                       </span>
                       {weekInfo?.startDate && weekInfo?.endDate && (
-                        <span className="text-xs text-slate-500">
+                        <span className="text-sm font-medium text-slate-300">
                           • {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
                         </span>
                       )}
@@ -541,13 +596,12 @@ export const HomeAthlete: React.FC<Props> = ({
                         <button
                           key={chip.name}
                           onClick={() => toggleSessionChip(chip.name)}
-                          disabled={chip.isCompleted}
                           className={`
                             relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all
-                            ${chip.isCompleted
-                              ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed line-through'
-                              : isSelected
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                            ${isSelected
+                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                              : chip.isCompleted
+                                ? 'bg-slate-800/50 text-slate-500 line-through hover:bg-slate-700/50'
                                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                             }
                           `}
@@ -556,22 +610,10 @@ export const HomeAthlete: React.FC<Props> = ({
                             <Check className="w-4 h-4" />
                           )}
                           {chip.isCompleted && (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            <CheckCircle2 className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-emerald-500'}`} />
                           )}
 
                           <span>{chip.name}</span>
-
-                          <span className={`
-                            text-xs px-1.5 py-0.5 rounded-full
-                            ${chip.isCompleted
-                              ? 'bg-slate-700 text-slate-500'
-                              : isSelected
-                                ? 'bg-white/20 text-white'
-                                : 'bg-slate-700 text-slate-400'
-                            }
-                          `}>
-                            {chip.exerciseCount}
-                          </span>
 
                           {chip.isSuggested && !chip.isCompleted && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -581,7 +623,7 @@ export const HomeAthlete: React.FC<Props> = ({
                     })}
                   </div>
 
-                  {/* Stats des séances sélectionnées + bouton Preview */}
+                  {/* Stats des séances sélectionnées */}
                   {selectedSessions.size > 0 && (
                     <div className="flex items-center justify-between gap-4 text-sm text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                       <div className="flex items-center gap-4">
@@ -589,20 +631,7 @@ export const HomeAthlete: React.FC<Props> = ({
                           <Dumbbell className="w-4 h-4" />
                           {selectedStats.totalExercises} exercices
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          {formatDuration(selectedStats.totalDuration)}
-                        </span>
                       </div>
-
-                      {/* Bouton voir preview */}
-                      <button
-                        onClick={handleOpenPreview}
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span>Voir</span>
-                      </button>
                     </div>
                   )}
 
@@ -622,9 +651,7 @@ export const HomeAthlete: React.FC<Props> = ({
                     <span>
                       {selectedSessions.size === 0
                         ? 'Sélectionne une séance'
-                        : selectedSessions.size === 1
-                          ? 'Démarrer'
-                          : `Démarrer (${selectedSessions.size} séances)`
+                        : 'Voir ma séance'
                       }
                     </span>
                   </button>
@@ -764,30 +791,63 @@ export const HomeAthlete: React.FC<Props> = ({
             {/* Séance */}
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">Séance</label>
-              <div className="relative">
-                <select
-                  value={filterSession || ''}
-                  onChange={(e) => setFilterSession(e.target.value || null)}
-                  disabled={!filterWeek}
-                  className="
-                    w-full bg-slate-800 border border-slate-700 rounded-xl
-                    px-4 py-3 text-white appearance-none cursor-pointer
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                  "
-                >
-                  <option value="">Toutes les séances</option>
-                  {filterOptions.sessions.map(session => (
-                    <option key={session} value={session}>{session}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+              <div className="flex flex-wrap gap-2">
+                {filterOptions.sessions.map(session => {
+                  const isSelected = filterSessions.has(session);
+                  return (
+                    <div
+                      key={session}
+                      className={`
+                        flex items-center rounded-xl border transition-all overflow-hidden
+                        ${isSelected
+                          ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-600/25'
+                          : 'bg-slate-800 border-slate-700 hover:border-slate-600'
+                        }
+                      `}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleFilterSession(session)}
+                        className={`
+                          px-3 py-2 text-sm font-medium
+                          ${isSelected ? 'text-white' : 'text-slate-300'}
+                        `}
+                      >
+                        {session}
+                      </button>
+                      <div className={`w-px h-4 ${isSelected ? 'bg-blue-500' : 'bg-slate-700'}`} />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickStart(session);
+                        }}
+                        className={`
+                          px-2 py-2 transition-colors
+                          ${isSelected 
+                            ? 'text-blue-200 hover:text-white hover:bg-blue-500' 
+                            : 'text-slate-500 hover:text-white hover:bg-slate-700'
+                          }
+                        `}
+                        title="Démarrer directement cette séance"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                      </button>
+                    </div>
+                  );
+                })}
+                {filterOptions.sessions.length === 0 && filterWeek && (
+                  <span className="text-sm text-slate-500 italic">Aucune séance disponible</span>
+                )}
+                {!filterWeek && (
+                   <span className="text-sm text-slate-500 italic">Sélectionne une semaine d'abord</span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Preview de la séance filtrée */}
-          {filteredExercises.length > 0 && (
+          {/* Preview de la séance filtrée - Seulement si au moins une séance sélectionnée */}
+          {filterSessions.size > 0 && filteredExercises.length > 0 && (
             <div className="px-4 pb-4">
               <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-2">
