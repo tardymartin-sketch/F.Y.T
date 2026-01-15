@@ -70,6 +70,7 @@ export const AthleteLayout: React.FC<AthleteLayoutProps> = ({
             currentView={currentView}
             onViewChange={onViewChange}
             unreadMessages={unreadMessages}
+            sessionState={sessionState}
           />
         </>
       )}

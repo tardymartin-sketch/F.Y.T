@@ -53,6 +53,7 @@ import {
 // Hooks V3
 import { useDeviceDetect } from './src/hooks/useDeviceDetect';
 import { useCurrentView, useScrollPersistence } from './src/hooks/useUIState';
+import { removeLocalStorageWithEvent } from './src/utils/localStorageEvents';
 
 // Components existants
 import { Auth } from './src/components/Auth';
@@ -70,6 +71,7 @@ import { StravaImport } from './src/components/StravaImport';
 import { BottomNav } from './src/components/athlete/BottomNav';
 import { HomeAthlete } from './src/components/athlete/HomeAthlete';
 import { ActiveSessionAthlete } from './src/components/athlete/ActiveSessionAthlete';
+import { AddSession } from './src/components/athlete/AddSession';
 import { CoachTab } from './src/components/athlete/CoachTab';
 import { ProfileTab } from './src/components/athlete/ProfileTab';
 
@@ -113,6 +115,12 @@ const App: React.FC = () => {
   const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
   const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
+
+  // ===========================================
+  // ADD SESSION STATE (séance manuelle)
+  // ===========================================
+  const [editingManualSession, setEditingManualSession] = useState<SessionLog | null>(null);
+  const [hasAddSession, setHasAddSession] = useState(false);
 
   // ===========================================
   // WEEK ORGANIZER STATE
@@ -215,22 +223,33 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.error('Erreur parsing session sauvegardée:', e);
-        localStorage.removeItem('F.Y.T_active_session');
+        removeLocalStorageWithEvent('F.Y.T_active_session');
       }
     }
+
+    // Vérifier si une session AddSession est en cours
+    const savedAddSession = localStorage.getItem('F.Y.T_add_session');
+    setHasAddSession(!!savedAddSession);
   }, []);
 
   useEffect(() => {
     const handleStorageChange = () => {
       const savedSession = localStorage.getItem('F.Y.T_active_session');
       setHasActiveSession(!!savedSession);
+
+      // Vérifier également AddSession
+      const savedAddSession = localStorage.getItem('F.Y.T_add_session');
+      setHasAddSession(!!savedAddSession);
     };
 
     const interval = setInterval(handleStorageChange, 1000);
 
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('local-storage-change', handleStorageChange);
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('local-storage-change', handleStorageChange);
       clearInterval(interval);
     };
   }, []);
@@ -419,6 +438,32 @@ const App: React.FC = () => {
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
+
+        // Si en mode édition, restaurer la séance depuis l'historique
+        if (parsed.isEditMode && parsed.editingSessionId) {
+          const session = history.find(s => s.id === parsed.editingSessionId);
+          if (session) {
+            setEditingSession(session);
+            // Récupérer les données de session depuis parsed.sessionData
+            if (parsed.sessionData) {
+              const sessionData = trainingData.filter(d => {
+                return parsed.sessionData.some((s: any) =>
+                  s.seance === d.seance &&
+                  s.annee === d.annee &&
+                  s.moisNum === d.moisNum &&
+                  s.semaine === d.semaine
+                );
+              });
+              if (sessionData.length > 0) {
+                setActiveSessionData(sessionData);
+              }
+            }
+            setCurrentView('active');
+            return;
+          }
+        }
+
+        // Sinon, comportement normal (nouvelle séance)
         if (parsed.sessionData) {
           const sessionData = trainingData.filter(d => {
             return parsed.sessionData.some((s: any) =>
@@ -448,7 +493,7 @@ const App: React.FC = () => {
       setActiveSessionData(null);
       setEditingSession(null);
       setHasActiveSession(false);
-      localStorage.removeItem('F.Y.T_active_session');
+      removeLocalStorageWithEvent('F.Y.T_active_session');
       setCurrentView('home');
     } catch (error) {
       console.error("Erreur sauvegarde session:", error);
@@ -460,7 +505,7 @@ const App: React.FC = () => {
     setActiveSessionData(null);
     setEditingSession(null);
     setHasActiveSession(false);
-    localStorage.removeItem('F.Y.T_active_session');
+    removeLocalStorageWithEvent('F.Y.T_active_session');
     setCurrentView('home');
   };
 
@@ -505,6 +550,59 @@ const App: React.FC = () => {
       setEditingSession(log);
       setCurrentView('active');
     }
+  };
+
+  // ===========================================
+  // ADD SESSION HANDLERS (Séance manuelle)
+  // ===========================================
+
+  const handleOpenAddSession = () => {
+    // Vérifier s'il y a une session en cours de modification dans localStorage
+    try {
+      const saved = localStorage.getItem('F.Y.T_add_session');
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.isEditMode && data.editingSessionId) {
+          // Trouver la session dans l'historique
+          const session = history.find(s => s.id === data.editingSessionId);
+          if (session) {
+            setEditingManualSession(session);
+            setCurrentView('addSession');
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Erreur restauration session:', e);
+    }
+
+    // Par défaut: nouvelle session
+    setEditingManualSession(null);
+    setCurrentView('addSession');
+  };
+
+  const handleEditManualSession = (session: SessionLog) => {
+    setEditingManualSession(session);
+    setCurrentView('addSession');
+  };
+
+  const handleSaveManualSession = async (log: SessionLog) => {
+    try {
+      await saveSessionLog(log, currentUser!.id);
+      // Refresh history
+      const updatedHistory = await fetchSessionLogs(currentUser!.id);
+      setHistory(updatedHistory);
+      setEditingManualSession(null);
+      setCurrentView('history');
+    } catch (error) {
+      console.error('Erreur sauvegarde séance manuelle:', error);
+      throw error;
+    }
+  };
+
+  const handleCancelAddSession = () => {
+    setEditingManualSession(null);
+    setCurrentView('home');
   };
 
   const handleFetchTeam = async (coachId: string) => {
@@ -597,7 +695,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('F.Y.T_active_session');
+    removeLocalStorageWithEvent('F.Y.T_active_session');
   };
 
   // ===========================================
@@ -718,6 +816,8 @@ const App: React.FC = () => {
                     onStartSession={handleStartSessionFromExercises}
                     onResumeSession={handleResumeSession}
                     hasActiveSession={hasActiveSession}
+                    onAddSession={handleOpenAddSession}
+                    hasAddSession={hasAddSession}
                   />
                 ) : (
                   <Home
@@ -765,6 +865,17 @@ const App: React.FC = () => {
                   history={history}
                   onDelete={handleDeleteSession}
                   onEdit={handleEditSession}
+                  userId={currentUser.id}
+                  onEditManualSession={handleEditManualSession}
+                />
+              )}
+
+              {/* V3: Vue Ajout de séance manuelle */}
+              {currentView === 'addSession' && (
+                <AddSession
+                  onSave={handleSaveManualSession}
+                  onCancel={handleCancelAddSession}
+                  initialLog={editingManualSession}
                   userId={currentUser.id}
                 />
               )}
@@ -863,6 +974,8 @@ const App: React.FC = () => {
         <BottomNav
           activeTab={currentView as 'home' | 'history' | 'coach' | 'profile'}
           onTabChange={handleViewChange}
+          userId={currentUser?.id}
+          isOnSessionScreen={currentView === 'active' || currentView === 'addSession'}
         />
       )}
     </div>
