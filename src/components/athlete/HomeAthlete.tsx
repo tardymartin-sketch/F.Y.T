@@ -5,7 +5,7 @@
 // modal preview et vue filtres avancés
 // ============================================================
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   WorkoutRow,
   SessionLog,
@@ -28,7 +28,8 @@ import {
   Check,
   FolderOpen,
   ArrowLeft,
-  Eye
+  Eye,
+  PlusCircle
 } from 'lucide-react';
 
 // ===========================================
@@ -44,6 +45,8 @@ interface Props {
   onResumeSession?: () => void;
   hasActiveSession?: boolean;
   onSelectSession?: () => void;
+  onAddSession?: () => void;
+  hasAddSession?: boolean;
 }
 
 interface SessionChip {
@@ -167,6 +170,8 @@ export const HomeAthlete: React.FC<Props> = ({
   onResumeSession,
   hasActiveSession = false,
   onSelectSession,
+  onAddSession,
+  hasAddSession = false,
 }) => {
   // ===========================================
   // STATE
@@ -174,6 +179,14 @@ export const HomeAthlete: React.FC<Props> = ({
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [sessionNameFontPx, setSessionNameFontPx] = useState<number>(14);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const gridRefFilters = useRef<HTMLDivElement | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<string[]>([]);
+  const [selectedOrderFilters, setSelectedOrderFilters] = useState<string[]>([]);
+
+  
 
   // Filtres avancés
   const [filterYear, setFilterYear] = useState<string | null>(null);
@@ -233,7 +246,13 @@ export const HomeAthlete: React.FC<Props> = ({
     history.forEach(log => {
       const logDate = new Date(log.date);
       if (logDate >= weekStart && logDate <= weekEnd) {
-        completedThisWeek.set(log.sessionKey.seance, log.date);
+        const raw = log.sessionKey.seance || '';
+        const parts = raw.split('+').map(s => s.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          parts.forEach(name => completedThisWeek.set(name, log.date));
+        } else {
+          completedThisWeek.set(raw, log.date);
+        }
       }
     });
 
@@ -254,19 +273,23 @@ export const HomeAthlete: React.FC<Props> = ({
         isSuggested: false,
       };
     });
+    chips.sort((a, b) => a.name.localeCompare(b.name));
 
-    const suggested = chips.find(c => !c.isCompleted);
-    if (suggested) {
-      suggested.isSuggested = true;
-    }
+    // Préselection désactivée (commentée à la demande)
+    // const suggested = chips.find(c => !c.isCompleted);
+    // if (suggested) {
+    //   suggested.isSuggested = true;
+    // }
 
     return {
       weekInfo: info,
       sessionChips: chips,
-      suggestedSessionName: suggested?.name || null,
+      // Préselection désactivée (pas de suggestedSessionName)
+      suggestedSessionName: null,
     };
   }, [trainingData, history]);
 
+  
   // ===========================================
   // COMPUTED: Filter Options (Vue filtres avancés)
   // ===========================================
@@ -312,6 +335,53 @@ export const HomeAthlete: React.FC<Props> = ({
     return { years, months, weeks, sessions };
   }, [trainingData, filterYear, filterMonth, filterWeek]);
 
+  useEffect(() => {
+    const currentRef = showAdvancedFilters ? gridRefFilters.current : gridRef.current;
+    if (!currentRef) return;
+    const names = showAdvancedFilters
+      ? filterOptions.sessions
+      : sessionChips.map(c => c.name);
+    if (names.length === 0) return;
+    const longestName = names.reduce((max, n) => (n.length > max.length ? n : max), '');
+    const firstButton = currentRef.querySelector('button') as HTMLElement | null;
+    const cellWidth = firstButton?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+    if (!cellWidth) return;
+    const horizontalPadding = 24;
+    const reservedForIcon = 24;
+    const contentWidth = Math.max(0, cellWidth - horizontalPadding - reservedForIcon);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const maxSize = 14;
+    const minSize = 10;
+    let size = maxSize;
+    while (size >= minSize) {
+      ctx.font = `${size}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+      const w = ctx.measureText(longestName).width;
+      if (w <= contentWidth) break;
+      size -= 1;
+    }
+    setSessionNameFontPx(size);
+    const onResize = () => {
+      const names2 = showAdvancedFilters ? filterOptions.sessions : sessionChips.map(c => c.name);
+      if (names2.length === 0) return;
+      const longest2 = names2.reduce((max, n) => (n.length > max.length ? n : max), '');
+      const firstBtn2 = currentRef.querySelector('button') as HTMLElement | null;
+      const cellW2 = firstBtn2?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+      if (!cellW2) return;
+      const contentW2 = Math.max(0, cellW2 - horizontalPadding - reservedForIcon);
+      let size2 = maxSize;
+      while (size2 >= minSize) {
+        ctx.font = `${size2}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+        const w2 = ctx.measureText(longest2).width;
+        if (w2 <= contentW2) break;
+        size2 -= 1;
+      }
+      setSessionNameFontPx(size2);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [sessionChips, filterOptions.sessions, showAllSessions, showAdvancedFilters]);
   // ===========================================
   // COMPUTED: Filtered Exercises (Vue filtres avancés)
   // ===========================================
@@ -417,13 +487,11 @@ export const HomeAthlete: React.FC<Props> = ({
   // ===========================================
 
   const toggleSessionChip = useCallback((sessionName: string) => {
-    setSelectedSessions(prev => {
-      const next = new Set(prev);
-      if (next.has(sessionName)) {
-        next.delete(sessionName);
-      } else {
-        next.add(sessionName);
-      }
+    setSelectedOrder(prev => {
+      const next = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setSelectedSessions(new Set(next));
       return next;
     });
   }, []);
@@ -433,15 +501,16 @@ export const HomeAthlete: React.FC<Props> = ({
 
     const allExercises: WorkoutRow[] = [];
 
-    sessionChips.forEach(chip => {
-      if (selectedSessions.has(chip.name)) {
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
         const sortedExercises = [...chip.exercises].sort((a, b) => a.ordre - b.ordre);
         allExercises.push(...sortedExercises);
       }
     });
 
     onStartSession(allExercises);
-  }, [selectedSessions, sessionChips, onStartSession]);
+  }, [selectedSessions, selectedOrder, sessionChips, onStartSession]);
 
   const handleStartFilteredSession = useCallback(() => {
     if (filteredExercises.length === 0) return;
@@ -468,14 +537,12 @@ export const HomeAthlete: React.FC<Props> = ({
   }, [showAdvancedFilters]);
 
   const toggleFilterSession = useCallback((sessionName: string) => {
-    setFilterSessions(prev => {
-      const next = new Set(prev);
-      if (next.has(sessionName)) {
-        next.delete(sessionName);
-      } else {
-        next.add(sessionName);
-      }
-      return next;
+    setSelectedOrderFilters(prev => {
+      const nextOrder = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setFilterSessions(new Set(nextOrder));
+      return nextOrder;
     });
   }, []);
 
@@ -514,20 +581,19 @@ export const HomeAthlete: React.FC<Props> = ({
   // Exercices pour le modal (séances sélectionnées)
   const previewExercises = useMemo(() => {
     const exercises: WorkoutRow[] = [];
-    sessionChips.forEach(chip => {
-      if (selectedSessions.has(chip.name)) {
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
         exercises.push(...chip.exercises);
       }
     });
     return exercises.sort((a, b) => a.ordre - b.ordre);
-  }, [selectedSessions, sessionChips]);
+  }, [selectedOrder, sessionChips]);
 
   const previewSessionName = useMemo(() => {
-    const names = sessionChips
-      .filter(c => selectedSessions.has(c.name))
-      .map(c => c.name);
+    const names = selectedOrder.filter(n => selectedSessions.has(n));
     return names.length > 1 ? names.join(' + ') : names[0] || 'Séance';
-  }, [selectedSessions, sessionChips]);
+  }, [selectedOrder, selectedSessions]);
 
   // ===========================================
   // RENDER: Vue Suggérée (par défaut)
@@ -539,28 +605,84 @@ export const HomeAthlete: React.FC<Props> = ({
       <EncouragementKPI history={history} />
 
       {/* Carte Session Active (si en cours) */}
-      {hasActiveSession && onResumeSession && (
-        <button
-          onClick={onResumeSession}
-          className="w-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 shadow-lg shadow-orange-500/25 animate-pulse-slow"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <Timer className="w-6 h-6 text-white" />
+      {hasActiveSession && onResumeSession && (() => {
+        // Déterminer si c'est une modification ou une nouvelle séance
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_active_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+        return (
+          <button
+            onClick={onResumeSession}
+            className="w-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 shadow-lg shadow-orange-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Timer className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre là où tu en étais'}
+                  </p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="text-white font-semibold">Séance en cours</p>
-                <p className="text-white/80 text-sm">Reprendre là où tu en étais</p>
-              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
             </div>
-            <ChevronRight className="w-6 h-6 text-white" />
-          </div>
-        </button>
-      )}
+          </button>
+        );
+      })()}
+
+      {/* Carte Ajout/Modification de Séance en cours */}
+      {hasAddSession && onAddSession && (() => {
+        // Déterminer si c'est un ajout ou une modification
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_add_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        return (
+          <button
+            onClick={onAddSession}
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 shadow-lg shadow-blue-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <PlusCircle className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Ajout de séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre l\'ajout de ta séance'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
+            </div>
+          </button>
+        );
+      })()}
 
       {/* Carte Sélection de Séances */}
-      {!hasActiveSession && (
+      {!hasActiveSession && !hasAddSession && (
         <>
           {sessionChips.length > 0 ? (
             <Card variant="gradient" className="overflow-hidden">
@@ -573,31 +695,34 @@ export const HomeAthlete: React.FC<Props> = ({
                       <span className="text-sm font-medium text-slate-300">
                         Semaine {weekInfo?.weekNumber}
                       </span>
-                      {weekInfo?.startDate && weekInfo?.endDate && (
-                        <span className="text-sm font-medium text-slate-300">
-                          • {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
-                        </span>
-                      )}
                     </div>
+                    {weekInfo?.startDate && weekInfo?.endDate && (
+                      <div className="text-sm font-medium text-slate-300">
+                        {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Chips de sélection */}
-                <div className="p-4">
+                <div className="px-2 py-3">
                   <p className="text-sm text-slate-400 mb-3">
                     Sélectionne une ou plusieurs séances :
                   </p>
 
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {sessionChips.map(chip => {
+                  <div ref={gridRef} className="grid grid-cols-3 gap-2 mb-4">
+                    {(showAllSessions ? sessionChips : sessionChips.slice(0, 9)).map(chip => {
                       const isSelected = selectedSessions.has(chip.name);
+                      const orderIndex = selectedOrder.indexOf(chip.name);
+                      // Préselection désactivée
+                      const showPreselectBadge = false;
 
                       return (
                         <button
                           key={chip.name}
                           onClick={() => toggleSessionChip(chip.name)}
                           className={`
-                            relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all
+                            relative flex items-center justify-center gap-1 px-4 py-3 rounded-xl text-sm font-medium transition-all w-full min-h-[48px]
                             ${isSelected
                               ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
                               : chip.isCompleted
@@ -606,22 +731,37 @@ export const HomeAthlete: React.FC<Props> = ({
                             }
                           `}
                         >
-                          {isSelected && !chip.isCompleted && (
-                            <Check className="w-4 h-4" />
-                          )}
                           {chip.isCompleted && (
-                            <CheckCircle2 className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-emerald-500'}`} />
+                            <span className="pointer-events-none absolute -top-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                              <Check className="w-3 h-3 text-white" />
+                            </span>
                           )}
 
-                          <span>{chip.name}</span>
+                          <span
+                            className="truncate whitespace-nowrap text-center w-full"
+                            style={{ fontSize: `${sessionNameFontPx}px` }}
+                          >
+                            {chip.name}
+                          </span>
 
-                          {chip.isSuggested && !chip.isCompleted && (
-                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                          {(orderIndex >= 0 || showPreselectBadge) && (
+                            <span className="absolute -bottom-1 -left-1 min-w-5 h-5 px-1 rounded-full bg-white text-blue-600 text-xs font-bold flex items-center justify-center shadow-md">
+                              {orderIndex >= 0 ? orderIndex + 1 : 1}
+                            </span>
                           )}
+
                         </button>
                       );
                     })}
                   </div>
+                  {sessionChips.length > 9 && !showAllSessions && (
+                    <button
+                      onClick={() => setShowAllSessions(true)}
+                      className="w-full px-3 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    >
+                      …
+                    </button>
+                  )}
 
                   {/* Stats des séances sélectionnées */}
                   {selectedSessions.size > 0 && (
@@ -687,6 +827,21 @@ export const HomeAthlete: React.FC<Props> = ({
                   Voir toutes les séances →
                 </button>
               </div>
+            </Card>
+          )}
+
+          {/* Encart Ajouter une séance à mon historique */}
+          {onAddSession && (
+            <Card variant="default" className="mt-4">
+              <CardContent className="p-4">
+                <button
+                  onClick={onAddSession}
+                  className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 transition-all"
+                >
+                  <PlusCircle className="w-5 h-5" />
+                  <span>Ajouter une séance à mon historique</span>
+                </button>
+              </CardContent>
             </Card>
           )}
         </>
@@ -791,56 +946,76 @@ export const HomeAthlete: React.FC<Props> = ({
             {/* Séance */}
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">Séance</label>
-              <div className="flex flex-wrap gap-2">
-                {filterOptions.sessions.map(session => {
-                  const isSelected = filterSessions.has(session);
-                  return (
-                    <div
-                      key={session}
-                      className={`
-                        flex items-center rounded-xl border transition-all overflow-hidden
-                        ${isSelected
-                          ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-600/25'
-                          : 'bg-slate-800 border-slate-700 hover:border-slate-600'
-                        }
-                      `}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleFilterSession(session)}
-                        className={`
-                          px-3 py-2 text-sm font-medium
-                          ${isSelected ? 'text-white' : 'text-slate-300'}
-                        `}
-                      >
-                        {session}
-                      </button>
-                      <div className={`w-px h-4 ${isSelected ? 'bg-blue-500' : 'bg-slate-700'}`} />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickStart(session);
-                        }}
-                        className={`
-                          px-2 py-2 transition-colors
-                          ${isSelected 
-                            ? 'text-blue-200 hover:text-white hover:bg-blue-500' 
-                            : 'text-slate-500 hover:text-white hover:bg-slate-700'
+              <div>
+                {filterWeek ? (
+                  <div ref={gridRefFilters} className="grid grid-cols-3 gap-2">
+                    {(() => {
+                      const selectedWeekData = trainingData.filter(d =>
+                        (!filterYear || d.annee === filterYear) &&
+                        (!filterMonth || d.moisNum === filterMonth) &&
+                        d.semaine === filterWeek
+                      );
+                      const ws = selectedWeekData[0]?.weekStartDate ? new Date(selectedWeekData[0].weekStartDate) : null;
+                      const we = selectedWeekData[0]?.weekEndDate ? new Date(selectedWeekData[0].weekEndDate) : null;
+                      const completed = new Map<string, string>();
+                      if (ws && we) {
+                        history.forEach(log => {
+                          const ld = new Date(log.date);
+                          if (ld >= ws && ld <= we) {
+                            const raw = log.sessionKey.seance || '';
+                            const parts = raw.split('+').map(s => s.trim()).filter(Boolean);
+                            if (parts.length > 0) {
+                              parts.forEach(name => completed.set(name, log.date));
+                            } else {
+                              completed.set(raw, log.date);
+                            }
                           }
-                        `}
-                        title="Démarrer directement cette séance"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    </div>
-                  );
-                })}
-                {filterOptions.sessions.length === 0 && filterWeek && (
-                  <span className="text-sm text-slate-500 italic">Aucune séance disponible</span>
-                )}
-                {!filterWeek && (
-                   <span className="text-sm text-slate-500 italic">Sélectionne une semaine d'abord</span>
+                        });
+                      }
+                      return (filterOptions.sessions.length > 0 ? (filterOptions.sessions).map(name => {
+                        const isSelected = filterSessions.has(name);
+                        const isCompleted = completed.has(name);
+                        const orderIndex = selectedOrderFilters.indexOf(name);
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => toggleFilterSession(name)}
+                            className={`
+                              relative flex items-center justify-center gap-1 px-4 py-3 rounded-xl text-sm font-medium transition-all w-full min-h-[48px]
+                              ${isSelected
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                                : isCompleted
+                                  ? 'bg-slate-800/50 text-slate-500 line-through hover:bg-slate-700/50'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }
+                            `}
+                          >
+                            <span
+                              className="truncate whitespace-nowrap text-center w-full"
+                              style={{ fontSize: `${sessionNameFontPx}px` }}
+                            >
+                              {name}
+                            </span>
+                            {orderIndex >= 0 && (
+                              <span className="absolute -bottom-1 -left-1 min-w-5 h-5 px-1 rounded-full bg-white text-blue-600 text-xs font-bold flex items-center justify-center shadow-md">
+                                {orderIndex + 1}
+                              </span>
+                            )}
+                            {isCompleted && (
+                              <span className="pointer-events-none absolute -top-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                                <Check className="w-3 h-3 text-white" />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      }) : (
+                        <span className="text-sm text-slate-500 italic">Aucune séance disponible</span>
+                      ));
+                    })()}
+                  </div>
+                ) : (
+                  <span className="text-sm text-slate-500 italic">Sélectionne une semaine d'abord</span>
                 )}
               </div>
             </div>

@@ -5,6 +5,7 @@
 // ============================================================
 
 import React, { useState, useMemo, useRef, TouchEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { SessionLog, getRpeColor, getRpeBgColor, getRpeInfo, SetLog, SetLoad } from '../../types';
 import {
   Clock,
@@ -17,7 +18,10 @@ import {
   ChevronRight,
   Edit2,
   Search,
-  Gauge
+  Gauge,
+  X,
+  Calendar,
+  Download
 } from 'lucide-react';
 import { RpeBadge } from './RpeSelector';
 import { StravaHistoryCard } from './StravaHistoryCard';
@@ -28,10 +32,27 @@ interface Props {
   onDelete: (id: string) => void;
   onEdit: (log: SessionLog) => void;
   userId?: string;
+  onEditManualSession?: (session: SessionLog) => void;
 }
 
 const isStravaSession = (log: SessionLog): boolean => {
   return log.sessionKey.seance.toLowerCase().includes('strava');
+};
+
+const MANUAL_ENTRY_MARKER = 'MANUAL_ENTRY';
+const MANUAL_ENTRY_DISPLAY = 'Séance insérée manuellement';
+
+const isManualSession = (log: SessionLog): boolean => {
+  // Supporter l'ancien et le nouveau format
+  return log.comments === MANUAL_ENTRY_MARKER || log.comments === 'manual_entry';
+};
+
+// Pour afficher le texte dans l'UI (au lieu de 'manual_entry' ou 'MANUAL_ENTRY')
+const getSessionCommentDisplay = (log: SessionLog): string | null => {
+  if (isManualSession(log)) {
+    return MANUAL_ENTRY_DISPLAY;
+  }
+  return log.comments || null;
 };
 
 function formatSetWeight(set: SetLog): string {
@@ -84,13 +105,17 @@ function formatSetWeight(set: SetLog): string {
   return weightText === '-' ? '-' : `${weightText} kg.`;
 }
 
-export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) => {
+export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId, onEditManualSession }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [tempDateBySessionId, setTempDateBySessionId] = useState<Record<string, string>>({});
+  const [expandedExercises, setExpandedExercises] = useState<Record<string, Set<number>>>({});
   
   const touchStartX = useRef<number>(0);
   const touchCurrentX = useRef<number>(0);
@@ -143,13 +168,44 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
     });
   };
 
+  const toInputDateValue = (iso: string): string => {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const handleStartEditDate = (sessionId: string, isoDate: string) => {
+    setEditingDateId(sessionId);
+    setTempDateBySessionId(prev => ({
+      ...prev,
+      [sessionId]: toInputDateValue(isoDate)
+    }));
+  };
+
+  const handleSaveDate = (log: SessionLog) => {
+    const value = tempDateBySessionId[log.id];
+    if (!value) {
+      setEditingDateId(null);
+      return;
+    }
+    const [yy, mm, dd] = value.split('-').map(v => parseInt(v, 10));
+    const newDate = new Date(yy, mm - 1, dd, 12, 0, 0).toISOString();
+    onEdit({ ...log, date: newDate });
+    setEditingDateId(null);
+  };
+
+  const toggleExerciseExpand = (sessionId: string, index: number) => {
+    setExpandedExercises(prev => {
+      const current = new Set(prev[sessionId] || []);
+      if (current.has(index)) current.delete(index); else current.add(index);
+      return { ...prev, [sessionId]: current };
+    });
+  };
+
   const handleDelete = (id: string) => {
-    setDeletingId(id);
-    setTimeout(() => {
-      onDelete(id);
-      setDeletingId(null);
-      setSwipedId(null);
-    }, 300);
+    setConfirmDeleteId(id);
   };
 
   return (
@@ -262,7 +318,7 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
                 }`}>
                   <button
                     onClick={() => handleDelete(log.id)}
-                    className="w-full h-full flex items-center justify-center text-white"
+                    className="w-full h-full flex items-center justify_center text-white"
                   >
                     <Trash2 className="w-6 h-6" />
                   </button>
@@ -299,28 +355,34 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
                       </div>
 
                       <div className="flex items-center gap-3">
-                        {/* Progress Ring */}
-                        <div className="relative w-12 h-12">
-                          <svg className="w-12 h-12 -rotate-90">
-                            <circle
-                              cx="24" cy="24" r="20"
-                              fill="none"
-                              stroke="#1e293b"
-                              strokeWidth="4"
-                            />
-                            <circle
-                              cx="24" cy="24" r="20"
-                              fill="none"
-                              stroke={progress === 100 ? '#10b981' : '#3b82f6'}
-                              strokeWidth="4"
-                              strokeLinecap="round"
-                              strokeDasharray={`${progress * 1.256} 125.6`}
-                            />
-                          </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white">
-                            {Math.round(progress)}%
-                          </span>
-                        </div>
+                        {/* Progress Ring ou Icône Import pour séances manuelles */}
+                        {isManualSession(log) ? (
+                          <div className="relative w-12 h-12 flex items-center justify-center bg-blue-500/20 rounded-full" title="Séance importée manuellement">
+                            <Download className="w-6 h-6 text-blue-400" />
+                          </div>
+                        ) : (
+                          <div className="relative w-12 h-12">
+                            <svg className="w-12 h-12 -rotate-90">
+                              <circle
+                                cx="24" cy="24" r="20"
+                                fill="none"
+                                stroke="#1e293b"
+                                strokeWidth="4"
+                              />
+                              <circle
+                                cx="24" cy="24" r="20"
+                                fill="none"
+                                stroke={progress === 100 ? '#10b981' : '#3b82f6'}
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                strokeDasharray={`${progress * 1.256} 125.6`}
+                              />
+                            </svg>
+                            <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white">
+                              {Math.round(progress)}%
+                            </span>
+                          </div>
+                        )}
 
                         {isExpanded ? (
                           <ChevronUp className="w-5 h-5 text-slate-400" />
@@ -337,7 +399,13 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
                       {/* Actions */}
                       <div className="flex gap-2">
                         <button
-                          onClick={() => onEdit(log)}
+                          onClick={() => {
+                            if (isManualSession(log) && onEditManualSession) {
+                              onEditManualSession(log);
+                            } else {
+                              onEdit(log);
+                            }
+                          }}
                           className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 text-sm font-medium transition-colors"
                         >
                           <Edit2 className="w-4 h-4" />
@@ -364,35 +432,49 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
 
                       {/* Exercises */}
                       <div className="space-y-3">
-                        {log.exercises.map((exercise, idx) => (
-                          <div key={idx} className="bg-slate-800/50 rounded-xl p-3">
-                            <p className="font-medium text-white mb-2">{exercise.exerciseName}</p>
-                            <div className="space-y-1">
-                              {exercise.sets.map((set, setIdx) => (
-                                <div
-                                  key={setIdx}
-                                  className={`flex items-center gap-3 text-sm p-2 rounded-lg ${
-                                    set.completed ? 'bg-emerald-500/10' : 'bg-slate-800/50'
-                                  }`}
-                                >
-                                  <span className="text-slate-500 w-8">#{set.setNumber}</span>
-                                  <span className="text-white flex-1">{set.reps || '—'}</span>
-                                  <span className="text-slate-400">×</span>
-                                  <span className="text-slate-400">{formatSetWeight(set)}</span>
-                                  {set.completed && (
-                                    <span className="text-emerald-400">✓</span>
-                                  )}
+                        {log.exercises.map((exercise, idx) => {
+                          const isExExpanded = expandedExercises[log.id]?.has(idx) || false;
+                          return (
+                            <button
+                              key={idx}
+                              className="w-full text-left bg-slate-800/50 rounded-xl p-3"
+                              onClick={() => toggleExerciseExpand(log.id, idx)}
+                              type="button"
+                            >
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium text-white text-sm truncate">{exercise.exerciseName}</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-slate-300">
+                                    {typeof exercise.rpe === 'number' ? `RPE ${exercise.rpe}` : 'RPE -'}
+                                  </span>
+                                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isExExpanded ? 'rotate-180' : ''}`} />
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
+                              </div>
+                              {isExExpanded && (
+                                <div className="mt-2 space-y-1">
+                                  {exercise.sets.map((set, setIdx) => (
+                                    <div
+                                      key={setIdx}
+                                      className={`flex items-center gap-3 text-sm p-2 rounded-lg ${set.completed ? 'bg-emerald-500/10' : 'bg-slate-800/50'}`}
+                                    >
+                                      <span className="text-slate-500 w-8">#{set.setNumber}</span>
+                                      <span className="text-white flex-1">{set.reps || '—'}</span>
+                                      <span className="text-slate-400">×</span>
+                                      <span className="text-slate-400">{formatSetWeight(set)}</span>
+                                      {set.completed && <span className="text-emerald-400">✓</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
 
                       {/* Comments */}
-                      {log.comments && (
+                      {getSessionCommentDisplay(log) && (
                         <div className="bg-slate-800/30 rounded-xl p-3 text-sm text-slate-400 italic">
-                          {log.comments}
+                          {getSessionCommentDisplay(log)}
                         </div>
                       )}
                     </div>
@@ -403,6 +485,79 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId }) 
           })}
         </div>
       )}
+      
+      {/* Pop-up confirmation de suppression */}
+      {(() => {
+        if (!confirmDeleteId) return null;
+        const sessionToDelete = history.find(h => h.id === confirmDeleteId);
+        if (!sessionToDelete) return null;
+        const fullDate = new Date(sessionToDelete.date).toLocaleDateString('fr-FR', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        });
+        
+        return createPortal(
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Supprimer la séance ?</h3>
+                    <p className="text-sm text-slate-400">Cette action est irréversible</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700/50">
+                <h4 className="font-semibold text-white text-lg mb-1">
+                  {sessionToDelete.sessionKey.seance}
+                </h4>
+                <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
+                  <Calendar className="w-4 h-4" />
+                  {fullDate}
+                </div>
+                {sessionToDelete.sessionRpe && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 uppercase font-bold">RPE</span>
+                    <RpeBadge rpe={sessionToDelete.sessionRpe} size="sm" />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => {
+                    setDeletingId(confirmDeleteId);
+                    onDelete(confirmDeleteId);
+                    setConfirmDeleteId(null);
+                    setSwipedId(null);
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-colors"
+                >
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 };

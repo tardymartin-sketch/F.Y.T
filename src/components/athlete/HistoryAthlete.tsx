@@ -19,7 +19,8 @@ import {
   Edit2,
   Trash2,
   AlertTriangle,
-  Activity
+  Activity,
+  Download
 } from 'lucide-react';
 import { RpeBadge } from '../RpeSelector';
 
@@ -31,6 +32,7 @@ interface Props {
   history: SessionLog[];
   onEdit?: (session: SessionLog) => void;
   onDelete?: (sessionId: string) => void;
+  onEditManualSession?: (session: SessionLog) => void;
 }
 
 interface GroupedSessions {
@@ -141,6 +143,22 @@ function formatSetWeight(set: SetLog): string {
   return weightText === '-' ? '-' : `${weightText} kg.`;
 }
 
+const MANUAL_ENTRY_MARKER = 'MANUAL_ENTRY';
+const MANUAL_ENTRY_DISPLAY = 'Séance insérée manuellement';
+
+function isManualSession(session: SessionLog): boolean {
+  // Supporter l'ancien et le nouveau format
+  return session.comments === MANUAL_ENTRY_MARKER || session.comments === 'manual_entry';
+}
+
+// Pour afficher le texte dans l'UI
+function getSessionCommentDisplay(session: SessionLog): string | null {
+  if (isManualSession(session)) {
+    return MANUAL_ENTRY_DISPLAY;
+  }
+  return session.comments || null;
+}
+
 function groupSessionsByPeriod(sessions: SessionLog[]): GroupedSessions[] {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -199,7 +217,8 @@ function groupSessionsByPeriod(sessions: SessionLog[]): GroupedSessions[] {
 export const HistoryAthlete: React.FC<Props> = ({
   history,
   onEdit,
-  onDelete
+  onDelete,
+  onEditManualSession
 }) => {
   // ===========================================
   // STATE
@@ -207,6 +226,9 @@ export const HistoryAthlete: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [tempDateBySessionId, setTempDateBySessionId] = useState<Record<string, string>>({});
+  const [expandedExercises, setExpandedExercises] = useState<Record<string, Set<number>>>({});
   
   // ===========================================
   // COMPUTED VALUES
@@ -264,6 +286,52 @@ export const HistoryAthlete: React.FC<Props> = ({
     setExpandedSession(prev => prev === sessionId ? null : sessionId);
   }, []);
   
+  const toggleExerciseExpand = useCallback((sessionId: string, index: number) => {
+    setExpandedExercises(prev => {
+      const current = new Set(prev[sessionId] || []);
+      if (current.has(index)) {
+        current.delete(index);
+      } else {
+        current.add(index);
+      }
+      return { ...prev, [sessionId]: current };
+    });
+  }, []);
+  
+  const toInputDateValue = (iso: string): string => {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  
+  const handleStartEditDate = useCallback((session: SessionLog) => {
+    setEditingDateId(session.id);
+    setTempDateBySessionId(prev => ({
+      ...prev,
+      [session.id]: toInputDateValue(session.date)
+    }));
+  }, []);
+  
+  const handleDateChange = useCallback((sessionId: string, value: string) => {
+    setTempDateBySessionId(prev => ({ ...prev, [sessionId]: value }));
+  }, []);
+  
+  const handleSaveDate = useCallback((session: SessionLog) => {
+    const value = tempDateBySessionId[session.id];
+    if (!value) {
+      setEditingDateId(null);
+      return;
+    }
+    const [yy, mm, dd] = value.split('-').map(v => parseInt(v, 10));
+    const newDate = new Date(yy, mm - 1, dd, 12, 0, 0).toISOString();
+    if (onEdit) {
+      onEdit({ ...session, date: newDate });
+    }
+    setEditingDateId(null);
+  }, [tempDateBySessionId, onEdit]);
+  
   const handleDelete = useCallback((sessionId: string) => {
     if (onDelete) {
       onDelete(sessionId);
@@ -279,6 +347,7 @@ export const HistoryAthlete: React.FC<Props> = ({
     const dateInfo = formatDate(session.date);
     const isExpanded = expandedSession === session.id;
     const completionRate = getCompletionRate(session.exercises);
+    const isManual = isManualSession(session);
     
     return (
       <Card key={session.id} variant="default" className="overflow-hidden">
@@ -303,6 +372,40 @@ export const HistoryAthlete: React.FC<Props> = ({
               <h3 className="font-medium text-white truncate">
                 {session.sessionKey.seance.replace(/\+/g, ' + ')}
               </h3>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="date"
+                  value={tempDateBySessionId[session.id] ?? toInputDateValue(session.date)}
+                  onChange={(e) => handleDateChange(session.id, e.target.value)}
+                  disabled={editingDateId !== session.id ? true : false}
+                  className={`bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white ${editingDateId === session.id ? 'focus:outline-none focus:ring-2 focus:ring-blue-500' : 'opacity-60 cursor-not-allowed'}`}
+                />
+                {editingDateId === session.id ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSaveDate(session);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs hover:bg-blue-500"
+                    title="Enregistrer la date"
+                    type="button"
+                  >
+                    Enregistrer
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEditDate(session);
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                    title="Modifier la date"
+                    type="button"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-sm text-slate-400 flex items-center gap-1">
                   <Dumbbell className="w-3 h-3" />
@@ -317,6 +420,12 @@ export const HistoryAthlete: React.FC<Props> = ({
             
             {/* Right Side */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Icône Import pour séances manuelles */}
+              {isManual && (
+                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center" title="Séance importée manuellement">
+                  <Download className="w-4 h-4 text-blue-400" />
+                </div>
+              )}
               {session.sessionRpe && (
                 <RpeBadge rpe={session.sessionRpe} size="md" />
               )}
@@ -327,15 +436,19 @@ export const HistoryAthlete: React.FC<Props> = ({
               )}
             </div>
           </div>
-          
-          {/* Completion Bar */}
+
+          {/* Completion Bar - masquée pour séances manuelles, remplacée par indication */}
           <div className="px-3 pb-3">
-            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all"
-                style={{ width: `${completionRate}%` }}
-              />
-            </div>
+            {isManual ? (
+              <div className="h-1.5 bg-blue-500/30 rounded-full" />
+            ) : (
+              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all"
+                  style={{ width: `${completionRate}%` }}
+                />
+              </div>
+            )}
           </div>
         </button>
         
@@ -347,48 +460,61 @@ export const HistoryAthlete: React.FC<Props> = ({
               {session.exercises.map((exercise, index) => {
                 const completedSets = exercise.sets.filter(s => s.completed);
                 const lastSet = completedSets[completedSets.length - 1];
+                const isExExpanded = expandedExercises[session.id]?.has(index) || false;
                 
                 return (
-                  <div key={index} className="bg-slate-800/50 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-white text-sm">
+                  <button
+                    key={index}
+                    className="w-full text-left bg-slate-800/50 rounded-lg p-3"
+                    onClick={() => toggleExerciseExpand(session.id, index)}
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-white text-sm truncate">
                         {exercise.exerciseName}
                       </h4>
-                      {exercise.rpe && <RpeBadge rpe={exercise.rpe} size="sm" />}
+                      <span className="text-sm text-slate-300">
+                        {typeof exercise.rpe === 'number' ? `RPE ${exercise.rpe}` : 'RPE -'}
+                      </span>
                     </div>
-                    
-                    {/* Sets Summary */}
-                    <div className="space-y-1">
-                      {exercise.sets.map((set, setIndex) => (
-                        <div 
-                          key={setIndex}
-                          className={`flex items-center justify-between text-sm ${
-                            set.completed ? 'text-slate-300' : 'text-slate-500'
-                          }`}
-                        >
-                          <span>Série {set.setNumber}</span>
-                          <span className="text-right">
-                            {set.reps || '-'} × {formatSetWeight(set)}
-                            {set.completed && (
-                              <span className="ml-2 text-emerald-400">✓</span>
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                    {isExExpanded && (
+                      <div className="mt-2 space-y-1">
+                        {exercise.sets.map((set, setIndex) => (
+                          <div 
+                            key={setIndex}
+                            className={`flex items-center justify-between text-sm ${
+                              set.completed ? 'text-slate-300' : 'text-slate-500'
+                            }`}
+                          >
+                            <span>Série {set.setNumber}</span>
+                            <span className="text-right">
+                              {set.reps || '-'} × {formatSetWeight(set)}
+                              {set.completed && (
+                                <span className="ml-2 text-emerald-400">✓</span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </button>
                 );
               })}
             </div>
             
             {/* Actions */}
-            {(onEdit || onDelete) && (
+            {(onEdit || onDelete || onEditManualSession) && (
               <div className="px-3 pb-3 flex gap-2">
-                {onEdit && (
+                {/* Bouton Modifier: utilise onEditManualSession pour les séances manuelles, sinon onEdit */}
+                {(isManual ? onEditManualSession : onEdit) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onEdit(session);
+                      if (isManual && onEditManualSession) {
+                        onEditManualSession(session);
+                      } else if (onEdit) {
+                        onEdit(session);
+                      }
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm transition-colors"
                   >
