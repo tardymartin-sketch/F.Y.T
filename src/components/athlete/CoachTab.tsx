@@ -41,6 +41,7 @@ interface Props {
   className?: string;
   initialExerciseName?: string | null;
   onClearInitialExercise?: () => void;
+  initialMessageId?: string; // ID du message Week Organizer à afficher
 }
 
 // ===========================================
@@ -113,7 +114,8 @@ export const CoachTab: React.FC<Props> = ({
   isLoading = false,
   className = '',
   initialExerciseName,
-  onClearInitialExercise
+  onClearInitialExercise,
+  initialMessageId
 }) => {
   // V3: Thread actif avec persistance via store singleton
   const [activeThread, setActiveThread] = useSubScreenWithValidation<Conversation>(
@@ -244,7 +246,10 @@ export const CoachTab: React.FC<Props> = ({
   return (
     <div className={`space-y-6 ${className}`}>
       {/* Coach Messages Carousel */}
-      <CoachMessagesCarousel messages={weekOrganizerMessages} />
+      <CoachMessagesCarousel
+        messages={weekOrganizerMessages}
+        initialMessageId={initialMessageId}
+      />
 
       {/* Conversations List */}
       <ConversationsList

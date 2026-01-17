@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(for file in src/components/*.tsx)",
+      "Bash(done)",
+      "Bash(for comp in AthleteGroupsManager HistoryKPICard RichTextEditor SessionView StravaActivityCharts StravaActivityMap StravaHistoryCard TeamViewRpeSection VisibilitySelector ConversationThread)",
+      "Bash(do echo \"=== $comp ===\" grep -r \"$comp\" src App.tsx --include=\"*.tsx\" --include=\"*.ts\")"
     ]
   }
 }

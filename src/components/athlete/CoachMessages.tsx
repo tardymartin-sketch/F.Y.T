@@ -4,7 +4,7 @@
 // Vue dédiée aux messages du coach et commentaires de l'athlète
 // ============================================================
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { WeekOrganizerLog, AthleteComment } from '../../../types';
 import { Card, CardContent } from '../shared/Card';
 import {
@@ -28,6 +28,7 @@ interface Props {
   activeMessages: WeekOrganizerLog[];
   pastMessages: WeekOrganizerLog[];
   athleteComments: AthleteComment[];
+  initialMessageId?: string; // ID du message à ouvrir automatiquement
 }
 
 // ===========================================
@@ -84,14 +85,16 @@ function getRelativeDate(dateString: string): string {
 export const CoachMessages: React.FC<Props> = ({
   activeMessages,
   pastMessages,
-  athleteComments
+  athleteComments,
+  initialMessageId
 }) => {
   // Debug log
   console.log('[CoachMessages] Props reçues:', {
     activeMessages: activeMessages.length,
     pastMessages: pastMessages.length,
     athleteComments: athleteComments.length,
-    commentsDetail: athleteComments
+    commentsDetail: athleteComments,
+    initialMessageId
   });
 
   // ===========================================
@@ -100,11 +103,28 @@ export const CoachMessages: React.FC<Props> = ({
   const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
   const [expandedPastMessage, setExpandedPastMessage] = useState<string | null>(null);
   const [showFullMessage, setShowFullMessage] = useState<WeekOrganizerLog | null>(null);
-  
+
+  // ===========================================
+  // EFFECTS
+  // ===========================================
+
+  // Ouvrir automatiquement le message si initialMessageId est fourni
+  useEffect(() => {
+    if (initialMessageId) {
+      // Chercher dans les messages actifs et passés
+      const allMessages = [...activeMessages, ...pastMessages];
+      const targetMessage = allMessages.find(msg => msg.id === initialMessageId);
+
+      if (targetMessage) {
+        setShowFullMessage(targetMessage);
+      }
+    }
+  }, [initialMessageId, activeMessages, pastMessages]);
+
   // ===========================================
   // HANDLERS
   // ===========================================
-  
+
   const togglePastMessage = useCallback((messageId: string) => {
     setExpandedPastMessage(prev => prev === messageId ? null : messageId);
   }, []);

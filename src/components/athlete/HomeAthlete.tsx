@@ -15,6 +15,8 @@ import {
 import { Card, CardContent } from '../shared/Card';
 import { EncouragementKPI } from '../EncouragementKPI';
 import { SessionPreviewModal } from '../SessionPreviewModal';
+import { CoachMessagesCarousel } from './CoachMessagesCarousel';
+import { SessionBadgesGrid } from './SessionBadgesGrid';
 import {
   Play,
   Clock,
@@ -44,6 +46,7 @@ interface Props {
   onResumeSession?: () => void;
   hasActiveSession?: boolean;
   onSelectSession?: () => void;
+  onViewCoachMessages?: (messageId?: string) => void;
 }
 
 interface SessionChip {
@@ -158,6 +161,10 @@ function getFirstName(user: User): string {
 // COMPONENT
 // ===========================================
 
+const ENCOURAGEMENT_DISMISSED_KEY = 'fyt_encouragement_dismissed';
+const ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY = 'fyt_encouragement_dismissed_timestamp';
+const ONE_HOUR_MS = 60 * 60 * 1000; // 1 heure en millisecondes
+
 export const HomeAthlete: React.FC<Props> = ({
   user,
   trainingData,
@@ -167,6 +174,7 @@ export const HomeAthlete: React.FC<Props> = ({
   onResumeSession,
   hasActiveSession = false,
   onSelectSession,
+  onViewCoachMessages,
 }) => {
   // ===========================================
   // STATE
@@ -175,6 +183,28 @@ export const HomeAthlete: React.FC<Props> = ({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
+  // State pour fermeture message d'encouragement
+  // Réapparaît à chaque nouvelle session OU après 1h d'inactivité
+  const [showEncouragement, setShowEncouragement] = useState(() => {
+    const dismissedTimestamp = localStorage.getItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY);
+
+    if (!dismissedTimestamp) {
+      // Jamais fermé → afficher
+      return true;
+    }
+
+    const timeSinceDismiss = Date.now() - parseInt(dismissedTimestamp, 10);
+
+    if (timeSinceDismiss >= ONE_HOUR_MS) {
+      // Plus d'1h écoulée → réafficher et réinitialiser
+      localStorage.removeItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY);
+      return true;
+    }
+
+    // Moins d'1h écoulée → ne pas afficher
+    return false;
+  });
+
   // Filtres avancés
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState<string | null>(null);
@@ -182,8 +212,43 @@ export const HomeAthlete: React.FC<Props> = ({
   const [filterSessions, setFilterSessions] = useState<Set<string>>(new Set());
 
   // ===========================================
+  // COMPUTED: Selection Order (dynamique)
+  // ===========================================
+
+  // Calcul dynamique des numéros d'ordre basés sur l'ordre de sélection
+  const sessionSelectionOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    let index = 1;
+    selectedSessions.forEach(sessionName => {
+      order.set(sessionName, index);
+      index++;
+    });
+    return order;
+  }, [selectedSessions]);
+
+  const filterSelectionOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    let index = 1;
+    filterSessions.forEach(sessionName => {
+      order.set(sessionName, index);
+      index++;
+    });
+    return order;
+  }, [filterSessions]);
+
+  // ===========================================
   // COMPUTED: Week Info & Session Chips (Vue suggérée)
   // ===========================================
+
+  // DEBUG: Afficher l'historique pour voir le format des sessionName
+  console.log('[HomeAthlete] Historique des séances:', {
+    historyCount: history.length,
+    lastLogs: history.slice(-5).map(log => ({
+      sessionName: log.sessionName,
+      date: log.completedAt,
+      seance: log.sessionKey?.seance
+    }))
+  });
 
   const { weekInfo, sessionChips, suggestedSessionName } = useMemo(() => {
     if (trainingData.length === 0) {
@@ -227,30 +292,35 @@ export const HomeAthlete: React.FC<Props> = ({
       year: firstRow.annee,
     };
 
-    const sessionTypes = [...new Set(targetWeekData.map(d => d.seance))];
-
-    const completedThisWeek = new Map<string, string>();
-    history.forEach(log => {
-      const logDate = new Date(log.date);
-      if (logDate >= weekStart && logDate <= weekEnd) {
-        completedThisWeek.set(log.sessionKey.seance, log.date);
+    // DEBUG: Vérifier les dates de weekInfo
+    console.log('[HomeAthlete] weekInfo créé:', {
+      weekNumber: info.weekNumber,
+      startDate: info.startDate,
+      endDate: info.endDate,
+      year: info.year,
+      firstRowData: {
+        semaine: firstRow.semaine,
+        weekStartDate: firstRow.weekStartDate,
+        weekEndDate: firstRow.weekEndDate
       }
     });
+
+    const sessionTypes = [...new Set(targetWeekData.map(d => d.seance))];
+
+    // NOTE: On met isCompleted à false ici car l'ancienne détection ne gère pas les séances combinées
+    // SessionBadgesGrid recalculera isCompleted avec la logique qui parse "Séance 1 + Séance 2"
 
     const chips: SessionChip[] = sessionTypes.map(sessionType => {
       const exercises = targetWeekData
         .filter(d => d.seance === sessionType)
         .sort((a, b) => a.ordre - b.ordre);
 
-      const completedDate = completedThisWeek.get(sessionType);
-
       return {
         name: sessionType,
         exercises,
         exerciseCount: exercises.length,
         estimatedDuration: estimateSessionDuration(exercises),
-        isCompleted: !!completedDate,
-        completedDate,
+        isCompleted: false, // Sera recalculé par SessionBadgesGrid avec parsing des séances combinées
         isSuggested: false,
       };
     });
@@ -289,7 +359,10 @@ export const HomeAthlete: React.FC<Props> = ({
       }
     });
     const months = Array.from(monthsSet.entries())
-      .map(([num, name]) => ({ num, name }))
+      .map(([num, name]) => ({
+        num,
+        name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+      }))
       .sort((a, b) => parseInt(a.num) - parseInt(b.num));
 
     // Filtrer par mois si sélectionné
@@ -350,16 +423,26 @@ export const HomeAthlete: React.FC<Props> = ({
     return 'Séance';
   }, [filterSessions]);
 
+  // Dates de la semaine filtrée (pour détecter les séances complétées)
+  const filteredWeekDates = useMemo(() => {
+    if (!filterWeek) return { startDate: undefined, endDate: undefined };
+
+    // Trouver les données de la semaine filtrée
+    const weekData = trainingData.find(d =>
+      d.semaine === filterWeek &&
+      (!filterYear || d.annee === filterYear) &&
+      (!filterMonth || d.moisNum === filterMonth)
+    );
+
+    return {
+      startDate: weekData?.weekStartDate,
+      endDate: weekData?.weekEndDate
+    };
+  }, [filterWeek, filterYear, filterMonth, trainingData]);
+
   // ===========================================
   // EFFECTS
   // ===========================================
-
-  // Auto-sélectionner la séance suggérée au chargement
-  useEffect(() => {
-    if (suggestedSessionName && selectedSessions.size === 0 && !showAdvancedFilters) {
-      setSelectedSessions(new Set([suggestedSessionName]));
-    }
-  }, [suggestedSessionName, showAdvancedFilters]);
 
   // Pré-remplir les filtres avec la date du jour lors de l'ouverture
   useEffect(() => {
@@ -428,6 +511,17 @@ export const HomeAthlete: React.FC<Props> = ({
     });
   }, []);
 
+  const handleDismissEncouragement = useCallback(() => {
+    setShowEncouragement(false);
+    // Stocker le timestamp de fermeture dans localStorage
+    localStorage.setItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY, Date.now().toString());
+  }, []);
+
+  const handleClickWeekOrganizer = useCallback((message: WeekOrganizerLog) => {
+    // Passer l'ID du message cliqué pour l'ouvrir automatiquement
+    onViewCoachMessages?.(message.id);
+  }, [onViewCoachMessages]);
+
   const handleStartSelectedSessions = useCallback(() => {
     if (selectedSessions.size === 0) return;
 
@@ -479,20 +573,6 @@ export const HomeAthlete: React.FC<Props> = ({
     });
   }, []);
 
-  const handleQuickStart = useCallback((sessionName: string) => {
-    let filtered = trainingData;
-    if (filterYear) filtered = filtered.filter(d => d.annee === filterYear);
-    if (filterMonth) filtered = filtered.filter(d => d.moisNum === filterMonth);
-    if (filterWeek) filtered = filtered.filter(d => d.semaine === filterWeek);
-    
-    filtered = filtered.filter(d => d.seance === sessionName);
-    filtered = filtered.sort((a, b) => a.ordre - b.ordre);
-    
-    if (filtered.length > 0) {
-      onStartSession(filtered);
-    }
-  }, [trainingData, filterYear, filterMonth, filterWeek, onStartSession]);
-
   // ===========================================
   // COMPUTED: Selected Stats
   // ===========================================
@@ -530,15 +610,355 @@ export const HomeAthlete: React.FC<Props> = ({
   }, [selectedSessions, sessionChips]);
 
   // ===========================================
-  // RENDER: Vue Suggérée (par défaut)
+  // RENDER: Card Sélection (Vue suggérée)
   // ===========================================
 
-  const renderSuggestedView = () => (
-    <>
-      {/* KPI Encouragement */}
-      <EncouragementKPI history={history} />
+  const renderSuggestedCard = () => {
+    if (sessionChips.length === 0) {
+      // Aucun programme
+      return (
+        <Card variant="default" className="p-6">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-slate-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-white mb-2">
+              Aucune séance programmée
+            </h2>
+            <p className="text-slate-400 text-sm mb-4">
+              Ton programme n'est pas encore configuré
+            </p>
+            <button
+              onClick={handleToggleAdvancedFilters}
+              className="text-blue-400 text-sm font-medium hover:text-blue-300"
+            >
+              Voir toutes les séances →
+            </button>
+          </div>
+        </Card>
+      );
+    }
 
-      {/* Carte Session Active (si en cours) */}
+    return (
+      <Card variant="gradient" className="overflow-hidden">
+        <CardContent className="p-0">
+          {/* Header avec infos semaine */}
+          <div className="bg-gradient-to-r from-blue-600/20 to-emerald-600/20 px-4 py-3 border-b border-slate-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-medium text-slate-300">
+                  Semaine {weekInfo?.weekNumber}
+                </span>
+                {weekInfo?.startDate && weekInfo?.endDate && (
+                  <span className="text-sm font-medium text-slate-300">
+                    • {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Chips de sélection */}
+          <div className="p-4">
+            <p className="text-sm text-slate-400 mb-3">
+              Sélectionne une ou plusieurs séances :
+            </p>
+
+            {/* DEBUG: Props passées à SessionBadgesGrid (vue suggérée) */}
+            {console.log('[HomeAthlete] Props SessionBadgesGrid (vue suggérée):', {
+              sessionsCount: sessionChips.length,
+              showCompletionStatus: true,
+              hasHistory: !!history,
+              historyCount: history.length,
+              weekStartDate: weekInfo?.startDate,
+              weekEndDate: weekInfo?.endDate,
+              weekInfo
+            })}
+
+            <SessionBadgesGrid
+              sessions={sessionChips}
+              selectedSessions={selectedSessions}
+              selectionOrder={sessionSelectionOrder}
+              onToggle={toggleSessionChip}
+              showCompletionStatus={true}
+              showSuggestedIndicator={true}
+              maxVisibleItems={9}
+              className="mb-4"
+              history={history}
+              weekStartDate={weekInfo?.startDate}
+              weekEndDate={weekInfo?.endDate}
+            />
+
+            {/* Stats des séances sélectionnées */}
+            {selectedSessions.size > 0 && (
+              <div className="flex items-center justify-between gap-4 text-sm text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1">
+                    <Dumbbell className="w-4 h-4" />
+                    {selectedStats.totalExercises} exercices
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Bouton Démarrer */}
+            <button
+              onClick={handleStartSelectedSessions}
+              disabled={selectedSessions.size === 0}
+              className={`
+                w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+                ${selectedSessions.size > 0
+                  ? 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-blue-600/25'
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }
+              `}
+            >
+              <Play className="w-5 h-5 fill-current" />
+              <span>
+                {selectedSessions.size === 0
+                  ? 'Sélectionne une séance'
+                  : 'Voir ma séance'
+                }
+              </span>
+            </button>
+
+            {/* Bouton Choisir ma séance */}
+            <button
+              onClick={handleToggleAdvancedFilters}
+              className="w-full mt-3 flex items-center justify-center gap-2 text-sm text-slate-400 hover:text-white transition-colors py-3 rounded-xl border border-slate-700/50 hover:border-slate-600/50"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Choisir ma séance
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ===========================================
+  // RENDER: Card Filtres Avancés
+  // ===========================================
+
+  const renderAdvancedFiltersCard = () => (
+    <Card variant="gradient" className="overflow-hidden">
+      <CardContent className="p-0">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600/20 to-emerald-600/20 px-4 py-3 border-b border-slate-700/50">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-slate-300">
+              Choisir ma séance
+            </span>
+          </div>
+        </div>
+
+        {/* Filtres */}
+        <div className="p-4 space-y-4">
+          {/* Année */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Année</label>
+            <div className="relative">
+              <select
+                value={filterYear || ''}
+                onChange={(e) => setFilterYear(e.target.value || null)}
+                className="
+                  w-full bg-slate-800 border border-slate-700 rounded-xl
+                  px-4 py-3 text-white appearance-none cursor-pointer
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                "
+              >
+                <option value="">Toutes les années</option>
+                {filterOptions.years.map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Mois */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Mois</label>
+            <div className="relative">
+              <select
+                value={filterMonth || ''}
+                onChange={(e) => setFilterMonth(e.target.value || null)}
+                disabled={!filterYear}
+                className="
+                  w-full bg-slate-800 border border-slate-700 rounded-xl
+                  px-4 py-3 text-white appearance-none cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                "
+              >
+                <option value="">Tous les mois</option>
+                {filterOptions.months.map(month => (
+                  <option key={month.num} value={month.num}>{month.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Semaine */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Semaine</label>
+            <div className="relative">
+              <select
+                value={filterWeek || ''}
+                onChange={(e) => setFilterWeek(e.target.value || null)}
+                disabled={!filterMonth}
+                className="
+                  w-full bg-slate-800 border border-slate-700 rounded-xl
+                  px-4 py-3 text-white appearance-none cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                "
+              >
+                <option value="">Toutes les semaines</option>
+                {filterOptions.weeks.map(week => (
+                  <option key={week} value={week}>Semaine {week}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Séance */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Séance</label>
+            {!filterWeek ? (
+              <div className="text-sm text-slate-500 italic">
+                Sélectionne une semaine d'abord
+              </div>
+            ) : filterOptions.sessions.length > 0 ? (
+              <>
+                {/* DEBUG: Props passées à SessionBadgesGrid (vue filtres) */}
+                {console.log('[HomeAthlete] Props SessionBadgesGrid (vue filtres):', {
+                  sessionsCount: filterOptions.sessions.length,
+                  sessions: filterOptions.sessions,
+                  showCompletionStatus: true,
+                  hasHistory: !!history,
+                  historyCount: history.length,
+                  weekStartDate: filteredWeekDates.startDate,
+                  weekEndDate: filteredWeekDates.endDate,
+                  filterWeek,
+                  filterYear,
+                  filterMonth
+                })}
+
+                <SessionBadgesGrid
+                  key={filterWeek || 'no-week'}
+                  sessions={filterOptions.sessions}
+                  selectedSessions={filterSessions}
+                  selectionOrder={filterSelectionOrder}
+                  onToggle={toggleFilterSession}
+                  showCompletionStatus={true}
+                  showSuggestedIndicator={false}
+                  maxVisibleItems={9}
+                  history={history}
+                  weekStartDate={filteredWeekDates.startDate}
+                  weekEndDate={filteredWeekDates.endDate}
+                />
+              </>
+            ) : (
+              <div className="text-sm text-slate-500 italic">
+                Aucune séance disponible pour cette semaine
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Preview de la séance filtrée - Seulement si au moins une séance sélectionnée */}
+        {filterSessions.size > 0 && filteredExercises.length > 0 && (
+          <div className="px-4 pb-4">
+            <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-white">
+                  {filteredSessionName}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {filteredExercises.length} exercices • {formatDuration(estimateSessionDuration(filteredExercises))}
+                </span>
+              </div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {filteredExercises.slice(0, 5).map((ex, i) => (
+                  <div key={`${ex.id}-${i}`} className="flex items-center gap-2 text-xs text-slate-400">
+                    <span className="text-slate-500">#{ex.ordre}</span>
+                    <span className="truncate">{ex.exercice}</span>
+                    {ex.series && ex.repsDuree && (
+                      <span className="text-slate-500 ml-auto">{ex.series}×{ex.repsDuree}</span>
+                    )}
+                  </div>
+                ))}
+                {filteredExercises.length > 5 && (
+                  <p className="text-xs text-slate-500 italic">
+                    + {filteredExercises.length - 5} autres exercices...
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="p-4 pt-0 space-y-3">
+          {/* Bouton Démarrer */}
+          <button
+            onClick={handleStartFilteredSession}
+            disabled={filteredExercises.length === 0}
+            className={`
+              w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+              ${filteredExercises.length > 0
+                ? 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-blue-600/25'
+                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }
+            `}
+          >
+            <Play className="w-5 h-5 fill-current" />
+            <span>Démarrer</span>
+          </button>
+
+          {/* Bouton Retour */}
+          <button
+            onClick={handleToggleAdvancedFilters}
+            className="w-full flex items-center justify-center gap-2 text-sm text-slate-400 hover:text-white transition-colors py-3"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Retour séance suggérée
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // ===========================================
+  // MAIN RENDER
+  // ===========================================
+
+  return (
+    <div className="space-y-4 pb-4">
+      {/* Header - Salutation */}
+      <div className="pt-2">
+        <h1 className="text-2xl font-bold text-white">
+          {greeting.text} <span className="ml-1">{greeting.emoji}</span>
+        </h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Prêt à repousser tes limites ?
+        </p>
+      </div>
+
+      {/* Zone FIXE - KPI encouragement */}
+      {showEncouragement && (
+        <EncouragementKPI
+          history={history}
+          onDismiss={handleDismissEncouragement}
+        />
+      )}
+
+      {/* Zone FIXE - Session active */}
       {hasActiveSession && onResumeSession && (
         <button
           onClick={onResumeSession}
@@ -559,375 +979,38 @@ export const HomeAthlete: React.FC<Props> = ({
         </button>
       )}
 
-      {/* Carte Sélection de Séances */}
+      {/* Zone FIXE - Messages coach */}
+      {activeWeekOrganizers.length > 0 && (
+        <CoachMessagesCarousel
+          messages={activeWeekOrganizers}
+          variant="compact"
+          onMessageClick={handleClickWeekOrganizer}
+          maxContentLines={2}
+          className="mb-4"
+        />
+      )}
+
+      {/* Zone FIXE - Titre */}
+      {!hasActiveSession && (
+        <h2 className="text-xl font-bold text-white mb-4">
+          Compose ta séance :
+        </h2>
+      )}
+
+      {/* Zone VARIABLE - Cards (les deux existent, une seule visible) */}
       {!hasActiveSession && (
         <>
-          {sessionChips.length > 0 ? (
-            <Card variant="gradient" className="overflow-hidden">
-              <CardContent className="p-0">
-                {/* Header avec infos semaine */}
-                <div className="bg-gradient-to-r from-blue-600/20 to-emerald-600/20 px-4 py-3 border-b border-slate-700/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm font-medium text-slate-300">
-                        Semaine {weekInfo?.weekNumber}
-                      </span>
-                      {weekInfo?.startDate && weekInfo?.endDate && (
-                        <span className="text-sm font-medium text-slate-300">
-                          • {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          {/* Card de sélection - cachée si filtres actifs */}
+          <div className={showAdvancedFilters ? 'hidden' : 'block'}>
+            {renderSuggestedCard()}
+          </div>
 
-                {/* Chips de sélection */}
-                <div className="p-4">
-                  <p className="text-sm text-slate-400 mb-3">
-                    Sélectionne une ou plusieurs séances :
-                  </p>
-
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {sessionChips.map(chip => {
-                      const isSelected = selectedSessions.has(chip.name);
-
-                      return (
-                        <button
-                          key={chip.name}
-                          onClick={() => toggleSessionChip(chip.name)}
-                          className={`
-                            relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all
-                            ${isSelected
-                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
-                              : chip.isCompleted
-                                ? 'bg-slate-800/50 text-slate-500 line-through hover:bg-slate-700/50'
-                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                            }
-                          `}
-                        >
-                          {isSelected && !chip.isCompleted && (
-                            <Check className="w-4 h-4" />
-                          )}
-                          {chip.isCompleted && (
-                            <CheckCircle2 className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-emerald-500'}`} />
-                          )}
-
-                          <span>{chip.name}</span>
-
-                          {chip.isSuggested && !chip.isCompleted && (
-                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Stats des séances sélectionnées */}
-                  {selectedSessions.size > 0 && (
-                    <div className="flex items-center justify-between gap-4 text-sm text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
-                      <div className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <Dumbbell className="w-4 h-4" />
-                          {selectedStats.totalExercises} exercices
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Bouton Démarrer */}
-                  <button
-                    onClick={handleStartSelectedSessions}
-                    disabled={selectedSessions.size === 0}
-                    className={`
-                      w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
-                      ${selectedSessions.size > 0
-                        ? 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-blue-600/25'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                      }
-                    `}
-                  >
-                    <Play className="w-5 h-5 fill-current" />
-                    <span>
-                      {selectedSessions.size === 0
-                        ? 'Sélectionne une séance'
-                        : 'Voir ma séance'
-                      }
-                    </span>
-                  </button>
-
-                  {/* Bouton Choisir ma séance */}
-                  <button
-                    onClick={handleToggleAdvancedFilters}
-                    className="w-full mt-3 flex items-center justify-center gap-2 text-sm text-slate-400 hover:text-white transition-colors py-3 rounded-xl border border-slate-700/50 hover:border-slate-600/50"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Choisir ma séance
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            /* Aucun programme */
-            <Card variant="default" className="p-6">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-slate-500" />
-                </div>
-                <h2 className="text-lg font-semibold text-white mb-2">
-                  Aucune séance programmée
-                </h2>
-                <p className="text-slate-400 text-sm mb-4">
-                  Ton programme n'est pas encore configuré
-                </p>
-                <button
-                  onClick={handleToggleAdvancedFilters}
-                  className="text-blue-400 text-sm font-medium hover:text-blue-300"
-                >
-                  Voir toutes les séances →
-                </button>
-              </div>
-            </Card>
-          )}
+          {/* Card de filtres - cachée si filtres inactifs */}
+          <div className={showAdvancedFilters ? 'block' : 'hidden'}>
+            {renderAdvancedFiltersCard()}
+          </div>
         </>
       )}
-    </>
-  );
-
-  // ===========================================
-  // RENDER: Vue Filtres Avancés (ATH-NEW-002)
-  // ===========================================
-
-  const renderAdvancedFiltersView = () => (
-    <>
-      {/* KPI Encouragement (même en vue filtres) */}
-      <EncouragementKPI history={history} />
-
-      {/* Carte Filtres */}
-      <Card variant="gradient" className="overflow-hidden">
-        <CardContent className="p-0">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600/20 to-emerald-600/20 px-4 py-3 border-b border-slate-700/50">
-            <div className="flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-blue-400" />
-              <span className="text-sm font-medium text-slate-300">
-                Choisir ma séance
-              </span>
-            </div>
-          </div>
-
-          {/* Filtres */}
-          <div className="p-4 space-y-4">
-            {/* Année */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Année</label>
-              <div className="relative">
-                <select
-                  value={filterYear || ''}
-                  onChange={(e) => setFilterYear(e.target.value || null)}
-                  className="
-                    w-full bg-slate-800 border border-slate-700 rounded-xl
-                    px-4 py-3 text-white appearance-none cursor-pointer
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                  "
-                >
-                  <option value="">Toutes les années</option>
-                  {filterOptions.years.map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Mois */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Mois</label>
-              <div className="relative">
-                <select
-                  value={filterMonth || ''}
-                  onChange={(e) => setFilterMonth(e.target.value || null)}
-                  disabled={!filterYear}
-                  className="
-                    w-full bg-slate-800 border border-slate-700 rounded-xl
-                    px-4 py-3 text-white appearance-none cursor-pointer
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                  "
-                >
-                  <option value="">Tous les mois</option>
-                  {filterOptions.months.map(month => (
-                    <option key={month.num} value={month.num}>{month.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Semaine */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Semaine</label>
-              <div className="relative">
-                <select
-                  value={filterWeek || ''}
-                  onChange={(e) => setFilterWeek(e.target.value || null)}
-                  disabled={!filterMonth}
-                  className="
-                    w-full bg-slate-800 border border-slate-700 rounded-xl
-                    px-4 py-3 text-white appearance-none cursor-pointer
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                  "
-                >
-                  <option value="">Toutes les semaines</option>
-                  {filterOptions.weeks.map(week => (
-                    <option key={week} value={week}>Semaine {week}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Séance */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Séance</label>
-              <div className="flex flex-wrap gap-2">
-                {filterOptions.sessions.map(session => {
-                  const isSelected = filterSessions.has(session);
-                  return (
-                    <div
-                      key={session}
-                      className={`
-                        flex items-center rounded-xl border transition-all overflow-hidden
-                        ${isSelected
-                          ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-600/25'
-                          : 'bg-slate-800 border-slate-700 hover:border-slate-600'
-                        }
-                      `}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleFilterSession(session)}
-                        className={`
-                          px-3 py-2 text-sm font-medium
-                          ${isSelected ? 'text-white' : 'text-slate-300'}
-                        `}
-                      >
-                        {session}
-                      </button>
-                      <div className={`w-px h-4 ${isSelected ? 'bg-blue-500' : 'bg-slate-700'}`} />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickStart(session);
-                        }}
-                        className={`
-                          px-2 py-2 transition-colors
-                          ${isSelected 
-                            ? 'text-blue-200 hover:text-white hover:bg-blue-500' 
-                            : 'text-slate-500 hover:text-white hover:bg-slate-700'
-                          }
-                        `}
-                        title="Démarrer directement cette séance"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    </div>
-                  );
-                })}
-                {filterOptions.sessions.length === 0 && filterWeek && (
-                  <span className="text-sm text-slate-500 italic">Aucune séance disponible</span>
-                )}
-                {!filterWeek && (
-                   <span className="text-sm text-slate-500 italic">Sélectionne une semaine d'abord</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Preview de la séance filtrée - Seulement si au moins une séance sélectionnée */}
-          {filterSessions.size > 0 && filteredExercises.length > 0 && (
-            <div className="px-4 pb-4">
-              <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-white">
-                    {filteredSessionName}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {filteredExercises.length} exercices • {formatDuration(estimateSessionDuration(filteredExercises))}
-                  </span>
-                </div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {filteredExercises.slice(0, 5).map((ex, i) => (
-                    <div key={`${ex.id}-${i}`} className="flex items-center gap-2 text-xs text-slate-400">
-                      <span className="text-slate-500">#{ex.ordre}</span>
-                      <span className="truncate">{ex.exercice}</span>
-                      {ex.series && ex.repsDuree && (
-                        <span className="text-slate-500 ml-auto">{ex.series}×{ex.repsDuree}</span>
-                      )}
-                    </div>
-                  ))}
-                  {filteredExercises.length > 5 && (
-                    <p className="text-xs text-slate-500 italic">
-                      + {filteredExercises.length - 5} autres exercices...
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="p-4 pt-0 space-y-3">
-            {/* Bouton Démarrer */}
-            <button
-              onClick={handleStartFilteredSession}
-              disabled={filteredExercises.length === 0}
-              className={`
-                w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
-                ${filteredExercises.length > 0
-                  ? 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-blue-600/25'
-                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                }
-              `}
-            >
-              <Play className="w-5 h-5 fill-current" />
-              <span>Démarrer</span>
-            </button>
-
-            {/* Bouton Retour */}
-            <button
-              onClick={handleToggleAdvancedFilters}
-              className="w-full flex items-center justify-center gap-2 text-sm text-slate-400 hover:text-white transition-colors py-3"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Retour séance suggérée
-            </button>
-          </div>
-        </CardContent>
-      </Card>
-    </>
-  );
-
-  // ===========================================
-  // MAIN RENDER
-  // ===========================================
-
-  return (
-    <div className="space-y-4 pb-4">
-      {/* Header - Salutation */}
-      <div className="pt-2">
-        <h1 className="text-2xl font-bold text-white">
-          {greeting.text} <span className="ml-1">{greeting.emoji}</span>
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Prêt à repousser tes limites ?
-        </p>
-      </div>
-
-      {/* Contenu principal */}
-      {showAdvancedFilters ? renderAdvancedFiltersView() : renderSuggestedView()}
 
       {/* Modal Preview */}
       <SessionPreviewModal

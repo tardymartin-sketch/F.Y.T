@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { WeekOrganizerLog } from '../../../types';
-import { Megaphone, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Megaphone, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ===========================================
 // TYPES
@@ -15,26 +15,15 @@ import { Megaphone, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 interface Props {
   messages: WeekOrganizerLog[];
   className?: string;
+  variant?: 'default' | 'compact';
+  onMessageClick?: (message: WeekOrganizerLog) => void;
+  maxContentLines?: number;
+  initialMessageId?: string; // ID du message à afficher initialement
 }
 
 // ===========================================
 // UTILITY FUNCTIONS
 // ===========================================
-
-function formatDateRange(startDate: string, endDate: string): string {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  const startDay = start.getDate();
-  const endDay = end.getDate();
-  const startMonth = start.toLocaleDateString('fr-FR', { month: 'long' });
-  const endMonth = end.toLocaleDateString('fr-FR', { month: 'long' });
-
-  if (startMonth === endMonth) {
-    return `${startDay}-${endDay} ${startMonth}`;
-  }
-  return `${startDay} ${startMonth.slice(0, 3)} - ${endDay} ${endMonth.slice(0, 3)}`;
-}
 
 /**
  * Sanitize and format HTML content for safe rendering
@@ -90,7 +79,14 @@ const SWIPE_HINT_STORAGE_KEY = 'fyt_coach_carousel_hint_shown';
 // COMPONENT
 // ===========================================
 
-export const CoachMessagesCarousel: React.FC<Props> = ({ messages, className = '' }) => {
+export const CoachMessagesCarousel: React.FC<Props> = ({
+  messages,
+  className = '',
+  variant = 'default',
+  onMessageClick,
+  maxContentLines = 2,
+  initialMessageId,
+}) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -100,6 +96,16 @@ export const CoachMessagesCarousel: React.FC<Props> = ({ messages, className = '
   const sortedMessages = [...messages].sort(
     (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
   );
+
+  // Positionner le carousel sur le message initial si fourni
+  useEffect(() => {
+    if (initialMessageId && sortedMessages.length > 0) {
+      const targetIndex = sortedMessages.findIndex(msg => msg.id === initialMessageId);
+      if (targetIndex !== -1) {
+        setActiveIndex(targetIndex);
+      }
+    }
+  }, [initialMessageId, sortedMessages]);
 
   // Check if we should show the swipe hint animation
   useEffect(() => {
@@ -159,6 +165,9 @@ export const CoachMessagesCarousel: React.FC<Props> = ({ messages, className = '
 
   // Empty state
   if (sortedMessages.length === 0) {
+    // En mode compact, ne rien afficher si pas de messages
+    if (variant === 'compact') return null;
+
     return (
       <div className={`bg-slate-900 border border-slate-800 rounded-2xl p-6 ${className}`}>
         <div className="flex items-center gap-3 mb-4">
@@ -170,6 +179,114 @@ export const CoachMessagesCarousel: React.FC<Props> = ({ messages, className = '
         <p className="text-slate-400 text-center py-4">
           Aucun message pour le moment
         </p>
+      </div>
+    );
+  }
+
+  // MODE COMPACT : Carrousel complet mais avec style plus compact
+  if (variant === 'compact') {
+    return (
+      <div className={`bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-xl overflow-hidden ${className}`}>
+        {/* Header compact */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-blue-500/20">
+          <div className="flex items-center gap-2">
+            <Megaphone className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white">Messages coach</h3>
+          </div>
+
+          {/* Navigation arrows */}
+          {sortedMessages.length > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={goToPrevious}
+                disabled={activeIndex === 0}
+                className="p-1 rounded text-blue-400 hover:text-white hover:bg-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                aria-label="Message précédent"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={goToNext}
+                disabled={activeIndex === sortedMessages.length - 1}
+                className="p-1 rounded text-blue-400 hover:text-white hover:bg-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                aria-label="Message suivant"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Message content avec swipe */}
+        <div
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          className={`p-3 ${showHint ? 'animate-swipe-hint' : ''}`}
+        >
+          {sortedMessages[activeIndex] && (
+            <button
+              key={sortedMessages[activeIndex].id}
+              onClick={() => onMessageClick?.(sortedMessages[activeIndex])}
+              className="w-full text-left transition-opacity duration-200 hover:opacity-80"
+            >
+              {/* Message Title - 1 ligne max */}
+              <div className="flex items-start justify-between mb-2">
+                <h4 className="font-semibold text-white text-sm line-clamp-1 flex-1">
+                  {sortedMessages[activeIndex].title}
+                </h4>
+                <span className="text-xs text-slate-500 whitespace-nowrap ml-2">
+                  {activeIndex + 1}/{sortedMessages.length}
+                </span>
+              </div>
+
+              {/* Message Content - 2 lignes maximum */}
+              <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line line-clamp-2">
+                {formatMessageContent(sortedMessages[activeIndex].message)}
+              </p>
+            </button>
+          )}
+        </div>
+
+        {/* Dots Indicator */}
+        {sortedMessages.length > 1 && (
+          <div className="flex items-center justify-center gap-2 pb-3">
+            {sortedMessages.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setActiveIndex(index)}
+                className={`
+                  w-1.5 h-1.5 rounded-full transition-all duration-200
+                  ${index === activeIndex
+                    ? 'bg-blue-500 w-3'
+                    : 'bg-slate-600 hover:bg-slate-500'
+                  }
+                `}
+                aria-label={`Aller au message ${index + 1}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Swipe Hint (mobile only) */}
+        {showHint && sortedMessages.length > 1 && (
+          <div className="text-center pb-2 text-xs text-slate-500 animate-pulse">
+            ← Swipe →
+          </div>
+        )}
+
+        {/* CSS for swipe hint animation */}
+        <style>{`
+          @keyframes swipe-hint {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+          }
+
+          .animate-swipe-hint {
+            animation: swipe-hint 0.8s ease-in-out 2;
+          }
+        `}</style>
       </div>
     );
   }
@@ -233,14 +350,6 @@ export const CoachMessagesCarousel: React.FC<Props> = ({ messages, className = '
             {/* Message Content - Adapts to content size */}
             <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">
               {formatMessageContent(sortedMessages[activeIndex].message)}
-            </div>
-
-            {/* Date Range */}
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/50">
-              <Calendar className="w-4 h-4 text-slate-500" />
-              <span className="text-sm text-slate-400">
-                {formatDateRange(sortedMessages[activeIndex].startDate, sortedMessages[activeIndex].endDate)}
-              </span>
             </div>
           </div>
         )}

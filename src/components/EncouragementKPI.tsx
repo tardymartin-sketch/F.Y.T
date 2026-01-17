@@ -13,7 +13,8 @@ import {
   Sparkles,
   TrendingUp,
   Zap,
-  Star
+  Star,
+  X
 } from 'lucide-react';
 
 // ===========================================
@@ -24,6 +25,7 @@ interface Props {
   history: SessionLog[];
   hasSessionToday?: boolean;
   className?: string;
+  onDismiss?: () => void;
 }
 
 interface KPIState {
@@ -269,6 +271,7 @@ export const EncouragementKPI: React.FC<Props> = ({
   history,
   hasSessionToday = false,
   className = '',
+  onDismiss,
 }) => {
   const kpiState = useMemo(() => {
     return computeKPIState(history, hasSessionToday);
@@ -308,14 +311,26 @@ export const EncouragementKPI: React.FC<Props> = ({
   const styles = variantStyles[kpiState.variant];
 
   return (
-    <div
-      className={`
-        rounded-2xl p-4 border transition-all duration-300
-        ${styles.bg} ${styles.border}
-        ${className}
-      `}
-    >
-      <div className="flex items-start gap-3">
+    <div className="relative">
+      {/* Bouton fermeture */}
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          className="absolute top-2 right-2 z-10 p-1 text-slate-400 hover:text-white transition-colors rounded"
+          aria-label="Fermer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+
+      <div
+        className={`
+          rounded-2xl p-4 border transition-all duration-300
+          ${styles.bg} ${styles.border}
+          ${className}
+        `}
+      >
+        <div className="flex items-start gap-3">
         {/* Icon */}
         <div className={`
           w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0
@@ -357,6 +372,7 @@ export const EncouragementKPI: React.FC<Props> = ({
               />
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

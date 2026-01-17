@@ -56,11 +56,37 @@ export function useUIState() {
 
 // ===========================================
 // HOOK useCurrentView - Vue courante uniquement
+// Gère aussi l'historique du navigateur pour le bouton retour mobile
 // ===========================================
 
 export function useCurrentView(): [string, (view: string) => void] {
   const [view, setViewState] = useState(() => uiStateStore.getView());
+  const isPopStateNavigation = useRef(false);
 
+  // Écouter le bouton retour du navigateur (popstate)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state?.view) {
+        // Retour vers une vue précédente de l'app
+        isPopStateNavigation.current = true;
+        uiStateStore.setView(event.state.view);
+      } else {
+        // Pas d'état → retour à l'accueil
+        isPopStateNavigation.current = true;
+        uiStateStore.setView('home');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    // Initialiser l'état actuel dans l'historique (sans ajouter d'entrée)
+    const currentView = uiStateStore.getView();
+    history.replaceState({ view: currentView }, '', `#${currentView}`);
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // S'abonner aux changements du store
   useEffect(() => {
     return uiStateStore.subscribe(() => {
       const newView = uiStateStore.getView();
@@ -71,6 +97,17 @@ export function useCurrentView(): [string, (view: string) => void] {
   }, [view]);
 
   const setView = useCallback((newView: string) => {
+    const currentView = uiStateStore.getView();
+
+    // Ne pas dupliquer si même vue
+    if (newView !== currentView) {
+      // Si c'est une navigation via popstate, ne pas re-pousser dans l'historique
+      if (!isPopStateNavigation.current) {
+        history.pushState({ view: newView }, '', `#${newView}`);
+      }
+      isPopStateNavigation.current = false;
+    }
+
     uiStateStore.setView(newView);
   }, []);
 

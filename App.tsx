@@ -129,6 +129,7 @@ const App: React.FC = () => {
   // V3: NAVIGATION VERS COACH TAB AVEC CONVERSATION CIBLÉE
   // ===========================================
   const [targetExerciseName, setTargetExerciseName] = useState<string | null>(null);
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
 
   // ===========================================
   // V3: COACH COMMENTS STATE (pour CoachConversationsView)
@@ -718,6 +719,10 @@ const App: React.FC = () => {
                     onStartSession={handleStartSessionFromExercises}
                     onResumeSession={handleResumeSession}
                     hasActiveSession={hasActiveSession}
+                    onViewCoachMessages={(messageId) => {
+                      setTargetMessageId(messageId || null);
+                      setCurrentView('coach');
+                    }}
                   />
                 ) : (
                   <Home
@@ -782,6 +787,7 @@ const App: React.FC = () => {
                   onMarkAsRead={handleMarkCommentsAsRead}
                   initialExerciseName={targetExerciseName}
                   onClearInitialExercise={handleClearTargetExercise}
+                  initialMessageId={targetMessageId || undefined}
                 />
               )}
 
