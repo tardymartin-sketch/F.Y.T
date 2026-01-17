@@ -6,12 +6,13 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, SetLoad, RPE_SCALE } from '../../../types';
-import { 
+import {
   Play,
   Pause,
-  Clock, 
-  X, 
-  Video, 
+  Clock,
+  X,
+  Calendar,
+  Video,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -23,10 +24,12 @@ import {
   RotateCcw,
   MessageSquare,
   Send,
-  Info
+  Info,
+  Edit2
 } from 'lucide-react';
 import { RpeSelector, SessionRpeModal, RpeBadge } from '../RpeSelector';
 import { Card, CardContent } from '../shared/Card';
+import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../../utils/localStorageEvents';
 
 // ===========================================
 // TYPES
@@ -340,6 +343,36 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [showConsignesModal, setShowConsignesModal] = useState<number | null>(null);
 
   const isEditMode = !!initialLog;
+  const [editingDateEnabled, setEditingDateEnabled] = useState(false);
+  const [editDateInput, setEditDateInput] = useState('');
+  const [validatedEditDate, setValidatedEditDate] = useState<string | null>(null);
+
+  // Animation changement de série
+  const [setAnimating, setSetAnimating] = useState<Record<number, boolean>>({});
+  const [prevSetIndex, setPrevSetIndex] = useState<Record<number, number>>({});
+  const toInputDateValue = (iso: string): string => {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  useEffect(() => {
+    if (initialLog) {
+      setEditDateInput(toInputDateValue(initialLog.date));
+      setValidatedEditDate(toInputDateValue(initialLog.date));
+    }
+  }, [initialLog]);
+  const handleStartEditDate = useCallback(() => {
+    setEditDateInput(validatedEditDate ?? (initialLog ? toInputDateValue(initialLog.date) : ''));
+    setEditingDateEnabled(true);
+  }, [validatedEditDate, initialLog]);
+  const handleValidateEditDate = useCallback(() => {
+    if (editDateInput) {
+      setValidatedEditDate(editDateInput);
+    }
+    setEditingDateEnabled(false);
+  }, [editDateInput]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const rpeSectionRef = useRef<HTMLDivElement>(null);
   const scrollToRpeOnNextCompletedRef = useRef(false);
@@ -449,29 +482,32 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // PERSISTENCE
   // ===========================================
   
-  useEffect(() => {
-    if (logs.length > 0 && !isEditMode) {
-      saveToLocalStorage();
-    }
-  }, [logs, phase, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises]);
-
   const saveToLocalStorage = useCallback(() => {
-    localStorage.setItem('F.Y.T_active_session', JSON.stringify({
+    const value = JSON.stringify({
       logs,
-      sessionData: sessionData.map(s => ({ 
-        seance: s.seance, 
-        annee: s.annee, 
-        moisNum: s.moisNum, 
-        semaine: s.semaine 
+      sessionData: sessionData.map(s => ({
+        seance: s.seance,
+        annee: s.annee,
+        moisNum: s.moisNum,
+        semaine: s.semaine
       })),
       phase,
       startTime,
       currentExerciseIndex,
       currentSetIndex,
       currentSetIndexes,
-      expandedExercises
-    }));
-  }, [logs, sessionData, phase, startTime, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises]);
+      expandedExercises,
+      isEditMode,
+      editingSessionId: isEditMode && initialLog ? initialLog.id : null
+    });
+    setLocalStorageWithEvent('F.Y.T_active_session', value);
+  }, [logs, sessionData, phase, startTime, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises, isEditMode, initialLog]);
+
+  useEffect(() => {
+    if (logs.length > 0) {
+      saveToLocalStorage();
+    }
+  }, [logs, phase, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises, saveToLocalStorage]);
 
   useEffect(() => {
     const idx = pendingScrollToRpeExerciseIndexRef.current;
@@ -484,7 +520,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [logs]);
 
   const clearLocalStorage = useCallback(() => {
-    localStorage.removeItem('F.Y.T_active_session');
+    removeLocalStorageWithEvent('F.Y.T_active_session');
   }, []);
 
   const getSetIndexForExercise = useCallback((exerciseIndex: number): number => {
@@ -699,7 +735,20 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
     const isLastSet = setIndex === newLogs[exerciseIndex].sets.length - 1;
     if (!isLastSet) {
+      // Sauvegarder l'ancien index pour l'animation
+      setPrevSetIndex(prev => ({ ...prev, [exerciseIndex]: setIndex }));
+
+      // Déclencher l'animation de changement de série
+      setSetAnimating(prev => ({ ...prev, [exerciseIndex]: true }));
+
+      // Changer l'index immédiatement
       setSetIndexForExercise(exerciseIndex, setIndex + 1);
+
+      // Arrêter l'animation après sa durée
+      setTimeout(() => {
+        setSetAnimating(prev => ({ ...prev, [exerciseIndex]: false }));
+      }, 300); // Durée de l'animation (0.3s)
+
       return;
     }
 
@@ -845,9 +894,19 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       seance: Array.from(new Set(sessionData.map(d => d.seance))).join('+')
     };
 
+    let finalDate = new Date().toISOString();
+    if (isEditMode && initialLog) {
+      if (validatedEditDate) {
+        const [yy, mm, dd] = validatedEditDate.split('-').map(v => parseInt(v, 10));
+        finalDate = new Date(yy, mm - 1, dd, 12, 0, 0).toISOString();
+      } else {
+        finalDate = initialLog.date;
+      }
+    }
+
     const finalLog: SessionLog = {
       id: isEditMode && initialLog ? initialLog.id : crypto.randomUUID(),
-      date: new Date().toISOString(),
+      date: finalDate,
       sessionKey,
       exercises: logs.map(ex => ({
         ...ex,
@@ -942,7 +1001,49 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             <X className="w-5 h-5" />
             <span>Annuler</span>
           </button>
-          <h1 className="text-lg font-semibold text-white">{sessionTitle}</h1>
+          <div className="text-center">
+            <h1 className="text-lg font-semibold text-white">{sessionTitle}</h1>
+            {isEditMode && (
+              <div className="mt-1 flex items-center gap-2 justify-center">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                {editingDateEnabled ? (
+                  <input
+                    type="date"
+                    value={editDateInput}
+                    onChange={(e) => setEditDateInput(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  <span className="text-sm text-slate-400">
+                    {validatedEditDate
+                      ? new Date(validatedEditDate).toLocaleDateString('fr-FR')
+                      : initialLog
+                        ? new Date(initialLog.date).toLocaleDateString('fr-FR')
+                        : ''}
+                  </span>
+                )}
+                {editingDateEnabled ? (
+                  <button
+                    onClick={handleValidateEditDate}
+                    className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                    type="button"
+                    title="Valider la date"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStartEditDate}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                    type="button"
+                    title="Modifier la date"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <div className="w-20" />
         </div>
       </div>
@@ -1047,7 +1148,49 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           </div>
           
           <div className="px-4 flex items-center justify-between">
-             <h1 className="text-lg font-semibold text-white truncate flex-1">{sessionTitle}</h1>
+             <div className="flex-1 min-w-0">
+             <h1 className="text-lg font-semibold text-white truncate">{sessionTitle}</h1>
+              {isEditMode && (
+                <div className="mt-1 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  {editingDateEnabled ? (
+                    <input
+                      type="date"
+                      value={editDateInput}
+                      onChange={(e) => setEditDateInput(e.target.value)}
+                      className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  ) : (
+                    <span className="text-sm text-slate-400">
+                      {validatedEditDate
+                        ? new Date(validatedEditDate).toLocaleDateString('fr-FR')
+                        : initialLog
+                          ? new Date(initialLog.date).toLocaleDateString('fr-FR')
+                          : ''}
+                    </span>
+                  )}
+                  {editingDateEnabled ? (
+                    <button
+                      onClick={handleValidateEditDate}
+                      className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                      type="button"
+                      title="Valider la date"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartEditDate}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                      type="button"
+                      title="Modifier la date"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+             </div>
              <button
               onClick={() => setShowCancelModal(true)}
               className="p-2 -mr-2 text-slate-400 hover:text-white transition-colors"
@@ -1195,10 +1338,34 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                         </div>
 
                         <div className="p-4 space-y-4">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-white">
-                              Série {setIndex + 1}
-                            </div>
+                          <div className="text-center overflow-hidden relative h-8 flex items-center justify-center">
+                            {setAnimating[exerciseIndex] && prevSetIndex[exerciseIndex] !== undefined ? (
+                              <>
+                                {/* Ancien label qui sort */}
+                                <div
+                                  className="text-2xl font-bold text-white absolute"
+                                  style={{
+                                    animation: 'slideOut 0.3s ease-in-out forwards'
+                                  }}
+                                >
+                                  Série {prevSetIndex[exerciseIndex] + 1}
+                                </div>
+                                {/* Nouveau label qui entre */}
+                                <div
+                                  className="text-2xl font-bold text-white absolute"
+                                  style={{
+                                    animation: 'slideIn 0.3s ease-in-out forwards'
+                                  }}
+                                >
+                                  Série {setIndex + 1}
+                                </div>
+                              </>
+                            ) : (
+                              /* Label statique quand pas d'animation */
+                              <div className="text-2xl font-bold text-white">
+                                Série {setIndex + 1}
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-3">
@@ -1540,9 +1707,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white">
-              Historique {exercise.exerciseName}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white">
+                Historique {exercise.exerciseName}
+              </h3>
+              {typeof lastHistory?.rpe === 'number' && (
+                <RpeBadge rpe={lastHistory.rpe} size="sm" />
+              )}
+            </div>
             <button
               onClick={() => setShowHistoryModal(null)}
               className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -1626,9 +1798,32 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   // MAIN RENDER
   // ===========================================
-  
+
   return (
     <>
+      <style>{`
+        @keyframes slideOut {
+          0% {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          100% {
+            transform: translateX(-100%);
+            opacity: 0;
+          }
+        }
+
+        @keyframes slideIn {
+          0% {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
       {phase === 'recap' ? renderRecapPhase() : renderFocusPhase()}
       
       {showCancelModal && renderCancelModal()}

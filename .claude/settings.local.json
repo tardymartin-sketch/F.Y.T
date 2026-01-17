@@ -4,10 +4,15 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
       "Bash(mkdir:*)",
+<<<<<<< HEAD
       "Bash(for file in src/components/*.tsx)",
       "Bash(done)",
       "Bash(for comp in AthleteGroupsManager HistoryKPICard RichTextEditor SessionView StravaActivityCharts StravaActivityMap StravaHistoryCard TeamViewRpeSection VisibilitySelector ConversationThread)",
       "Bash(do echo \"=== $comp ===\" grep -r \"$comp\" src App.tsx --include=\"*.tsx\" --include=\"*.ts\")"
+=======
+      "Bash(taskkill:*)",
+      "Bash(kill:*)"
+>>>>>>> ad630c54a1e50dfb37e2aece299e144eacf2794c
     ]
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Info, X } from 'lucide-react';
+import { Info, X, Check } from 'lucide-react';
 import { RPE_SCALE, getRpeInfo, getRpeColor, getRpeBgColor } from '../../types';
 
 interface RpeSelectorProps {
@@ -217,9 +217,11 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
 }) => {
   const [selectedRpe, setSelectedRpe] = useState<number | undefined>();
   const [showInfo, setShowInfo] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = () => {
-    if (selectedRpe) {
+    if (selectedRpe && !isSubmitting) {
+      setIsSubmitting(true);
       onSubmit(selectedRpe);
     }
   };
@@ -290,16 +292,25 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
         <div className="p-6 pt-0 space-y-3">
           <button
             onClick={handleSubmit}
-            disabled={!selectedRpe}
+            disabled={!selectedRpe || isSubmitting}
             className={`
-              w-full py-3.5 rounded-xl font-semibold text-lg transition-all
-              ${selectedRpe
+              w-full py-3.5 rounded-xl font-semibold text-lg transition-all duration-300
+              ${selectedRpe && !isSubmitting
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                 : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }
+              ${isSubmitting ? 'bg-emerald-600 text-white' : ''}
             `}
           >
-            {selectedRpe ? `Valider (RPE ${selectedRpe})` : 'Sélectionnez un RPE'}
+            {isSubmitting ? (
+              <span className="flex items-center justify-center gap-2 animate-fade-in">
+                <Check className="w-6 h-6 animate-scale-in" />
+              </span>
+            ) : selectedRpe ? (
+              `Valider (RPE ${selectedRpe})`
+            ) : (
+              'Sélectionnez un RPE'
+            )}
           </button>
           
           <button
@@ -314,6 +325,40 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
       {showInfo && (
         <RpeInfoModal onClose={() => setShowInfo(false)} />
       )}
+
+      {/* CSS pour l'animation de la coche */}
+      <style>{`
+        @keyframes scale-in {
+          0% {
+            transform: scale(0);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.2);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+
+        .animate-scale-in {
+          animation: scale-in 0.4s ease-out;
+        }
+
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 };

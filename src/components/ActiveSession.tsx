@@ -20,11 +20,13 @@ import {
   Minus,
   Check,
   MessageSquare,
-  Send
+  Send,
+  Edit2
 } from 'lucide-react';
 import { RpeSelector, SessionRpeModal, RpeBadge } from './RpeSelector';
 import { ConversationThread, ThreadMessage } from './ConversationThread';
 import { useTempData } from '../hooks/useUIState';
+import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../utils/localStorageEvents';
 
 interface Props {
   sessionData: WorkoutRow[];
@@ -82,6 +84,20 @@ export const ActiveSession: React.FC<Props> = ({
   const [activeThreadExercise, setActiveThreadExercise] = useState<string | null>(null);
 
   const isEditMode = !!initialLog;
+  const [editingDateEnabled, setEditingDateEnabled] = useState(false);
+  const [editDateInput, setEditDateInput] = useState('');
+  const toInputDateValue = (iso: string): string => {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  useEffect(() => {
+    if (initialLog) {
+      setEditDateInput(toInputDateValue(initialLog.date));
+    }
+  }, [initialLog]);
 
   // Initialisation des logs
   useEffect(() => {
@@ -173,7 +189,7 @@ export const ActiveSession: React.FC<Props> = ({
           try {
             const parsed = JSON.parse(savedSession);
             parsed.scrollPosition = window.scrollY;
-            localStorage.setItem('F.Y.T_active_session', JSON.stringify(parsed));
+            setLocalStorageWithEvent('F.Y.T_active_session', JSON.stringify(parsed));
           } catch (e) {
             // Ignorer les erreurs
           }
@@ -217,7 +233,7 @@ export const ActiveSession: React.FC<Props> = ({
   };
 
   const saveToLocalStorage = (logsToSave: ExerciseLog[], currentExpandedExercise: number | null) => {
-    localStorage.setItem('F.Y.T_active_session', JSON.stringify({
+    setLocalStorageWithEvent('F.Y.T_active_session', JSON.stringify({
       logs: logsToSave,
       sessionData: sessionData.map(s => ({ seance: s.seance, annee: s.annee, moisNum: s.moisNum, semaine: s.semaine })),
       startTime,
@@ -260,8 +276,13 @@ export const ActiveSession: React.FC<Props> = ({
 
     let finalDate = new Date().toISOString();
     
-    if (isEditMode && !isRetroMode && initialLog) {
-      finalDate = initialLog.date;
+    if (isEditMode && initialLog) {
+      if (editDateInput) {
+        const [yy, mm, dd] = editDateInput.split('-').map(v => parseInt(v, 10));
+        finalDate = new Date(yy, mm - 1, dd, 12, 0, 0).toISOString();
+      } else {
+        finalDate = initialLog.date;
+      }
     }
     
     if (isRetroMode) {
@@ -296,7 +317,7 @@ export const ActiveSession: React.FC<Props> = ({
 
     try {
       await onSave(finalLog);
-      localStorage.removeItem('F.Y.T_active_session');
+      removeLocalStorageWithEvent('F.Y.T_active_session');
       setShowSessionRpeModal(false);
     } catch (e: any) {
       console.error("[ActiveSession] Erreur sauvegarde:", e);
@@ -317,7 +338,7 @@ export const ActiveSession: React.FC<Props> = ({
 
     try {
       await onSave(pendingSessionLog);
-      localStorage.removeItem('F.Y.T_active_session');
+      removeLocalStorageWithEvent('F.Y.T_active_session');
       setShowSessionRpeModal(false);
     } catch (e: any) {
       console.error("[ActiveSession] Erreur sauvegarde:", e);
@@ -497,6 +518,31 @@ export const ActiveSession: React.FC<Props> = ({
             <h1 className="text-2xl font-bold text-white">
               Session {sessionTitle}
             </h1>
+            {isEditMode && (
+              <div className="flex items-center gap-2 mt-1">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                {editingDateEnabled ? (
+                  <input
+                    type="date"
+                    value={editDateInput}
+                    onChange={(e) => setEditDateInput(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  <span className="text-sm text-slate-400">
+                    {initialLog ? new Date(initialLog.date).toLocaleDateString('fr-FR') : ''}
+                  </span>
+                )}
+                <button
+                  onClick={() => setEditingDateEnabled(v => !v)}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  type="button"
+                  title="Modifier la date"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-4 mt-2">
               <div className="flex items-center gap-2 text-slate-400">
                 <Clock className="w-4 h-4" />
@@ -789,7 +835,12 @@ export const ActiveSession: React.FC<Props> = ({
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">{historyModalExercise}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white">{historyModalExercise}</h3>
+                {currentHistoryData?.rpe && (
+                  <RpeBadge rpe={currentHistoryData.rpe} size="sm" />
+                )}
+              </div>
               <button
                 onClick={() => setHistoryModalExercise(null)}
                 className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -802,16 +853,11 @@ export const ActiveSession: React.FC<Props> = ({
               <div>
                 <p className="text-sm text-slate-400 mb-3">
                   Dernière séance : {new Date(currentHistoryData.date).toLocaleDateString('fr-FR')}
-                  {currentHistoryData.rpe && (
-                    <span className="ml-2">
-                      <RpeBadge rpe={currentHistoryData.rpe} size="sm" />
-                    </span>
-                  )}
                 </p>
                 <div className="space-y-2">
                   {currentHistoryData.sets.map((set, idx) => (
                     <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-lg p-3">
-                      <span className="text-sm text-slate-400">Série {set.setNumber}</span>
+                      <span className="text_sm text-slate-400">Série {set.setNumber}</span>
                       <span className="text-white font-medium">{set.reps || '-'}</span>
                       <span className="text-slate-500">×</span>
                       <span className="text-emerald-400 font-medium">{formatSetWeight(set)}</span>
