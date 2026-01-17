@@ -5,7 +5,7 @@
 // modal preview et vue filtres avancés
 // ============================================================
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   WorkoutRow,
   SessionLog,
@@ -30,7 +30,8 @@ import {
   Check,
   FolderOpen,
   ArrowLeft,
-  Eye
+  Eye,
+  PlusCircle
 } from 'lucide-react';
 
 // ===========================================
@@ -47,6 +48,8 @@ interface Props {
   hasActiveSession?: boolean;
   onSelectSession?: () => void;
   onViewCoachMessages?: (messageId?: string) => void;
+  onAddSession?: () => void;
+  hasAddSession?: boolean;
 }
 
 interface SessionChip {
@@ -175,6 +178,8 @@ export const HomeAthlete: React.FC<Props> = ({
   hasActiveSession = false,
   onSelectSession,
   onViewCoachMessages,
+  onAddSession,
+  hasAddSession = false,
 }) => {
   // ===========================================
   // STATE
@@ -182,6 +187,14 @@ export const HomeAthlete: React.FC<Props> = ({
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [sessionNameFontPx, setSessionNameFontPx] = useState<number>(14);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const gridRefFilters = useRef<HTMLDivElement | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<string[]>([]);
+  const [selectedOrderFilters, setSelectedOrderFilters] = useState<string[]>([]);
+
+  
 
   // State pour fermeture message d'encouragement
   // Réapparaît à chaque nouvelle session OU après 1h d'inactivité
@@ -324,19 +337,23 @@ export const HomeAthlete: React.FC<Props> = ({
         isSuggested: false,
       };
     });
+    chips.sort((a, b) => a.name.localeCompare(b.name));
 
-    const suggested = chips.find(c => !c.isCompleted);
-    if (suggested) {
-      suggested.isSuggested = true;
-    }
+    // Préselection désactivée (commentée à la demande)
+    // const suggested = chips.find(c => !c.isCompleted);
+    // if (suggested) {
+    //   suggested.isSuggested = true;
+    // }
 
     return {
       weekInfo: info,
       sessionChips: chips,
-      suggestedSessionName: suggested?.name || null,
+      // Préselection désactivée (pas de suggestedSessionName)
+      suggestedSessionName: null,
     };
   }, [trainingData, history]);
 
+  
   // ===========================================
   // COMPUTED: Filter Options (Vue filtres avancés)
   // ===========================================
@@ -385,6 +402,53 @@ export const HomeAthlete: React.FC<Props> = ({
     return { years, months, weeks, sessions };
   }, [trainingData, filterYear, filterMonth, filterWeek]);
 
+  useEffect(() => {
+    const currentRef = showAdvancedFilters ? gridRefFilters.current : gridRef.current;
+    if (!currentRef) return;
+    const names = showAdvancedFilters
+      ? filterOptions.sessions
+      : sessionChips.map(c => c.name);
+    if (names.length === 0) return;
+    const longestName = names.reduce((max, n) => (n.length > max.length ? n : max), '');
+    const firstButton = currentRef.querySelector('button') as HTMLElement | null;
+    const cellWidth = firstButton?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+    if (!cellWidth) return;
+    const horizontalPadding = 24;
+    const reservedForIcon = 24;
+    const contentWidth = Math.max(0, cellWidth - horizontalPadding - reservedForIcon);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const maxSize = 14;
+    const minSize = 10;
+    let size = maxSize;
+    while (size >= minSize) {
+      ctx.font = `${size}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+      const w = ctx.measureText(longestName).width;
+      if (w <= contentWidth) break;
+      size -= 1;
+    }
+    setSessionNameFontPx(size);
+    const onResize = () => {
+      const names2 = showAdvancedFilters ? filterOptions.sessions : sessionChips.map(c => c.name);
+      if (names2.length === 0) return;
+      const longest2 = names2.reduce((max, n) => (n.length > max.length ? n : max), '');
+      const firstBtn2 = currentRef.querySelector('button') as HTMLElement | null;
+      const cellW2 = firstBtn2?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+      if (!cellW2) return;
+      const contentW2 = Math.max(0, cellW2 - horizontalPadding - reservedForIcon);
+      let size2 = maxSize;
+      while (size2 >= minSize) {
+        ctx.font = `${size2}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+        const w2 = ctx.measureText(longest2).width;
+        if (w2 <= contentW2) break;
+        size2 -= 1;
+      }
+      setSessionNameFontPx(size2);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [sessionChips, filterOptions.sessions, showAllSessions, showAdvancedFilters]);
   // ===========================================
   // COMPUTED: Filtered Exercises (Vue filtres avancés)
   // ===========================================
@@ -500,13 +564,11 @@ export const HomeAthlete: React.FC<Props> = ({
   // ===========================================
 
   const toggleSessionChip = useCallback((sessionName: string) => {
-    setSelectedSessions(prev => {
-      const next = new Set(prev);
-      if (next.has(sessionName)) {
-        next.delete(sessionName);
-      } else {
-        next.add(sessionName);
-      }
+    setSelectedOrder(prev => {
+      const next = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setSelectedSessions(new Set(next));
       return next;
     });
   }, []);
@@ -527,15 +589,16 @@ export const HomeAthlete: React.FC<Props> = ({
 
     const allExercises: WorkoutRow[] = [];
 
-    sessionChips.forEach(chip => {
-      if (selectedSessions.has(chip.name)) {
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
         const sortedExercises = [...chip.exercises].sort((a, b) => a.ordre - b.ordre);
         allExercises.push(...sortedExercises);
       }
     });
 
     onStartSession(allExercises);
-  }, [selectedSessions, sessionChips, onStartSession]);
+  }, [selectedSessions, selectedOrder, sessionChips, onStartSession]);
 
   const handleStartFilteredSession = useCallback(() => {
     if (filteredExercises.length === 0) return;
@@ -562,14 +625,12 @@ export const HomeAthlete: React.FC<Props> = ({
   }, [showAdvancedFilters]);
 
   const toggleFilterSession = useCallback((sessionName: string) => {
-    setFilterSessions(prev => {
-      const next = new Set(prev);
-      if (next.has(sessionName)) {
-        next.delete(sessionName);
-      } else {
-        next.add(sessionName);
-      }
-      return next;
+    setSelectedOrderFilters(prev => {
+      const nextOrder = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setFilterSessions(new Set(nextOrder));
+      return nextOrder;
     });
   }, []);
 
@@ -594,20 +655,19 @@ export const HomeAthlete: React.FC<Props> = ({
   // Exercices pour le modal (séances sélectionnées)
   const previewExercises = useMemo(() => {
     const exercises: WorkoutRow[] = [];
-    sessionChips.forEach(chip => {
-      if (selectedSessions.has(chip.name)) {
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
         exercises.push(...chip.exercises);
       }
     });
     return exercises.sort((a, b) => a.ordre - b.ordre);
-  }, [selectedSessions, sessionChips]);
+  }, [selectedOrder, sessionChips]);
 
   const previewSessionName = useMemo(() => {
-    const names = sessionChips
-      .filter(c => selectedSessions.has(c.name))
-      .map(c => c.name);
+    const names = selectedOrder.filter(n => selectedSessions.has(n));
     return names.length > 1 ? names.join(' + ') : names[0] || 'Séance';
-  }, [selectedSessions, sessionChips]);
+  }, [selectedOrder, selectedSessions]);
 
   // ===========================================
   // RENDER: Card Sélection (Vue suggérée)
@@ -958,26 +1018,82 @@ export const HomeAthlete: React.FC<Props> = ({
         />
       )}
 
-      {/* Zone FIXE - Session active */}
-      {hasActiveSession && onResumeSession && (
-        <button
-          onClick={onResumeSession}
-          className="w-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 shadow-lg shadow-orange-500/25 animate-pulse-slow"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <Timer className="w-6 h-6 text-white" />
+      {/* Carte Session Active (si en cours) */}
+      {hasActiveSession && onResumeSession && (() => {
+        // Déterminer si c'est une modification ou une nouvelle séance
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_active_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+        return (
+          <button
+            onClick={onResumeSession}
+            className="w-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 shadow-lg shadow-orange-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Timer className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre là où tu en étais'}
+                  </p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="text-white font-semibold">Séance en cours</p>
-                <p className="text-white/80 text-sm">Reprendre là où tu en étais</p>
-              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
             </div>
-            <ChevronRight className="w-6 h-6 text-white" />
-          </div>
-        </button>
-      )}
+          </button>
+        );
+      })()}
+
+      {/* Carte Ajout/Modification de Séance en cours */}
+      {hasAddSession && onAddSession && (() => {
+        // Déterminer si c'est un ajout ou une modification
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_add_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        return (
+          <button
+            onClick={onAddSession}
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 shadow-lg shadow-blue-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <PlusCircle className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Ajout de séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre l\'ajout de ta séance'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
+            </div>
+          </button>
+        );
+      })()}
 
       {/* Zone FIXE - Messages coach */}
       {activeWeekOrganizers.length > 0 && (
