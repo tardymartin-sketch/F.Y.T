@@ -30,6 +30,7 @@ import {
 import { RpeSelector, SessionRpeModal, RpeBadge } from '../RpeSelector';
 import { Card, CardContent } from '../shared/Card';
 import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../../utils/localStorageEvents';
+import { fetchGhostSession, GhostSession } from '../../services/supabaseService';
 
 // ===========================================
 // TYPES
@@ -62,10 +63,21 @@ function getLoadTotalKg(load: SetLoad | undefined): number | null {
   if (load.type === 'double') {
     return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
   }
-  const added = typeof load.addedKg === 'number' ? load.addedKg : null;
-  if (typeof load.barKg !== 'number') return null;
-  if (added === null) return null;
-  return load.barKg + added;
+  if (load.type === 'barbell') {
+    const added = typeof load.addedKg === 'number' ? load.addedKg : null;
+    if (typeof load.barKg !== 'number') return null;
+    if (added === null) return null;
+    return load.barKg + added;
+  }
+  if (load.type === 'assisted') {
+    // Pour assisted, on retourne la valeur négative (assistance)
+    return typeof load.assistanceKg === 'number' ? -load.assistanceKg : null;
+  }
+  if (load.type === 'distance') {
+    // Distance n'a pas de poids
+    return null;
+  }
+  return null;
 }
 
 function getLoadLabel(load: SetLoad | undefined): string {
@@ -73,7 +85,10 @@ function getLoadLabel(load: SetLoad | undefined): string {
   if (load.type === 'single') return 'Haltère / KB';
   if (load.type === 'double') return '2x Haltères / KB';
   if (load.type === 'barbell') return 'Barre + poids';
-  return 'Machine';
+  if (load.type === 'machine') return 'Machine';
+  if (load.type === 'assisted') return 'Assisté';
+  if (load.type === 'distance') return 'Distance';
+  return 'Charge';
 }
 
 function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number | null = null): SetLoad {
@@ -89,6 +104,14 @@ function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number
   if (type === 'machine') {
     const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
     return { type: 'machine', unit: 'kg', weightKg };
+  }
+  if (type === 'assisted') {
+    // Assisted: valeur positive = assistance
+    const assistanceKg = typeof fromTotalKg === 'number' ? Math.abs(fromTotalKg) : null;
+    return { type: 'assisted', unit: 'kg', assistanceKg };
+  }
+  if (type === 'distance') {
+    return { type: 'distance', unit: 'cm', distanceValue: null };
   }
   const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
   return { type: 'single', unit: 'kg', weightKg };
@@ -253,7 +276,33 @@ function formatSetWeight(set: SetLog): React.ReactNode {
       </div>
     );
   }
-  
+
+  if (load.type === 'assisted') {
+    const assistance = typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+    if (assistance === null) {
+      return '-';
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>-{assistance} kg.</span>
+        <span className={smallTextClass}>(Assisté)</span>
+      </div>
+    );
+  }
+
+  if (load.type === 'distance') {
+    const distance = typeof load.distanceValue === 'number' ? load.distanceValue : null;
+    if (distance === null) {
+      return '-';
+    }
+    return (
+      <div className="flex flex-col items-center justify-center w-full">
+        <span>{distance} {load.unit}</span>
+        <span className={smallTextClass}>(Distance)</span>
+      </div>
+    );
+  }
+
   const weightText = set.weight || '-';
   return weightText === '-' ? '-' : `${weightText} kg.`;
 }
@@ -297,6 +346,47 @@ function getLastExerciseHistory(
   return null;
 }
 
+/**
+ * Récupère les données ghost pour un set spécifique
+ * Retourne le set correspondant de la meilleure performance passée
+ */
+function getGhostSetForDisplay(
+  ghost: GhostSession | undefined,
+  setIndex: number
+): { weight: number; reps: number; volume: number } | null {
+  if (!ghost || !ghost.sets || ghost.sets.length === 0) return null;
+
+  // Utiliser le set correspondant ou le dernier set disponible
+  const ghostSet = ghost.sets[setIndex] || ghost.sets[ghost.sets.length - 1];
+  if (!ghostSet) return null;
+
+  // Extraire le poids depuis le load JSONB ou weight string
+  let weight = 0;
+  const anySet = ghostSet as any;
+  if (anySet.load) {
+    const load = anySet.load;
+    if (load.type === 'single' || load.type === 'machine') {
+      weight = typeof load.weightKg === 'number' ? load.weightKg : 0;
+    } else if (load.type === 'double') {
+      weight = typeof load.weightKg === 'number' ? load.weightKg * 2 : 0;
+    } else if (load.type === 'barbell') {
+      weight = (load.barKg || 0) + (load.addedKg || 0);
+    }
+  } else if (anySet.weight) {
+    const parsed = parseFloat(String(anySet.weight).replace(',', '.'));
+    weight = Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  // Extraire les reps
+  const reps = typeof anySet.reps === 'number'
+    ? anySet.reps
+    : parseInt(String(anySet.reps || '0').replace(/[^0-9]/g, '')) || 0;
+
+  const volume = weight * reps;
+
+  return { weight, reps, volume };
+}
+
 // ===========================================
 // COMPONENT
 // ===========================================
@@ -334,6 +424,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
+
+  // Ghost Mode
+  const [ghostSessions, setGhostSessions] = useState<Record<string, GhostSession>>({});
   const [recapOpenConsignes, setRecapOpenConsignes] = useState<Record<number, boolean>>({});
   const [recapOpenHistory, setRecapOpenHistory] = useState<Record<number, boolean>>({});
   const [focusOpenConsignes, setFocusOpenConsignes] = useState<Record<number, boolean>>({});
@@ -437,6 +530,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           : '';
 
         return {
+          exerciseId: row.exerciseId,  // Transférer l'ID de l'exercice
           exerciseName: name,
           originalSession: row.seance,
           sets: Array.from({ length: numSets }, (_, i) => ({
@@ -453,6 +547,33 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       setLogs(initialLogs);
     }
   }, [sessionData, initialLog, history]);
+
+  // ===========================================
+  // GHOST MODE - Load best performances
+  // ===========================================
+
+  useEffect(() => {
+    if (!userId || logs.length === 0) return;
+
+    const loadGhostSessions = async () => {
+      const ghosts: Record<string, GhostSession> = {};
+
+      for (const exercise of logs) {
+        try {
+          const ghost = await fetchGhostSession(userId, exercise.exerciseName);
+          if (ghost) {
+            ghosts[exercise.exerciseName] = ghost;
+          }
+        } catch (error) {
+          console.error(`Error loading ghost for ${exercise.exerciseName}:`, error);
+        }
+      }
+
+      setGhostSessions(ghosts);
+    };
+
+    loadGhostSessions();
+  }, [userId, logs.length]); // Reload only when logs are initialized
 
   useEffect(() => {
     if (!scrollToRpeOnNextCompletedRef.current) return;
@@ -641,7 +762,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (!set) return;
     const currentLoad = set.load;
     const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
-    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine'];
+    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine', 'assisted', 'distance'];
     const currentType = currentLoad?.type ?? 'single';
     const idx = typeOrder.indexOf(currentType);
     const nextType = typeOrder[(idx + 1) % typeOrder.length];
@@ -653,7 +774,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (!set) return;
     const currentLoad = set.load;
     const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
-    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine'];
+    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine', 'assisted', 'distance'];
     const currentType = currentLoad?.type ?? 'single';
     const idx = typeOrder.indexOf(currentType);
     const nextType = typeOrder[(idx + 1) % typeOrder.length];
@@ -1394,7 +1515,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 </button>
                               </div>
 
-                              {set.load?.type === 'barbell' ? (
+                              {/* Barbell: 2 inputs (barre + poids ajoutés) */}
+                              {set.load?.type === 'barbell' && (
                                 <div className="grid grid-cols-2 gap-3">
                                   <div>
                                     <input
@@ -1414,7 +1536,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         };
                                         updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                       }}
-                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                     <div className="text-sm text-slate-500 text-center mt-1">Barre</div>
                                   </div>
@@ -1436,18 +1558,95 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         };
                                         updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                       }}
-                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                     <div className="text-sm text-slate-500 text-center mt-1">Poids ajoutés</div>
                                   </div>
                                 </div>
-                              ) : (
+                              )}
+
+                              {/* Assisted: 1 input (assistance en kg) */}
+                              {set.load?.type === 'assisted' && (
                                 <div>
                                   <input
                                     type="text"
                                     inputMode="decimal"
                                     placeholder="0"
-                                    value={typeof set.load?.weightKg === 'number' ? String(set.load.weightKg) : ''}
+                                    value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      const next: SetLoad = {
+                                        type: 'assisted',
+                                        unit: 'kg',
+                                        assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                      };
+                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                    }}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  />
+                                  <div className="text-sm text-slate-500 text-center mt-1">Assistance (kg)</div>
+                                </div>
+                              )}
+
+                              {/* Distance: 1 input + sélecteur unité */}
+                              {set.load?.type === 'distance' && (
+                                <div>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="0"
+                                    value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
+                                      const next: SetLoad = {
+                                        type: 'distance',
+                                        unit: prev.unit,
+                                        distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                      };
+                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                    }}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  />
+                                  <div className="flex items-center justify-center gap-2 mt-1">
+                                    <span className="text-sm text-slate-500">Distance en</span>
+                                    <select
+                                      value={set.load.unit}
+                                      onChange={(e) => {
+                                        const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
+                                        const next: SetLoad = {
+                                          type: 'distance',
+                                          unit: e.target.value as 'cm' | 'm',
+                                          distanceValue: prev.distanceValue
+                                        };
+                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                      }}
+                                      className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                      <option value="cm">cm</option>
+                                      <option value="m">m</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Single, Double, Machine: 1 input (poids en kg) */}
+                              {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine' || !set.load?.type) && (
+                                <div>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="0"
+                                    value={(() => {
+                                      const load = set.load;
+                                      if (!load) return '';
+                                      if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
+                                        return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
+                                      }
+                                      return '';
+                                    })()}
                                     onChange={(e) => {
                                       const v = e.target.value;
                                       const n = v === '' ? null : Number(v.replace(',', '.'));
@@ -1469,6 +1668,32 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 </div>
                               )}
                             </div>
+
+                            {/* Ghost Mode - Meilleure performance passée */}
+                            {(() => {
+                              const ghost = ghostSessions[exercise.exerciseName];
+                              const ghostSet = getGhostSetForDisplay(ghost, setIndex);
+                              if (!ghostSet || (ghostSet.weight === 0 && ghostSet.reps === 0)) return null;
+
+                              // Calculer si le set actuel bat le ghost
+                              const currentWeight = getLoadTotalKg(set.load) || 0;
+                              const currentReps = parseInt(String(set.reps || '0').replace(/[^0-9]/g, '')) || 0;
+                              const currentVolume = currentWeight * currentReps;
+                              const isBeatingGhost = currentVolume > ghostSet.volume && currentVolume > 0;
+
+                              return (
+                                <div className={`mt-3 p-3 rounded-xl border ${isBeatingGhost ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'}`}>
+                                  <div className="flex items-center justify-between">
+                                    <span className={`text-xs font-medium ${isBeatingGhost ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                      {isBeatingGhost ? '🔥 Tu bats ton record !' : '👻 Meilleur:'}
+                                    </span>
+                                    <span className={`text-sm font-semibold ${isBeatingGhost ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                      {ghostSet.weight}kg × {ghostSet.reps}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           <button

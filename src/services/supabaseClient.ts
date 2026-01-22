@@ -1,25 +1,38 @@
 import { supabase } from '../supabaseClient';
-import { 
-  TrainingPlanRow, 
-  WorkoutRowFull, 
+import {
+  TrainingPlanRow,
+  WorkoutRowFull,
   mapTrainingPlanToWorkout,
   ProfileRow,
   User,
   mapProfileToUser,
-  SessionLogRow,
   SessionLog,
-  mapSessionLogRowToSessionLog,
   mapSessionLogToRow
 } from '../../types';
+import { saveExerciseLogs as saveExerciseLogsFromSession } from './supabaseService';
 
 // ===========================================
 // TRAINING PLANS
 // ===========================================
 
+/**
+ * Récupère les programmes d'entraînement visibles par l'utilisateur connecté.
+ * Fait une jointure avec la table exercises pour récupérer les détails.
+ * La visibilité est gérée automatiquement par les RLS Supabase (coach_id + athlete_target).
+ */
 export async function fetchTrainingPlans(): Promise<WorkoutRowFull[]> {
   const { data, error } = await supabase
     .from('training_plans')
-    .select('*')
+    .select(`
+      *,
+      exercises (
+        id,
+        name,
+        video_url,
+        tempo,
+        coach_instructions
+      )
+    `)
     .order('year', { ascending: true })
     .order('Month_num', { ascending: true })
     .order('week', { ascending: true })
@@ -30,7 +43,20 @@ export async function fetchTrainingPlans(): Promise<WorkoutRowFull[]> {
     throw error;
   }
 
-  return (data as TrainingPlanRow[]).map(mapTrainingPlanToWorkout);
+  // Mapper en enrichissant avec les données de exercises
+  return (data as any[]).map(row => {
+    const workout = mapTrainingPlanToWorkout(row as TrainingPlanRow);
+
+    // Enrichir avec les données de la table exercises si disponible
+    if (row.exercises) {
+      workout.exercice = row.exercises.name || workout.exercice;
+      workout.video = row.exercises.video_url || workout.video;
+      workout.tempoRpe = row.exercises.tempo || workout.tempoRpe;
+      workout.notes = row.exercises.coach_instructions || workout.notes;
+    }
+
+    return workout;
+  });
 }
 
 // ===========================================
@@ -129,24 +155,9 @@ export async function updateUserProfile(userId: string, updates: Partial<Profile
 // SESSION LOGS
 // ===========================================
 
-export async function fetchSessionLogs(userId: string): Promise<SessionLog[]> {
-  const { data, error } = await supabase
-    .from('session_logs')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false });
-
-  if (error) {
-    console.error('Error fetching session logs:', error);
-    throw error;
-  }
-
-  return (data as SessionLogRow[]).map(mapSessionLogRowToSessionLog);
-}
-
 export async function saveSessionLog(log: SessionLog, userId: string): Promise<SessionLog> {
   const rowData = mapSessionLogToRow(log, userId);
-  
+
   const { data, error } = await supabase
     .from('session_logs')
     .upsert(rowData, { onConflict: 'id' })
@@ -158,7 +169,18 @@ export async function saveSessionLog(log: SessionLog, userId: string): Promise<S
     throw error;
   }
 
-  return mapSessionLogRowToSessionLog(data as SessionLogRow);
+  const savedLog = mapSessionLogRowToSessionLog(data as SessionLogRow);
+
+  // Sauvegarder aussi dans exercise_logs pour analytics
+  // Utiliser le log original (avec exerciseId) pas savedLog
+  const logWithId = { ...log, id: savedLog.id };
+  try {
+    await saveExerciseLogsFromSession(savedLog.id, userId, logWithId);
+  } catch (exerciseLogsError) {
+    console.error('Error saving exercise logs (non-blocking):', exerciseLogsError);
+  }
+
+  return savedLog;
 }
 
 export async function deleteSessionLog(sessionId: string): Promise<void> {

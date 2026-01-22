@@ -15,6 +15,7 @@ export interface User {
   secondaryRoles?: UserRole[];
   coachId?: string;
   email?: string;
+  weight?: number;
 }
 
 // Type pour le mode actif (stocké dans localStorage)
@@ -32,6 +33,7 @@ export interface ProfileRow {
   role: string | null;
   secondary_roles: string[] | null;
   coach_id: string | null;
+  weight: number | null;
   created_at: string;
 }
 
@@ -46,6 +48,7 @@ export function mapProfileToUser(row: ProfileRow): User {
     role: (row.role as UserRole) ?? 'athlete',
     secondaryRoles: (row.secondary_roles as UserRole[]) ?? [],
     coachId: row.coach_id ?? undefined,
+    weight: row.weight ?? undefined,
   };
 }
 
@@ -108,7 +111,8 @@ export interface TrainingPlanRow {
   year: number | null;
   week: number | null;
   seance_type: string | null;
-  exercise_name: string | null;
+  exercise_name: string | null;      // Conservé pour compatibilité
+  exercise_id: string;               // FK vers exercises.id (NOT NULL)
   order_index: number | null;
   target_sets: string | null;
   target_reps: string | null;
@@ -120,6 +124,8 @@ export interface TrainingPlanRow {
   "Notes/Consignes": string | null;
   week_start_date: string | null;
   week_end_date: string | null;
+  coach_id: string | null;           // UUID du coach (NULL = global)
+  athlete_target: string[] | null;   // Liste d'UUIDs athlètes ciblés (NULL = tous)
 }
 
 // Type utilisé dans l'application (camelCase, valeurs par défaut)
@@ -131,7 +137,8 @@ export interface WorkoutRow {
   semaine: string;
   seance: string;
   ordre: number;
-  exercice: string;
+  exercice: string;            // Nom de l'exercice (conservé pour compatibilité)
+  exerciseId?: string;         // UUID de l'exercice (undefined = fallback/legacy)
   series: string;
   repsDuree: string;
   repos: string;
@@ -140,6 +147,8 @@ export interface WorkoutRow {
   video: string;
   weekStartDate?: string;
   weekEndDate?: string;
+  coachId?: string;           // UUID du coach (undefined = global)
+  athleteTarget?: string[];   // Liste d'UUIDs athlètes ciblés (undefined = tous)
 }
 
 // Alias pour compatibilité
@@ -156,6 +165,7 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     seance: row.seance_type ?? '',
     ordre: row.order_index ?? 0,
     exercice: row.exercise_name ?? '',
+    exerciseId: row.exercise_id,
     series: row.target_sets ?? '',
     repsDuree: row.target_reps ?? '',
     repos: row.rest_time_sec?.toString() ?? '',
@@ -164,6 +174,78 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     video: row.video_url ?? '',
     weekStartDate: row.week_start_date ?? undefined,
     weekEndDate: row.week_end_date ?? undefined,
+    coachId: row.coach_id ?? undefined,
+    athleteTarget: row.athlete_target ?? undefined,
+  };
+}
+
+// ===========================================
+// TYPES EXERCICES - Supabase exercises
+// ===========================================
+
+// Type brut depuis Supabase (snake_case, nullable)
+export interface ExerciseRow {
+  id: string;                      // UUID
+  name: string;
+  muscle_group: string | null;
+  video_url: string | null;
+  coach_instructions: string | null;
+  tempo: string | null;
+  coach_id: string | null;
+  limb_type: 'bilateral' | 'unilateral' | 'asymmetrical' | null;
+  primary_muscle_group_id: string | null;
+  movement_pattern_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// Type utilisé dans l'application (camelCase)
+export interface Exercise {
+  id: string;
+  name: string;
+  muscleGroup?: string;
+  videoUrl?: string;
+  coachInstructions?: string;
+  tempo?: string;
+  coachId?: string;
+  limbType?: 'bilateral' | 'unilateral' | 'asymmetrical';
+  primaryMuscleGroupId?: string;
+  movementPatternId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Mapping Exercise DB -> Exercise App
+export function mapExerciseRowToExercise(row: ExerciseRow): Exercise {
+  return {
+    id: row.id,
+    name: row.name,
+    muscleGroup: row.muscle_group ?? undefined,
+    videoUrl: row.video_url ?? undefined,
+    coachInstructions: row.coach_instructions ?? undefined,
+    tempo: row.tempo ?? undefined,
+    coachId: row.coach_id ?? undefined,
+    limbType: row.limb_type ?? undefined,
+    primaryMuscleGroupId: row.primary_muscle_group_id ?? undefined,
+    movementPatternId: row.movement_pattern_id ?? undefined,
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
+  };
+}
+
+// Mapping Exercise App -> Exercise DB (pour insert/update)
+export function mapExerciseToRow(exercise: Partial<Exercise>): Partial<ExerciseRow> {
+  return {
+    ...(exercise.id && { id: exercise.id }),
+    ...(exercise.name && { name: exercise.name }),
+    ...(exercise.muscleGroup !== undefined && { muscle_group: exercise.muscleGroup || null }),
+    ...(exercise.videoUrl !== undefined && { video_url: exercise.videoUrl || null }),
+    ...(exercise.coachInstructions !== undefined && { coach_instructions: exercise.coachInstructions || null }),
+    ...(exercise.tempo !== undefined && { tempo: exercise.tempo || null }),
+    ...(exercise.coachId !== undefined && { coach_id: exercise.coachId || null }),
+    ...(exercise.limbType !== undefined && { limb_type: exercise.limbType || null }),
+    ...(exercise.primaryMuscleGroupId !== undefined && { primary_muscle_group_id: exercise.primaryMuscleGroupId || null }),
+    ...(exercise.movementPatternId !== undefined && { movement_pattern_id: exercise.movementPatternId || null }),
   };
 }
 
@@ -181,29 +263,39 @@ export interface FilterState {
 // TYPES HISTORIQUE & LOGS (avec RPE)
 // ===========================================
 
-export type LoadUnit = 'kg';
+export type LoadUnit = 'kg' | 'cm' | 'm';
 
 export type SetLoad =
   | {
       type: 'single';
-      unit: LoadUnit;
+      unit: 'kg';
       weightKg: number | null;
     }
   | {
       type: 'double';
-      unit: LoadUnit;
+      unit: 'kg';
       weightKg: number | null;
     }
   | {
       type: 'barbell';
-      unit: LoadUnit;
+      unit: 'kg';
       barKg: number;
       addedKg: number | null;
     }
   | {
       type: 'machine';
-      unit: LoadUnit;
+      unit: 'kg';
       weightKg: number | null;
+    }
+  | {
+      type: 'assisted';
+      unit: 'kg';
+      assistanceKg: number | null;  // Poids d'assistance (valeur positive)
+    }
+  | {
+      type: 'distance';
+      unit: 'cm' | 'm';
+      distanceValue: number | null;  // Distance en cm ou m
     };
 
 export interface SetLog {
@@ -215,6 +307,7 @@ export interface SetLog {
 }
 
 export interface ExerciseLog {
+  exerciseId?: string;        // ID de l'exercice dans la table exercises
   exerciseName: string;
   originalSession?: string;
   sets: SetLog[];
@@ -295,6 +388,129 @@ export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<Sessio
     exercises: log.exercises,
     comments: log.comments ?? null,
     session_rpe: log.sessionRpe ?? null,
+  };
+}
+
+// ===========================================
+// EXERCISE LOGS (Analytics)
+// ===========================================
+
+// Type de charge pour filtrage analytics
+export type LoadType = 'numeric' | 'additive' | 'bodyweight' | 'assisted';
+
+// Type de mouvement (latéralité)
+export type LimbType = 'bilateral' | 'unilateral' | 'asymmetrical';
+
+// Catégories analytics pour Radar Chart
+export type AnalyticsCategory = 'push' | 'pull' | 'legs_squat' | 'legs_hinge' | 'core' | 'arms' | 'other';
+
+// Type d'exercice (reps vs temps)
+export type ExerciseType = 'reps' | 'time' | 'distance';
+
+// Détail d'une série enrichi avec loadType et exerciseType
+// Inclut les données brutes saisies par l'athlète (load) pour reconstruction exacte
+export interface SetDetailLog {
+  setNumber: number;
+  reps: string;
+  weight: string;
+  loadType: LoadType;
+  exerciseType?: ExerciseType;
+  completed: boolean;
+  // Données brutes du type d'équipement (Haltère, Barre, Machine, etc.)
+  load?: SetLoad;
+}
+
+// Type brut depuis Supabase exercise_logs
+export interface ExerciseLogRow {
+  id: string;
+  session_log_id: string;
+  user_id: string;
+  exercise_id: string | null;
+  exercise_name: string;
+  date: string;
+  year: number;
+  week: number;
+  session_name: string | null;
+  exercise_order: number;  // Ordre de l'exercice dans la séance (1-based)
+  exercise_type: ExerciseType;  // 'reps' ou 'time'
+  load_type: LoadType;  // Type majoritaire
+  limb_type: LimbType;
+  muscle_group_id: string | null;
+  muscle_group_name: string | null;
+  movement_pattern_id: string | null;
+  movement_pattern_name: string | null;
+  analytics_category: string | null;  // 'push', 'pull', etc.
+  sets_count: number;
+  total_reps: number;  // Reps ou secondes selon exercise_type
+  max_weight: number | null;
+  avg_weight: number | null;
+  total_volume: number | null;
+  estimated_1rm: number | null;  // 1RM estimé via formule Epley
+  rpe: number | null;
+  sets_detail: SetDetailLog[] | null;  // Enrichi avec loadType et exerciseType par set
+  notes: string | null;
+  created_at: string;
+}
+
+// Type utilisé dans l'application
+export interface ExerciseLogEntry {
+  id: string;
+  sessionLogId: string;
+  userId: string;
+  exerciseId?: string;
+  exerciseName: string;
+  date: string;
+  year: number;
+  week: number;
+  sessionName?: string;
+  exerciseOrder: number;  // Ordre de l'exercice dans la séance (1-based)
+  exerciseType: ExerciseType;  // 'reps' ou 'time'
+  loadType: LoadType;  // Type majoritaire
+  limbType: LimbType;
+  muscleGroupId?: string;
+  muscleGroupName?: string;
+  movementPatternId?: string;
+  movementPatternName?: string;
+  analyticsCategory?: AnalyticsCategory;
+  setsCount: number;
+  totalReps: number;  // Reps ou secondes selon exerciseType
+  maxWeight?: number;
+  avgWeight?: number;
+  totalVolume?: number;
+  rpe?: number;
+  setsDetail?: SetDetailLog[];  // Enrichi avec loadType et exerciseType par set
+  notes?: string;
+}
+
+// Mapping DB -> App
+export function mapExerciseLogRowToEntry(row: ExerciseLogRow): ExerciseLogEntry {
+  return {
+    id: row.id,
+    sessionLogId: row.session_log_id,
+    userId: row.user_id,
+    exerciseId: row.exercise_id ?? undefined,
+    exerciseName: row.exercise_name,
+    date: row.date,
+    year: row.year,
+    week: row.week,
+    sessionName: row.session_name ?? undefined,
+    exerciseOrder: row.exercise_order,
+    exerciseType: row.exercise_type,
+    loadType: row.load_type,
+    limbType: row.limb_type,
+    muscleGroupId: row.muscle_group_id ?? undefined,
+    muscleGroupName: row.muscle_group_name ?? undefined,
+    movementPatternId: row.movement_pattern_id ?? undefined,
+    movementPatternName: row.movement_pattern_name ?? undefined,
+    analyticsCategory: row.analytics_category as AnalyticsCategory ?? undefined,
+    setsCount: row.sets_count,
+    totalReps: row.total_reps,
+    maxWeight: row.max_weight ?? undefined,
+    avgWeight: row.avg_weight ?? undefined,
+    totalVolume: row.total_volume ?? undefined,
+    rpe: row.rpe ?? undefined,
+    setsDetail: row.sets_detail ?? undefined,
+    notes: row.notes ?? undefined,
   };
 }
 
@@ -791,4 +1007,26 @@ export function mapMessageRowToMessage(
     createdAt: row.created_at,
     senderName: row.sender_name,
   };
+}
+
+// ===========================================
+// TYPES PR (Personal Records)
+// ===========================================
+
+export type PRType = 'weight' | 'volume' | '1rm';
+
+export interface PRDetected {
+  exerciseName: string;
+  prType: PRType;
+  previousRecord: number;
+  newRecord: number;
+  improvement: number;  // Différence absolue
+  improvementPercent: number;  // % d'amélioration
+}
+
+export interface GhostSet {
+  setNumber: number;
+  weight: number;
+  reps: number;
+  volume: number;
 }

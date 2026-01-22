@@ -55,10 +55,21 @@ function getLoadTotalKg(load: SetLoad | undefined): number | null {
   if (load.type === 'double') {
     return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
   }
-  const added = typeof load.addedKg === 'number' ? load.addedKg : null;
-  if (typeof load.barKg !== 'number') return null;
-  if (added === null) return null;
-  return load.barKg + added;
+  if (load.type === 'barbell') {
+    const added = typeof load.addedKg === 'number' ? load.addedKg : null;
+    if (typeof load.barKg !== 'number') return null;
+    if (added === null) return null;
+    return load.barKg + added;
+  }
+  if (load.type === 'assisted') {
+    // Retourne une valeur négative pour l'assistance
+    return typeof load.assistanceKg === 'number' ? -load.assistanceKg : null;
+  }
+  if (load.type === 'distance') {
+    // Distance n'a pas de poids
+    return null;
+  }
+  return null;
 }
 
 function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number | null = null): SetLoad {
@@ -74,6 +85,13 @@ function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number
   if (type === 'machine') {
     const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
     return { type: 'machine', unit: 'kg', weightKg };
+  }
+  if (type === 'assisted') {
+    const assistanceKg = typeof fromTotalKg === 'number' ? Math.abs(fromTotalKg) : null;
+    return { type: 'assisted', unit: 'kg', assistanceKg };
+  }
+  if (type === 'distance') {
+    return { type: 'distance', unit: 'cm', distanceValue: null };
   }
   const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
   return { type: 'single', unit: 'kg', weightKg };
@@ -420,7 +438,7 @@ export const AddSession: React.FC<Props> = ({
     if (!set) return;
     const currentLoad = set.load;
     const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
-    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine'];
+    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine', 'assisted', 'distance'];
     const currentType = currentLoad?.type ?? 'single';
     const idx = typeOrder.indexOf(currentType);
     const nextType = typeOrder[(idx + 1) % typeOrder.length];
@@ -898,7 +916,8 @@ export const AddSession: React.FC<Props> = ({
                                     </button>
                                   </div>
 
-                                  {set.load?.type === 'barbell' ? (
+                                  {/* Type: Barbell */}
+                                  {set.load?.type === 'barbell' && (
                                     <div className="grid grid-cols-2 gap-3">
                                       <div>
                                         <input
@@ -945,19 +964,87 @@ export const AddSession: React.FC<Props> = ({
                                         <div className="text-sm text-slate-500 text-center mt-1">Poids ajoutés</div>
                                       </div>
                                     </div>
-                                  ) : (
+                                  )}
+
+                                  {/* Type: Assisted */}
+                                  {set.load?.type === 'assisted' && (
+                                    <div>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="10"
+                                        value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                          const next: SetLoad = {
+                                            type: 'assisted',
+                                            unit: 'kg',
+                                            assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                          };
+                                          updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                        }}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <div className="text-sm text-slate-500 text-center mt-1">Assistance (kg retirés)</div>
+                                    </div>
+                                  )}
+
+                                  {/* Type: Distance */}
+                                  {set.load?.type === 'distance' && (
+                                    <div>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="50"
+                                        value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                          const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
+                                          const next: SetLoad = {
+                                            type: 'distance',
+                                            unit: prev.unit,
+                                            distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                          };
+                                          updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                        }}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <div className="flex items-center justify-center gap-2 mt-1">
+                                        <span className="text-sm text-slate-500">Distance en</span>
+                                        <select
+                                          value={set.load.unit}
+                                          onChange={(e) => {
+                                            const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
+                                            const next: SetLoad = {
+                                              type: 'distance',
+                                              unit: e.target.value as 'cm' | 'm',
+                                              distanceValue: prev.distanceValue
+                                            };
+                                            updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                          }}
+                                          className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                          <option value="cm">cm</option>
+                                          <option value="m">m</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Types: Single, Double, Machine */}
+                                  {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine') && (
                                     <div>
                                       <input
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="0"
-                                        value={typeof set.load?.weightKg === 'number' ? String(set.load.weightKg) : ''}
+                                        value={typeof set.load.weightKg === 'number' ? String(set.load.weightKg) : ''}
                                         onChange={(e) => {
                                           const v = e.target.value;
                                           const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const t: 'single' | 'double' | 'machine' = set.load?.type === 'double'
-                                            ? 'double'
-                                            : (set.load?.type === 'machine' ? 'machine' : 'single');
+                                          const t = set.load?.type as 'single' | 'double' | 'machine';
                                           const next: SetLoad = t === 'double'
                                             ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
                                             : t === 'machine'
@@ -965,11 +1052,31 @@ export const AddSession: React.FC<Props> = ({
                                               : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
                                           updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                         }}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-8 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                       />
                                       <div className="text-sm text-slate-500 text-center mt-1">
                                         {set.load?.type === 'double' ? '2x Haltères / Kettlebell' : set.load?.type === 'machine' ? 'Machine' : 'Haltère / Kettlebell'}
                                       </div>
+                                    </div>
+                                  )}
+
+                                  {/* Fallback si pas de load défini */}
+                                  {!set.load && (
+                                    <div>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0"
+                                        value=""
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                          const next: SetLoad = { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
+                                          updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                        }}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-4 text-white text-center text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <div className="text-sm text-slate-500 text-center mt-1">Haltère / Kettlebell</div>
                                     </div>
                                   )}
                                 </div>

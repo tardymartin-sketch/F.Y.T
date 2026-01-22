@@ -405,7 +405,23 @@ export const ActiveSession: React.FC<Props> = ({
       }
       return `${weight} kg. (Sur machine)`;
     }
-    
+
+    if (load.type === 'assisted') {
+      const assistance = typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+      if (assistance === null) {
+        return '- (Assisté)';
+      }
+      return `-${assistance} kg. (Assisté)`;
+    }
+
+    if (load.type === 'distance') {
+      const distance = typeof load.distanceValue === 'number' ? load.distanceValue : null;
+      if (distance === null) {
+        return '- (Distance)';
+      }
+      return `${distance} ${load.unit}`;
+    }
+
     const weightText = set.weight || '-';
     return weightText === '-' ? '-' : `${weightText} kg.`;
   };

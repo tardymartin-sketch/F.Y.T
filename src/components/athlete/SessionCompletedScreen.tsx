@@ -48,10 +48,21 @@ function calculateTotalVolume(exercises: SessionLog['exercises']): number {
     if (load.type === 'double') {
       return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
     }
-    if (typeof load.barKg !== 'number') return null;
-    const added = typeof load.addedKg === 'number' ? load.addedKg : null;
-    if (added === null) return null;
-    return load.barKg + added;
+    if (load.type === 'barbell') {
+      if (typeof load.barKg !== 'number') return null;
+      const added = typeof load.addedKg === 'number' ? load.addedKg : null;
+      if (added === null) return null;
+      return load.barKg + added;
+    }
+    if (load.type === 'assisted') {
+      // Exercice assisté : retourne une valeur négative pour l'assistance
+      return typeof load.assistanceKg === 'number' ? -load.assistanceKg : null;
+    }
+    if (load.type === 'distance') {
+      // Distance n'a pas de poids pour le volume
+      return null;
+    }
+    return null;
   };
 
   let total = 0;

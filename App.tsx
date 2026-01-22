@@ -9,7 +9,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './src/supabaseClient';
 import {
   fetchTrainingPlans,
-  fetchSessionLogs,
+  fetchSessionLogsFromExerciseLogs,
   saveSessionLog,
   deleteSessionLog,
   fetchTeamAthletes,
@@ -33,6 +33,7 @@ import {
   fetchAthleteGroupsForAthlete,
   fetchActiveWeekOrganizersForAthlete,
   fetchAthleteOwnComments,
+  detectSessionPRs,
 } from './src/services/supabaseService';
 
 import type { AthleteGroupWithCount } from './types';
@@ -47,7 +48,8 @@ import {
   FilterState,
   ProfileRow,
   WeekOrganizerLog,
-  AthleteComment
+  AthleteComment,
+  PRDetected,
 } from './types';
 
 // Hooks V3
@@ -77,6 +79,10 @@ import { ProfileTab } from './src/components/athlete/ProfileTab';
 
 // Composants V3 Coach
 import { CoachConversationsView } from './src/components/coach/CoachConversationsView';
+
+// Composants Data Viz
+import { PRCelebrationModal } from './src/components/athlete/PRCelebrationModal';
+import { StatsPage } from './src/components/athlete/StatsPage';
 
 
 const App: React.FC = () => {
@@ -151,6 +157,19 @@ const App: React.FC = () => {
   const [hasLinkedAthletes, setHasLinkedAthletes] = useState<boolean>(false);
 
   // ===========================================
+  // PR CELEBRATION STATE
+  // ===========================================
+  const [detectedPRs, setDetectedPRs] = useState<PRDetected[]>([]);
+  const [showPRModal, setShowPRModal] = useState(false);
+
+  // ===========================================
+  // HISTORY NAVIGATION STATE (depuis Stats)
+  // ===========================================
+  const [targetSessionLogId, setTargetSessionLogId] = useState<string | null>(null);
+  const [targetHistoryExerciseName, setTargetHistoryExerciseName] = useState<string | null>(null);
+  const [targetHistoryDate, setTargetHistoryDate] = useState<string | null>(null);
+
+  // ===========================================
   // V3: DEVICE DETECTION (Étape 2)
   // ===========================================
   const { isMobile, isDesktop } = useDeviceDetect();
@@ -168,9 +187,9 @@ const App: React.FC = () => {
     const effectiveUseMobileLayout = isMobile || effectiveBehavesAsAthlete;
 
     // Vues valides selon le contexte
-    const validAthleteViews = ['home', 'history', 'coach', 'profile', 'active'];
-    const validCoachMobileViews = ['home', 'history', 'coach', 'profile', 'team', 'messages', 'active'];
-    const validCoachDesktopViews = ['home', 'history', 'team', 'messages', 'import', 'settings', 'active', 'admin'];
+    const validAthleteViews = ['home', 'history', 'stats', 'coach', 'profile', 'active'];
+    const validCoachMobileViews = ['home', 'history', 'stats', 'coach', 'profile', 'team', 'messages', 'active'];
+    const validCoachDesktopViews = ['home', 'history', 'stats', 'team', 'messages', 'import', 'settings', 'active', 'admin'];
 
     let validViews: string[];
     if (effectiveBehavesAsAthlete) {
@@ -297,7 +316,8 @@ const App: React.FC = () => {
     try {
       const [plans, logs] = await Promise.all([
         fetchTrainingPlans(currentUser.id),
-        fetchSessionLogs(currentUser.id)
+        // Utiliser exercise_logs comme source de données pour l'historique
+        fetchSessionLogsFromExerciseLogs(currentUser.id)
       ]);
 
       setTrainingData(plans);
@@ -489,13 +509,23 @@ const App: React.FC = () => {
     if (!currentUser) return;
 
     try {
+      // Détecter les PRs AVANT la sauvegarde (pour comparer avec l'historique existant)
+      const prs = await detectSessionPRs(log, currentUser.id);
+
       await saveSessionLog(log, currentUser.id);
       await loadUserData();
       setActiveSessionData(null);
       setEditingSession(null);
       setHasActiveSession(false);
       removeLocalStorageWithEvent('F.Y.T_active_session');
-      setCurrentView('home');
+
+      // Afficher le modal PR si des records ont été battus
+      if (prs.length > 0) {
+        setDetectedPRs(prs);
+        setShowPRModal(true);
+      } else {
+        setCurrentView('home');
+      }
     } catch (error) {
       console.error("Erreur sauvegarde session:", error);
       throw error;
@@ -531,6 +561,7 @@ const App: React.FC = () => {
       setEditingSession(log);
       setCurrentView('active');
     } else {
+      // Fallback : exercice non trouvé dans training_plans (programme modifié)
       const minimalData: WorkoutRow[] = log.exercises.map((ex, idx) => ({
         id: idx,
         annee: log.sessionKey.annee,
@@ -540,6 +571,7 @@ const App: React.FC = () => {
         seance: log.sessionKey.seance,
         ordre: idx + 1,
         exercice: ex.exerciseName,
+        exerciseId: undefined,  // Pas de lien vers exercises (legacy)
         series: ex.sets.length.toString(),
         repsDuree: '',
         repos: '',
@@ -590,8 +622,8 @@ const App: React.FC = () => {
   const handleSaveManualSession = async (log: SessionLog) => {
     try {
       await saveSessionLog(log, currentUser!.id);
-      // Refresh history
-      const updatedHistory = await fetchSessionLogs(currentUser!.id);
+      // Refresh history depuis exercise_logs
+      const updatedHistory = await fetchSessionLogsFromExerciseLogs(currentUser!.id);
       setHistory(updatedHistory);
       setEditingManualSession(null);
       setCurrentView('history');
@@ -611,7 +643,7 @@ const App: React.FC = () => {
   };
 
   const handleFetchAthleteHistory = async (athleteId: string) => {
-    return await fetchSessionLogs(athleteId);
+    return await fetchSessionLogsFromExerciseLogs(athleteId);
   };
 
   const handleFetchAllUsers = async () => {
@@ -790,8 +822,8 @@ const App: React.FC = () => {
           ${showBottomNav ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : ''}
         `}
       >
-        {/* Mobile header (si layout mobile) */}
-        {useMobileLayout && (
+        {/* Mobile header (si layout mobile) - uniquement sur la page d'accueil */}
+        {useMobileLayout && currentView === 'home' && (
           <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
             <div className="flex items-center justify-center">
               <h1 className="font-bold text-white text-lg">F.Y.T</h1>
@@ -872,6 +904,33 @@ const App: React.FC = () => {
                   onEdit={handleEditSession}
                   userId={currentUser.id}
                   onEditManualSession={handleEditManualSession}
+                  targetSessionLogId={targetSessionLogId}
+                  targetExerciseName={targetHistoryExerciseName}
+                  targetDate={targetHistoryDate}
+                  onClearTarget={() => {
+                    setTargetSessionLogId(null);
+                    setTargetHistoryExerciseName(null);
+                    setTargetHistoryDate(null);
+                  }}
+                />
+              )}
+
+              {/* V3: Vue Stats (Data Viz) */}
+              {currentView === 'stats' && (
+                <StatsPage
+                  userId={currentUser.id}
+                  onViewSession={(sessionLogId, exerciseName) => {
+                    setTargetSessionLogId(sessionLogId);
+                    setTargetHistoryExerciseName(exerciseName);
+                    setTargetHistoryDate(null);
+                    setCurrentView('history');
+                  }}
+                  onViewDate={(date) => {
+                    setTargetHistoryDate(date);
+                    setTargetSessionLogId(null);
+                    setTargetHistoryExerciseName(null);
+                    setCurrentView('history');
+                  }}
                 />
               )}
 
@@ -978,10 +1037,20 @@ const App: React.FC = () => {
       {/* V3: Bottom Navigation Athlète (Étape 3) */}
       {showBottomNav && (
         <BottomNav
-          activeTab={currentView as 'home' | 'history' | 'coach' | 'profile'}
+          activeTab={currentView as 'home' | 'history' | 'stats' | 'coach' | 'profile'}
           onTabChange={handleViewChange}
-          userId={currentUser?.id}
-          isOnSessionScreen={currentView === 'active' || currentView === 'addSession'}
+        />
+      )}
+
+      {/* PR Celebration Modal */}
+      {showPRModal && detectedPRs.length > 0 && (
+        <PRCelebrationModal
+          prs={detectedPRs}
+          onClose={() => {
+            setShowPRModal(false);
+            setDetectedPRs([]);
+            setCurrentView('home');
+          }}
         />
       )}
     </div>

@@ -4,7 +4,7 @@
 // Historique des séances avec affichage des RPE
 // ============================================================
 
-import React, { useState, useMemo, useRef, TouchEvent } from 'react';
+import React, { useState, useMemo, useRef, TouchEvent, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { SessionLog, getRpeColor, getRpeBgColor, getRpeInfo, SetLog, SetLoad } from '../../types';
 import {
@@ -33,6 +33,11 @@ interface Props {
   onEdit: (log: SessionLog) => void;
   userId?: string;
   onEditManualSession?: (session: SessionLog) => void;
+  // Navigation depuis Stats (pour voir la seance d'un PR)
+  targetSessionLogId?: string | null;
+  targetExerciseName?: string | null;
+  targetDate?: string | null;
+  onClearTarget?: () => void;
 }
 
 const isStravaSession = (log: SessionLog): boolean => {
@@ -100,12 +105,38 @@ function formatSetWeight(set: SetLog): string {
     }
     return `${weight} kg. (Sur machine)`;
   }
-  
+
+  if (load.type === 'assisted') {
+    const assistance = typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+    if (assistance === null) {
+      return '- (Assisté)';
+    }
+    return `-${assistance} kg. (Assisté)`;
+  }
+
+  if (load.type === 'distance') {
+    const distance = typeof load.distanceValue === 'number' ? load.distanceValue : null;
+    if (distance === null) {
+      return '- (Distance)';
+    }
+    return `${distance} ${load.unit}`;
+  }
+
   const weightText = set.weight || '-';
   return weightText === '-' ? '-' : `${weightText} kg.`;
 }
 
-export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId, onEditManualSession }) => {
+export const History: React.FC<Props> = ({
+  history,
+  onDelete,
+  onEdit,
+  userId,
+  onEditManualSession,
+  targetSessionLogId,
+  targetExerciseName,
+  targetDate,
+  onClearTarget
+}) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -116,9 +147,10 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId, on
   const [editingDateId, setEditingDateId] = useState<string | null>(null);
   const [tempDateBySessionId, setTempDateBySessionId] = useState<Record<string, string>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<string, Set<number>>>({});
-  
+
   const touchStartX = useRef<number>(0);
   const touchCurrentX = useRef<number>(0);
+  const targetSessionRef = useRef<HTMLDivElement>(null);
 
   const filteredHistory = useMemo(() => {
     let result = [...history];
@@ -142,6 +174,76 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId, on
     
     return result;
   }, [history, searchTerm, selectedMonth, currentYear]);
+
+  // ===========================================
+  // AUTO-EXPAND TARGET SESSION (from Stats page)
+  // ===========================================
+  useEffect(() => {
+    if (!targetSessionLogId) return;
+
+    // Trouver la seance ciblee
+    const targetSession = history.find(log => log.id === targetSessionLogId);
+    if (!targetSession) {
+      // Seance non trouvee, nettoyer
+      onClearTarget?.();
+      return;
+    }
+
+    // Deplier la seance
+    setExpandedId(targetSessionLogId);
+
+    // Trouver et deplier l'exercice cible
+    if (targetExerciseName) {
+      const exerciseIndex = targetSession.exercises.findIndex(
+        ex => ex.exerciseName.toLowerCase() === targetExerciseName.toLowerCase()
+      );
+      if (exerciseIndex !== -1) {
+        setExpandedExercises(prev => ({
+          ...prev,
+          [targetSessionLogId]: new Set([...(prev[targetSessionLogId] || []), exerciseIndex])
+        }));
+      }
+    }
+
+    // Scroller vers la seance avec un petit delai pour laisser le DOM se mettre a jour
+    setTimeout(() => {
+      targetSessionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+
+    // Nettoyer le target apres navigation
+    // On ne le fait pas immediatement pour permettre le scroll
+    setTimeout(() => {
+      onClearTarget?.();
+    }, 500);
+  }, [targetSessionLogId, targetExerciseName, history, onClearTarget]);
+
+  // ===========================================
+  // AUTO-EXPAND TARGET DATE SESSIONS (from Heatmap)
+  // ===========================================
+  useEffect(() => {
+    if (!targetDate) return;
+
+    // Trouver les séances de cette date
+    const sessionsOfDay = history.filter(log => log.date === targetDate);
+    if (sessionsOfDay.length === 0) {
+      onClearTarget?.();
+      return;
+    }
+
+    // Déplier la première séance du jour
+    const firstSession = sessionsOfDay[0];
+    setExpandedId(firstSession.id);
+
+    // Scroller vers la séance
+    setTimeout(() => {
+      targetSessionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+
+    // Nettoyer après navigation
+    setTimeout(() => {
+      onClearTarget?.();
+    }, 500);
+  }, [targetDate, history, onClearTarget]);
 
   const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
@@ -303,12 +405,15 @@ export const History: React.FC<Props> = ({ history, onDelete, onEdit, userId, on
             );
             const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
 
+            const isTargetSession = targetSessionLogId === log.id || (targetDate === log.date && history.filter(l => l.date === targetDate)[0]?.id === log.id);
+
             return (
               <div
                 key={log.id}
+                ref={isTargetSession ? targetSessionRef : undefined}
                 className={`relative overflow-hidden rounded-2xl transition-all duration-300 ${
                   isDeleting ? 'opacity-0 scale-95' : ''
-                }`}
+                } ${isTargetSession ? 'ring-2 ring-purple-500 ring-offset-2 ring-offset-slate-950' : ''}`}
                 onTouchStart={(e) => handleTouchStart(log.id, e)}
                 onTouchMove={(e) => handleTouchMove(log.id, e)}
               >

@@ -99,7 +99,7 @@ function formatSetWeight(set: SetLog): string {
   }
 
   const load = set.load;
-  
+
   if (load.type === 'single') {
     const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
     if (weight === null) {
@@ -109,7 +109,7 @@ function formatSetWeight(set: SetLog): string {
     }
     return `${weight} kg. (Haltères/Kettlebell)`;
   }
-  
+
   if (load.type === 'double') {
     const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
     if (weight === null) {
@@ -118,7 +118,7 @@ function formatSetWeight(set: SetLog): string {
     }
     return `2 X ${weight} kg. (2 X Haltères/Kettlebell)`;
   }
-  
+
   if (load.type === 'barbell') {
     const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
     const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
@@ -128,7 +128,7 @@ function formatSetWeight(set: SetLog): string {
     }
     return `${total} kg. (Barre: ${barKg} + Poids: ${addedKg})`;
   }
-  
+
   if (load.type === 'machine') {
     const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
     if (weight === null) {
@@ -137,7 +137,23 @@ function formatSetWeight(set: SetLog): string {
     }
     return `${weight} kg. (Sur machine)`;
   }
-  
+
+  if (load.type === 'assisted') {
+    const assistance = typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+    if (assistance === null) {
+      return '- (Assisté)';
+    }
+    return `-${assistance} kg. (Assisté)`;
+  }
+
+  if (load.type === 'distance') {
+    const distance = typeof load.distanceValue === 'number' ? load.distanceValue : null;
+    if (distance === null) {
+      return '- (Distance)';
+    }
+    return `${distance} ${load.unit}`;
+  }
+
   // Fallback final
   const weightText = set.weight || '-';
   return weightText === '-' ? '-' : `${weightText} kg.`;
