@@ -1,12 +1,13 @@
 // ============================================================
 // F.Y.T - HEATMAP CALENDAR
 // src/components/athlete/stats/HeatmapCalendar.tsx
-// Calendrier type GitHub avec RPE quotidien (vue verticale)
+// Calendrier avec blocs mensuels et RPE quotidien
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Loader2, Calendar, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { Loader2, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchDailyVolume } from '../../../services/supabaseService';
+import { ChartTooltipOverlay, formatVolume as formatVolumeOverlay, getRpeColor as getRpeTextColorOverlay, formatRpeValue } from './ChartTooltipOverlay';
 
 // ===========================================
 // TYPES
@@ -29,12 +30,21 @@ interface TooltipPosition {
   y: number;
 }
 
+interface MonthData {
+  month: number;
+  name: string;
+  weeks: (Date | null)[][]; // Grille de semaines, null pour les cases vides
+}
+
 // ===========================================
 // CONSTANTS
 // ===========================================
 
 const DAYS_FR = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-const MONTHS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+const MONTHS_FR_FULL = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+];
 
 // ===========================================
 // HELPERS
@@ -42,9 +52,8 @@ const MONTHS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 
 
 function getRpeColor(rpe: number | null, hasTraining: boolean): string {
   if (!hasTraining) return 'bg-slate-800';
-  if (rpe === null) return 'bg-blue-600'; // Entraînement sans RPE = bleu
+  if (rpe === null) return 'bg-blue-600';
 
-  // Gradient basé sur RPE (1-10)
   if (rpe <= 4) return 'bg-green-500';
   if (rpe <= 6) return 'bg-yellow-500';
   if (rpe <= 8) return 'bg-orange-500';
@@ -67,49 +76,53 @@ function formatVolume(value: number): string {
   return `${Math.round(value)} kg`;
 }
 
-function getWeeksInYear(year: number): { week: Date[]; monthLabel?: string }[] {
-  const weeks: { week: Date[]; monthLabel?: string }[] = [];
-  const startDate = new Date(year, 0, 1);
+function getMonthsData(year: number): MonthData[] {
+  const months: MonthData[] = [];
 
-  // Trouver le premier lundi de l'année
-  const dayOfWeek = startDate.getDay();
-  const daysToMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek;
-  startDate.setDate(startDate.getDate() + daysToMonday);
+  for (let month = 0; month < 12; month++) {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
 
-  // Si on a reculé en décembre de l'année précédente, avancer d'une semaine
-  if (startDate.getFullYear() < year) {
-    startDate.setDate(startDate.getDate() + 7);
-  }
+    // Jour de la semaine du 1er (0=dim, 1=lun, ..., 6=sam)
+    // On veut lundi=0, donc on convertit
+    let startDow = firstDay.getDay();
+    startDow = startDow === 0 ? 6 : startDow - 1; // Lundi = 0
 
-  // Générer les semaines
-  const currentDate = new Date(startDate);
-  let lastMonth = -1;
+    const weeks: (Date | null)[][] = [];
+    let currentWeek: (Date | null)[] = [];
 
-  for (let weekNum = 0; weekNum < 53; weekNum++) {
-    const weekDays: Date[] = [];
-    let monthLabel: string | undefined;
+    // Remplir les cases vides avant le 1er du mois
+    for (let i = 0; i < startDow; i++) {
+      currentWeek.push(null);
+    }
 
-    for (let day = 0; day < 7; day++) {
-      const date = new Date(currentDate);
-      if (date.getFullYear() === year) {
-        weekDays.push(date);
+    // Remplir les jours du mois
+    for (let day = 1; day <= daysInMonth; day++) {
+      currentWeek.push(new Date(year, month, day));
 
-        // Détecter le changement de mois (sur le premier jour de la semaine dans le nouveau mois)
-        const currentMonth = date.getMonth();
-        if (currentMonth !== lastMonth && day <= 3) {
-          monthLabel = MONTHS_FR[currentMonth];
-          lastMonth = currentMonth;
-        }
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
       }
-      currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    if (weekDays.length > 0) {
-      weeks.push({ week: weekDays, monthLabel });
+    // Remplir les cases vides après le dernier jour
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push(null);
+      }
+      weeks.push(currentWeek);
     }
+
+    months.push({
+      month,
+      name: MONTHS_FR_FULL[month],
+      weeks,
+    });
   }
 
-  return weeks;
+  return months;
 }
 
 // ===========================================
@@ -141,7 +154,6 @@ export const HeatmapCalendar: React.FC<Props> = ({ userId, onViewDate }) => {
         });
 
         setVolumeData(dataMap);
-        // Reset selected day when year changes
         setSelectedDay(null);
         setTooltipPosition(null);
       } catch (err) {
@@ -154,7 +166,7 @@ export const HeatmapCalendar: React.FC<Props> = ({ userId, onViewDate }) => {
     loadData();
   }, [userId, year]);
 
-  const weeksData = useMemo(() => getWeeksInYear(year), [year]);
+  const monthsData = useMemo(() => getMonthsData(year), [year]);
 
   const totalVolume = useMemo(() => {
     let total = 0;
@@ -180,14 +192,12 @@ export const HeatmapCalendar: React.FC<Props> = ({ userId, onViewDate }) => {
       const containerRect = containerRef.current.getBoundingClientRect();
       const cellRect = event.currentTarget.getBoundingClientRect();
 
-      // Position relative au container
       setTooltipPosition({
         x: cellRect.left - containerRect.left + cellRect.width / 2,
         y: cellRect.top - containerRect.top - 8,
       });
       setSelectedDay(dayData);
     } else {
-      // Jour sans séance → fermer l'overlay
       setSelectedDay(null);
       setTooltipPosition(null);
     }
@@ -204,11 +214,21 @@ export const HeatmapCalendar: React.FC<Props> = ({ userId, onViewDate }) => {
   return (
     <div className="space-y-4">
       {/* Header with year navigation */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 relative" ref={containerRef}>
+      <div
+        className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 relative"
+        ref={containerRef}
+        onClick={() => {
+          // Fermer l'overlay si on clique n'importe où dans le container
+          if (selectedDay) {
+            setSelectedDay(null);
+            setTooltipPosition(null);
+          }
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-white font-medium flex items-center gap-2">
             <Calendar className="w-5 h-5 text-green-400" />
-            Activité {year}
+            Activités
           </h3>
 
           <div className="flex items-center gap-2">
@@ -229,139 +249,94 @@ export const HeatmapCalendar: React.FC<Props> = ({ userId, onViewDate }) => {
           </div>
         </div>
 
-        {/* Heatmap container - offset so Thursday is centered */}
-        {/* Month label = 2rem, so we add 1rem padding on right to compensate */}
-        <div className="pr-4">
-          {/* Day labels (X-axis) */}
-          <div className="grid grid-cols-[2rem_repeat(7,1fr)] gap-0.5 mb-1">
-            <div /> {/* Spacer for month label */}
-            {DAYS_FR.map((day, i) => (
-              <div
-                key={i}
-                className="text-[9px] text-slate-500 text-center"
-              >
-                {day}
+        {/* Monthly blocks grid - 2 columns on mobile, 3 on larger screens */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {monthsData.map((monthData) => (
+            <div key={monthData.month} className="bg-slate-900/50 rounded-lg p-2">
+              {/* Month name */}
+              <div className="text-xs font-medium text-slate-300 text-center mb-2">
+                {monthData.name}
               </div>
-            ))}
-          </div>
 
-          {/* Heatmap Grid (vertical layout) */}
-          <div className="space-y-0.5">
-            {weeksData.map(({ week, monthLabel }, weekIndex) => (
-              <div key={weekIndex} className="grid grid-cols-[2rem_repeat(7,1fr)] gap-0.5">
-                {/* Month label */}
-                <div className="text-[9px] text-slate-500 text-right pr-1 flex items-center justify-end">
-                  {monthLabel || ''}
-                </div>
+              {/* Day headers */}
+              <div className="grid grid-cols-7 gap-0.5 mb-1">
+                {DAYS_FR.map((day, i) => (
+                  <div
+                    key={i}
+                    className="text-[8px] text-slate-500 text-center"
+                  >
+                    {day}
+                  </div>
+                ))}
+              </div>
 
-                {/* Week days */}
-                {Array.from({ length: 7 }).map((_, dayIndex) => {
-                  const date = week.find((d) => {
-                    const dow = d.getDay();
-                    // Convertir dimanche (0) en 6, et lundi (1) en 0
-                    const mondayBasedDow = dow === 0 ? 6 : dow - 1;
-                    return mondayBasedDow === dayIndex;
-                  });
-
-                  if (!date) {
-                    return (
-                      <div
-                        key={dayIndex}
-                        className="h-5 rounded-sm bg-transparent"
-                      />
-                    );
-                  }
-
-                  const dateStr = date.toISOString().split('T')[0];
-                  const dayData = volumeData.get(dateStr);
-                  const hasTraining = dayData && dayData.sessionCount > 0;
-                  const dayNumber = date.getDate();
-                  const isSelected = selectedDay?.date === dateStr;
-
-                  return (
-                    <div
-                      key={dateStr}
-                      className={`h-5 rounded-sm ${getRpeColor(dayData?.avgRpe ?? null, !!hasTraining)} cursor-pointer transition-all flex items-center justify-center ${
-                        isSelected ? 'ring-2 ring-white' : 'hover:ring-2 hover:ring-white/30'
-                      }`}
-                      onClick={(e) =>
-                        handleDayClick(
-                          dayData || { date: dateStr, volume: 0, sessionCount: 0, avgRpe: null },
-                          e
-                        )
+              {/* Weeks grid */}
+              <div className="space-y-0.5">
+                {monthData.weeks.map((week, weekIndex) => (
+                  <div key={weekIndex} className="grid grid-cols-7 gap-0.5">
+                    {week.map((date, dayIndex) => {
+                      if (!date) {
+                        return (
+                          <div
+                            key={`empty-${dayIndex}`}
+                            className="aspect-square rounded-sm bg-transparent"
+                          />
+                        );
                       }
-                    >
-                      <span className={`text-[8px] font-medium ${getRpeTextColor(dayData?.avgRpe ?? null, !!hasTraining)}`}>
-                        {dayNumber}
-                      </span>
-                    </div>
-                  );
-                })}
+
+                      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                      const dayData = volumeData.get(dateStr);
+                      const hasTraining = dayData && dayData.sessionCount > 0;
+                      const dayNumber = date.getDate();
+                      const isSelected = selectedDay?.date === dateStr;
+
+                      return (
+                        <div
+                          key={dateStr}
+                          className={`aspect-square rounded-sm ${getRpeColor(dayData?.avgRpe ?? null, !!hasTraining)} cursor-pointer transition-all flex items-center justify-center ${
+                            isSelected ? 'ring-2 ring-white' : 'hover:ring-1 hover:ring-white/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Empêcher la fermeture par le container
+                            handleDayClick(
+                              dayData || { date: dateStr, volume: 0, sessionCount: 0, avgRpe: null },
+                              e
+                            );
+                          }}
+                        >
+                          <span className={`text-[7px] font-medium ${getRpeTextColor(dayData?.avgRpe ?? null, !!hasTraining)}`}>
+                            {dayNumber}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
         {/* Overlay Tooltip */}
         {selectedDay && selectedDay.sessionCount > 0 && tooltipPosition && (
-          <div
-            className="absolute z-50 bg-slate-900 border border-slate-600 rounded-lg p-3 shadow-xl"
-            style={{
-              left: tooltipPosition.x,
-              top: tooltipPosition.y,
-              transform: 'translate(-50%, -100%)',
-              minWidth: '180px',
+          <ChartTooltipOverlay
+            data={{
+              date: selectedDay.date,
+              label: `${selectedDay.sessionCount} séance${selectedDay.sessionCount > 1 ? 's' : ''}`,
+              primaryValue: formatVolumeOverlay(selectedDay.volume),
+              primaryColor: 'text-blue-400',
+              secondaryLabel: 'RPE:',
+              secondaryValue: formatRpeValue(selectedDay.avgRpe),
+              secondaryColor: getRpeTextColorOverlay(selectedDay.avgRpe),
             }}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-xs text-slate-400 mb-1">
-                  {new Date(selectedDay.date).toLocaleDateString('fr-FR', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  })}
-                </div>
-                <div className="text-white font-medium text-sm">
-                  {formatVolume(selectedDay.volume)}
-                </div>
-                <div className="text-slate-300 text-xs">
-                  {selectedDay.sessionCount} séance{selectedDay.sessionCount > 1 ? 's' : ''}
-                </div>
-                {selectedDay.avgRpe !== null && (
-                  <div className="text-xs mt-1">
-                    <span className="text-slate-400">RPE:</span>{' '}
-                    <span className={`font-medium ${
-                      selectedDay.avgRpe <= 4 ? 'text-green-400' :
-                      selectedDay.avgRpe <= 6 ? 'text-yellow-400' :
-                      selectedDay.avgRpe <= 8 ? 'text-orange-400' :
-                      'text-red-400'
-                    }`}>
-                      {selectedDay.avgRpe}
-                    </span>
-                  </div>
-                )}
-                {selectedDay.avgRpe === null && (
-                  <div className="text-xs mt-1 text-blue-400">
-                    RPE non renseigné
-                  </div>
-                )}
-              </div>
-              {onViewDate && (
-                <button
-                  onClick={() => onViewDate(selectedDay.date)}
-                  className="p-1.5 bg-purple-500/20 hover:bg-purple-500/40 rounded-lg transition-colors"
-                  title="Voir dans l'historique"
-                >
-                  <Eye className="w-4 h-4 text-purple-400" />
-                </button>
-              )}
-            </div>
-            {/* Arrow */}
-            <div className="absolute left-1/2 bottom-0 transform -translate-x-1/2 translate-y-full">
-              <div className="border-8 border-transparent border-t-slate-900" />
-            </div>
-          </div>
+            position={{
+              x: tooltipPosition.x,
+              y: tooltipPosition.y,
+              containerWidth: containerRef.current?.offsetWidth,
+              containerHeight: containerRef.current?.offsetHeight,
+            }}
+            onViewDate={onViewDate}
+          />
         )}
 
         {/* Legend */}

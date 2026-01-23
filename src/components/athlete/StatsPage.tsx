@@ -24,6 +24,14 @@ interface Props {
 }
 
 type StatsSection = 'prs' | '1rm' | 'distribution' | 'heatmap' | 'trends';
+type TrendPeriod = 6 | 12 | 52 | 0; // 0 = all time
+
+const TREND_PERIODS: { value: TrendPeriod; label: string }[] = [
+  { value: 6, label: '6 sem.' },
+  { value: 12, label: '12 sem.' },
+  { value: 52, label: '1 an' },
+  { value: 0, label: 'Tout' },
+];
 
 // ===========================================
 // COMPONENT
@@ -31,6 +39,7 @@ type StatsSection = 'prs' | '1rm' | 'distribution' | 'heatmap' | 'trends';
 
 export const StatsPage: React.FC<Props> = ({ userId, onViewSession, onViewDate }) => {
   const [activeSection, setActiveSection] = useState<StatsSection>('prs');
+  const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>(12);
 
   const sections: { id: StatsSection; label: string; icon: React.ReactNode }[] = [
     { id: 'prs', label: 'Records', icon: <Trophy className="w-4 h-4" /> },
@@ -82,7 +91,7 @@ export const StatsPage: React.FC<Props> = ({ userId, onViewSession, onViewDate }
         )}
 
         {activeSection === '1rm' && (
-          <OneRMProgressChart userId={userId} />
+          <OneRMProgressChart userId={userId} onViewDate={onViewDate} />
         )}
 
         {activeSection === 'distribution' && (
@@ -95,8 +104,27 @@ export const StatsPage: React.FC<Props> = ({ userId, onViewSession, onViewDate }
 
         {activeSection === 'trends' && (
           <div className="space-y-6">
-            <RPETrendChart userId={userId} />
-            <VolumeTrendChart userId={userId} />
+            {/* Period Filter */}
+            <div className="flex gap-2">
+              {TREND_PERIODS.map((period) => (
+                <button
+                  key={period.value}
+                  onClick={() => setTrendPeriod(period.value)}
+                  className={`
+                    flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all
+                    ${trendPeriod === period.value
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }
+                  `}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
+
+            <RPETrendChart userId={userId} weeksBack={trendPeriod} onViewDate={onViewDate} />
+            <VolumeTrendChart userId={userId} weeksBack={trendPeriod} onViewDate={onViewDate} />
           </div>
         )}
       </div>

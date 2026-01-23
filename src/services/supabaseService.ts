@@ -827,43 +827,46 @@ export async function fetchPersonalRecords(userId: string): Promise<Record<strin
 }
 
 /**
- * Récupère le volume total par semaine
+ * Récupère le volume total par semaine (N dernières semaines)
  */
 export async function fetchWeeklyVolume(
   userId: string,
-  year?: number
-): Promise<{ year: number; week: number; totalVolume: number }[]> {
-  let query = supabase
+  weeksBack: number = 12
+): Promise<{ year: number; week: number; totalVolume: number; sessionCount: number }[]> {
+  const { data, error } = await supabase
     .from('exercise_logs')
-    .select('year, week, total_volume')
+    .select('year, week, total_volume, session_log_id')
     .eq('user_id', userId)
     .not('total_volume', 'is', null)
-;
-
-  if (year) {
-    query = query.eq('year', year);
-  }
-
-  const { data, error } = await query;
+    .order('year', { ascending: false })
+    .order('week', { ascending: false });
 
   if (error) {
     console.error('Error fetching weekly volume:', error);
     throw error;
   }
 
-  // Agréger par semaine
-  const weeklyMap = new Map<string, number>();
+  // Agréger par semaine avec comptage de sessions
+  const weeklyMap = new Map<string, { totalVolume: number; sessions: Set<string> }>();
   (data || []).forEach(row => {
     const key = `${row.year}-${row.week}`;
-    weeklyMap.set(key, (weeklyMap.get(key) || 0) + (row.total_volume || 0));
+    if (!weeklyMap.has(key)) {
+      weeklyMap.set(key, { totalVolume: 0, sessions: new Set() });
+    }
+    const entry = weeklyMap.get(key)!;
+    entry.totalVolume += row.total_volume || 0;
+    entry.sessions.add(row.session_log_id);
   });
 
-  return Array.from(weeklyMap.entries())
-    .map(([key, totalVolume]) => {
+  const result = Array.from(weeklyMap.entries())
+    .map(([key, data]) => {
       const [year, week] = key.split('-').map(Number);
-      return { year, week, totalVolume };
+      return { year, week, totalVolume: data.totalVolume, sessionCount: data.sessions.size };
     })
-    .sort((a, b) => a.year * 100 + a.week - (b.year * 100 + b.week));
+    .sort((a, b) => b.year * 100 + b.week - (a.year * 100 + a.week)) // Plus récent d'abord
+    .slice(0, weeksBack);
+
+  return result;
 }
 
 /**
@@ -1328,6 +1331,10 @@ export interface GhostSession {
   maxWeight: number;
   totalVolume: number;
   estimated1RM: number;
+  // Nouvelles propriétés pour le Ghost Mode basé sur le tonnage
+  setCount: number;       // Nombre de séries du record
+  avgReps: number;        // Moyenne des reps du record
+  avgWeight: number;      // Moyenne de la charge du record
 }
 
 export interface PRCheckResult {
@@ -1472,7 +1479,7 @@ export async function fetchDailyVolume(
 
 /**
  * Récupère la meilleure performance passée pour un exercice (Ghost Session)
- * Basé sur le meilleur 1RM estimé
+ * Basé sur le meilleur tonnage total (total_volume)
  */
 export async function fetchGhostSession(
   userId: string,
@@ -1483,8 +1490,9 @@ export async function fetchGhostSession(
     .select('*')
     .eq('user_id', userId)
     .eq('exercise_name', exerciseName)
-    .not('estimated_1rm', 'is', null)
-    .order('estimated_1rm', { ascending: false })
+    .not('total_volume', 'is', null)
+    .gt('total_volume', 0)
+    .order('total_volume', { ascending: false })
     .limit(1);
 
   if (error) {
@@ -1497,14 +1505,53 @@ export async function fetchGhostSession(
   }
 
   const row = data[0] as ExerciseLogRow;
+  const sets = (row.sets_detail || []) as SetDetailLog[];
+
+  // Calculer les moyennes à partir des sets
+  let totalReps = 0;
+  let totalWeight = 0;
+  let validSetsCount = 0;
+
+  for (const set of sets) {
+    const anySet = set as any;
+    let weight = 0;
+
+    // Extraire le poids depuis load ou weight
+    if (anySet.load) {
+      const load = anySet.load;
+      if (load.type === 'single' || load.type === 'machine') {
+        weight = Number(load.value) || 0;
+      } else if (load.type === 'double') {
+        weight = (Number(load.value) || 0) * 2;
+      } else if (load.type === 'barbell') {
+        weight = (Number(load.bar) || 0) + (Number(load.plates) || 0) * 2;
+      }
+    } else if (anySet.weight) {
+      weight = parseFloat(String(anySet.weight).replace(',', '.')) || 0;
+    }
+
+    const reps = parseInt(String(anySet.reps || '0').replace(/[^0-9]/g, '')) || 0;
+
+    if (weight > 0 || reps > 0) {
+      totalWeight += weight;
+      totalReps += reps;
+      validSetsCount++;
+    }
+  }
+
+  const avgWeight = validSetsCount > 0 ? Math.round((totalWeight / validSetsCount) * 10) / 10 : 0;
+  const avgReps = validSetsCount > 0 ? Math.round((totalReps / validSetsCount) * 10) / 10 : 0;
 
   return {
     date: row.date,
     sessionLogId: row.session_log_id,
-    sets: (row.sets_detail || []) as SetDetailLog[],
+    sets: sets,
     maxWeight: Number(row.max_weight) || 0,
     totalVolume: Number(row.total_volume) || 0,
     estimated1RM: Number(row.estimated_1rm) || 0,
+    setCount: validSetsCount,
+    avgReps: avgReps,
+    avgWeight: avgWeight,
   };
 }
 
@@ -1716,6 +1763,99 @@ export async function fetchWeeklyRPETrend(
   return result.slice(0, weeksBack);
 }
 
+// ===========================================
+// SESSION TRENDS (par date réelle)
+// ===========================================
+
+export interface SessionTrendData {
+  date: string; // Format ISO: "2026-01-20"
+  totalVolume: number;
+  avgRpe: number | null;
+  sessionCount: number;
+  sessionNames: string[];
+}
+
+/**
+ * Récupère les tendances des sessions par date réelle (pas par semaine ISO)
+ * Agrège volume et RPE par jour, triés chronologiquement
+ */
+export async function fetchSessionTrends(
+  userId: string,
+  weeksBack: number = 12
+): Promise<SessionTrendData[]> {
+  // Calculer la date de début basée sur weeksBack
+  const endDate = new Date();
+  const startDate = new Date();
+  if (weeksBack > 0) {
+    startDate.setDate(startDate.getDate() - (weeksBack * 7));
+  } else {
+    // All time: on remonte à 10 ans en arrière
+    startDate.setFullYear(startDate.getFullYear() - 10);
+  }
+
+  const startDateStr = startDate.toISOString().split('T')[0];
+  const endDateStr = endDate.toISOString().split('T')[0];
+
+  // Récupérer les exercise_logs avec le nom de session via la relation
+  const { data, error } = await supabase
+    .from('exercise_logs')
+    .select('date, total_volume, rpe, session_log_id, session_logs!session_log_id(session_key_name)')
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .lte('date', endDateStr)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching session trends:', error);
+    throw error;
+  }
+
+  // Agréger par date
+  const dateMap = new Map<string, {
+    totalVolume: number;
+    rpeSum: number;
+    rpeCount: number;
+    sessions: Map<string, string>; // session_id -> session_name
+  }>();
+
+  (data || []).forEach((row: any) => {
+    const date = row.date;
+    if (!date) return;
+
+    if (!dateMap.has(date)) {
+      dateMap.set(date, { totalVolume: 0, rpeSum: 0, rpeCount: 0, sessions: new Map() });
+    }
+    const entry = dateMap.get(date)!;
+    entry.totalVolume += Number(row.total_volume) || 0;
+    if (row.rpe !== null && row.rpe > 0) {
+      entry.rpeSum += Number(row.rpe);
+      entry.rpeCount++;
+    }
+    // Stocker le nom de la session
+    const sessionName = row.session_logs?.session_key_name || 'Séance';
+    entry.sessions.set(row.session_log_id, sessionName);
+  });
+
+  // Convertir en tableau trié par date
+  const result: SessionTrendData[] = [];
+  dateMap.forEach((data, date) => {
+    result.push({
+      date,
+      totalVolume: Math.round(data.totalVolume),
+      avgRpe: data.rpeCount > 0
+        ? Math.round((data.rpeSum / data.rpeCount) * 10) / 10
+        : null,
+      sessionCount: data.sessions.size,
+      sessionNames: Array.from(data.sessions.values()),
+    });
+  });
+
+  // Tri chronologique (date ISO trie correctement comme string)
+  result.sort((a, b) => a.date.localeCompare(b.date));
+
+  return result;
+}
+
 /**
  * Récupère les PRs enrichis avec le 1RM estimé, max reps et max duration
  */
@@ -1730,12 +1870,28 @@ export async function fetchPersonalRecordsEnhanced(userId: string): Promise<Reco
   movementPattern: string | null;
   muscleGroup: string | null;
   muscleGroupId: string | null;
+  categoryCode: string | null;
 }>> {
+  // Récupérer les logs d'exercices
   const { data, error } = await supabase
     .from('exercise_logs')
-    .select('exercise_name, max_weight, total_volume, total_reps, estimated_1rm, exercise_type, date, session_log_id, movement_pattern_name, muscle_group_name, muscle_group_id')
+    .select('exercise_name, max_weight, total_volume, total_reps, estimated_1rm, exercise_type, date, session_log_id, movement_pattern_name, muscle_group_name, muscle_group_id, exercise_id')
     .eq('user_id', userId)
-;
+  ;
+
+  // Récupérer les catégories des exercices
+  const { data: exercisesData } = await supabase
+    .from('exercises')
+    .select('id, exercise_categories!category_id(code)')
+  ;
+
+  // Créer un map exerciseId -> categoryCode
+  const categoryMap: Record<string, string> = {};
+  (exercisesData || []).forEach((ex: any) => {
+    if (ex.id && ex.exercise_categories?.code) {
+      categoryMap[ex.id] = ex.exercise_categories.code;
+    }
+  });
 
   if (error) {
     console.error('Error fetching enhanced PRs:', error);
@@ -1754,6 +1910,7 @@ export async function fetchPersonalRecordsEnhanced(userId: string): Promise<Reco
     movementPattern: string | null;
     muscleGroup: string | null;
     muscleGroupId: string | null;
+    categoryCode: string | null;
   }> = {};
 
   (data || []).forEach((row: any) => {
@@ -1769,7 +1926,8 @@ export async function fetchPersonalRecordsEnhanced(userId: string): Promise<Reco
         sessionLogId: '',
         movementPattern: row.movement_pattern_name || null,
         muscleGroup: row.muscle_group_name || null,
-        muscleGroupId: row.muscle_group_id || null
+        muscleGroupId: row.muscle_group_id || null,
+        categoryCode: row.exercise_id ? (categoryMap[row.exercise_id] || null) : null
       };
     }
 
@@ -1937,6 +2095,114 @@ export async function fetch1RMHistoryByExercises(
     date: row.date,
     estimated1RM: Number(row.estimated_1rm)
   }));
+}
+
+/**
+ * Récupère les données hiérarchiques pour les filtres 1RM :
+ * Catégorie → Groupe musculaire → Exercices
+ * Ne retourne que les données où l'utilisateur a des 1RM enregistrés
+ */
+export interface CategoryWithMuscleGroups {
+  categoryCode: string;
+  categoryName: string;
+  muscleGroups: {
+    id: string;
+    name: string;
+    exercises: string[];
+  }[];
+}
+
+export async function fetch1RMFilterHierarchy(
+  userId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<CategoryWithMuscleGroups[]> {
+  // Requête pour récupérer les exercise_logs avec les infos de catégorie via exercises
+  let query = supabase
+    .from('exercise_logs')
+    .select(`
+      exercise_name,
+      muscle_group_id,
+      muscle_group_name,
+      estimated_1rm,
+      exercises!inner (
+        category_id,
+        exercise_categories (
+          code,
+          name,
+          display_order
+        )
+      )
+    `)
+    .eq('user_id', userId)
+    .not('muscle_group_id', 'is', null)
+    .not('estimated_1rm', 'is', null)
+    .gt('estimated_1rm', 0);
+
+  if (startDate) {
+    query = query.gte('date', startDate);
+  }
+  if (endDate) {
+    query = query.lte('date', endDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching 1RM filter hierarchy:', error);
+    throw error;
+  }
+
+  // Structure pour regrouper : categoryCode → muscleGroupId → exerciseNames
+  const hierarchy: Record<string, {
+    categoryName: string;
+    displayOrder: number;
+    muscleGroups: Record<string, {
+      name: string;
+      exercises: Set<string>;
+    }>;
+  }> = {};
+
+  (data || []).forEach((row: any) => {
+    const categoryInfo = row.exercises?.exercise_categories;
+    if (!categoryInfo || !row.muscle_group_id || !row.muscle_group_name) return;
+
+    const categoryCode = categoryInfo.code;
+    const categoryName = categoryInfo.name;
+    const displayOrder = categoryInfo.display_order;
+
+    if (!hierarchy[categoryCode]) {
+      hierarchy[categoryCode] = {
+        categoryName,
+        displayOrder,
+        muscleGroups: {}
+      };
+    }
+
+    if (!hierarchy[categoryCode].muscleGroups[row.muscle_group_id]) {
+      hierarchy[categoryCode].muscleGroups[row.muscle_group_id] = {
+        name: row.muscle_group_name,
+        exercises: new Set()
+      };
+    }
+
+    hierarchy[categoryCode].muscleGroups[row.muscle_group_id].exercises.add(row.exercise_name);
+  });
+
+  // Convertir en tableau et trier
+  return Object.entries(hierarchy)
+    .sort((a, b) => a[1].displayOrder - b[1].displayOrder)
+    .map(([categoryCode, catData]) => ({
+      categoryCode,
+      categoryName: catData.categoryName,
+      muscleGroups: Object.entries(catData.muscleGroups)
+        .map(([id, mgData]) => ({
+          id,
+          name: mgData.name,
+          exercises: Array.from(mgData.exercises).sort()
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }));
 }
 
 // ===========================================

@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, SetLoad, RPE_SCALE } from '../../../types';
+import { WorkoutRow, SessionLog, ExerciseLog, SetLog, SessionKey, SetLoad, RPE_SCALE, SetDetailLog } from '../../../types';
 import {
   Play,
   Pause,
@@ -347,44 +347,127 @@ function getLastExerciseHistory(
 }
 
 /**
- * Récupère les données ghost pour un set spécifique
- * Retourne le set correspondant de la meilleure performance passée
+ * Calcule le message Ghost Mode basé sur le tonnage
+ *
+ * Logique:
+ * - Si X séries validées et X < NBséries - 1 : affiche le record (nb séries, moy reps, moy charge)
+ * - Si X séries validées et X = NBséries - 1 : calcule le tonnage théorique et compare
+ *   - Si tonnage théorique > ghost : "Complète cette série et tu battras ton record!"
+ *   - Si +10% charge permet de battre : "Augmente et complète ta dernière série de Y kg pour battre ton record"
+ *   - Sinon : affiche le record
  */
-function getGhostSetForDisplay(
+interface GhostModeResult {
+  type: 'record' | 'beating' | 'increase' | 'none';
+  message: string;
+  tonnageRecord?: number; // Tonnage max en kg
+  increaseAmount?: number; // kg à ajouter
+  ghostSession?: GhostSession; // Données complètes pour le modal
+}
+
+function getGhostModeData(
   ghost: GhostSession | undefined,
-  setIndex: number
-): { weight: number; reps: number; volume: number } | null {
-  if (!ghost || !ghost.sets || ghost.sets.length === 0) return null;
-
-  // Utiliser le set correspondant ou le dernier set disponible
-  const ghostSet = ghost.sets[setIndex] || ghost.sets[ghost.sets.length - 1];
-  if (!ghostSet) return null;
-
-  // Extraire le poids depuis le load JSONB ou weight string
-  let weight = 0;
-  const anySet = ghostSet as any;
-  if (anySet.load) {
-    const load = anySet.load;
-    if (load.type === 'single' || load.type === 'machine') {
-      weight = typeof load.weightKg === 'number' ? load.weightKg : 0;
-    } else if (load.type === 'double') {
-      weight = typeof load.weightKg === 'number' ? load.weightKg * 2 : 0;
-    } else if (load.type === 'barbell') {
-      weight = (load.barKg || 0) + (load.addedKg || 0);
-    }
-  } else if (anySet.weight) {
-    const parsed = parseFloat(String(anySet.weight).replace(',', '.'));
-    weight = Number.isFinite(parsed) ? parsed : 0;
+  sets: SetLog[],
+  totalSets: number
+): GhostModeResult {
+  if (!ghost || ghost.totalVolume <= 0) {
+    return { type: 'none', message: '' };
   }
 
-  // Extraire les reps
-  const reps = typeof anySet.reps === 'number'
-    ? anySet.reps
-    : parseInt(String(anySet.reps || '0').replace(/[^0-9]/g, '')) || 0;
+  // Compter les séries validées et calculer le tonnage actuel
+  const validatedSets = sets.filter(s => s.completed);
+  const validatedCount = validatedSets.length;
 
-  const volume = weight * reps;
+  // Calculer le tonnage des séries validées
+  let validatedTonnage = 0;
+  for (const set of validatedSets) {
+    const weight = getLoadTotalKg(set.load) || parseKgLikeToNumber(set.weight || '0') || 0;
+    const reps = parseInt(String(set.reps || '0').replace(/[^0-9]/g, '')) || 0;
+    validatedTonnage += weight * reps;
+  }
 
-  return { weight, reps, volume };
+  // Tonnage record (arrondi pour l'affichage)
+  const tonnageRecord = Math.round(ghost.totalVolume);
+
+  // Cas 1: Moins de séries validées que totalSets - 1
+  if (validatedCount < totalSets - 1) {
+    return {
+      type: 'record',
+      message: '',
+      tonnageRecord,
+      ghostSession: ghost
+    };
+  }
+
+  // Cas 2: Dernière série (X = totalSets - 1)
+  if (validatedCount === totalSets - 1) {
+    // Récupérer les valeurs de la dernière série (non validée)
+    const lastSetIndex = sets.findIndex(s => !s.completed);
+    if (lastSetIndex === -1) {
+      // Toutes les séries sont validées, ne devrait pas arriver dans ce cas
+      return { type: 'record', message: '', tonnageRecord, ghostSession: ghost };
+    }
+
+    const lastSet = sets[lastSetIndex];
+    const lastWeight = getLoadTotalKg(lastSet.load) || parseKgLikeToNumber(lastSet.weight || '0') || 0;
+    const lastReps = parseInt(String(lastSet.reps || '0').replace(/[^0-9]/g, '')) || 0;
+    const lastSetTonnage = lastWeight * lastReps;
+
+    // Tonnage théorique = tonnage validé + tonnage de la dernière série
+    const theoreticalTonnage = validatedTonnage + lastSetTonnage;
+    const ghostTonnage = ghost.totalVolume;
+
+    // Vérifier si on bat le record
+    if (theoreticalTonnage > ghostTonnage) {
+      return {
+        type: 'beating',
+        message: 'Complète cette série et tu battras ton record!',
+        tonnageRecord,
+        ghostSession: ghost
+      };
+    }
+
+    // Vérifier si une augmentation de ~10% de la charge permettrait de battre
+    // Tonnage nécessaire pour battre = ghostTonnage + 1 (pour être strictement supérieur)
+    const neededTonnage = ghostTonnage + 1;
+    const neededLastSetTonnage = neededTonnage - validatedTonnage;
+
+    if (lastReps > 0) {
+      const neededWeight = neededLastSetTonnage / lastReps;
+      const weightIncrease = neededWeight - lastWeight;
+
+      // Vérifier si l'augmentation est <= 10% de la charge actuelle
+      const maxAllowedIncrease = lastWeight * 0.10;
+
+      if (weightIncrease > 0 && weightIncrease <= maxAllowedIncrease) {
+        // Arrondir par tranche de 2.5 kg au supérieur
+        const roundedIncrease = Math.ceil(weightIncrease / 2.5) * 2.5;
+
+        return {
+          type: 'increase',
+          message: `Augmente de ${roundedIncrease} kg pour battre ton record`,
+          tonnageRecord,
+          increaseAmount: roundedIncrease,
+          ghostSession: ghost
+        };
+      }
+    }
+
+    // Si aucune des conditions n'est remplie, afficher le record
+    return {
+      type: 'record',
+      message: '',
+      tonnageRecord,
+      ghostSession: ghost
+    };
+  }
+
+  // Cas par défaut (toutes les séries validées ou autre)
+  return {
+    type: 'record',
+    message: '',
+    tonnageRecord,
+    ghostSession: ghost
+  };
 }
 
 // ===========================================
@@ -434,6 +517,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [showForceFinishModal, setShowForceFinishModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState<number | null>(null);
   const [showConsignesModal, setShowConsignesModal] = useState<number | null>(null);
+  const [showGhostRecordModal, setShowGhostRecordModal] = useState<{ exerciseName: string; ghost: GhostSession } | null>(null);
 
   const isEditMode = !!initialLog;
   const [editingDateEnabled, setEditingDateEnabled] = useState(false);
@@ -1669,28 +1753,62 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                               )}
                             </div>
 
-                            {/* Ghost Mode - Meilleure performance passée */}
+                            {/* Ghost Mode - Basé sur le tonnage total */}
                             {(() => {
                               const ghost = ghostSessions[exercise.exerciseName];
-                              const ghostSet = getGhostSetForDisplay(ghost, setIndex);
-                              if (!ghostSet || (ghostSet.weight === 0 && ghostSet.reps === 0)) return null;
+                              const ghostData = getGhostModeData(ghost, exercise.sets, exercise.sets.length);
 
-                              // Calculer si le set actuel bat le ghost
-                              const currentWeight = getLoadTotalKg(set.load) || 0;
-                              const currentReps = parseInt(String(set.reps || '0').replace(/[^0-9]/g, '')) || 0;
-                              const currentVolume = currentWeight * currentReps;
-                              const isBeatingGhost = currentVolume > ghostSet.volume && currentVolume > 0;
+                              if (ghostData.type === 'none') return null;
+
+                              // Déterminer le style selon le type
+                              const isBeatingSoon = ghostData.type === 'beating' || ghostData.type === 'increase';
+
+                              // Formater le tonnage (en tonnes si >= 1000 kg)
+                              const formatTonnage = (kg: number) => {
+                                if (kg >= 1000) {
+                                  return `${(kg / 1000).toFixed(2)} T`;
+                                }
+                                return `${kg} kg`;
+                              };
 
                               return (
-                                <div className={`mt-3 p-3 rounded-xl border ${isBeatingGhost ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'}`}>
+                                <div className={`mt-3 p-3 rounded-xl border ${isBeatingSoon ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'}`}>
+                                  {/* Ligne 1: Record tonnage + bouton info */}
                                   <div className="flex items-center justify-between">
-                                    <span className={`text-xs font-medium ${isBeatingGhost ? 'text-emerald-400' : 'text-slate-400'}`}>
-                                      {isBeatingGhost ? '🔥 Tu bats ton record !' : '👻 Meilleur:'}
+                                    <span className="text-xs font-medium text-slate-400">
+                                      👻 Record:
                                     </span>
-                                    <span className={`text-sm font-semibold ${isBeatingGhost ? 'text-emerald-300' : 'text-slate-300'}`}>
-                                      {ghostSet.weight}kg × {ghostSet.reps}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-semibold text-slate-300">
+                                        {ghostData.tonnageRecord !== undefined ? formatTonnage(ghostData.tonnageRecord) : '-'}
+                                      </span>
+                                      {ghostData.ghostSession && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowGhostRecordModal({
+                                              exerciseName: exercise.exerciseName,
+                                              ghost: ghostData.ghostSession!
+                                            });
+                                          }}
+                                          className="p-1 bg-slate-700/50 hover:bg-slate-600/50 rounded-lg transition-colors"
+                                          title="Voir les détails du record"
+                                          type="button"
+                                        >
+                                          <Info className="w-3.5 h-3.5 text-slate-400" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
+
+                                  {/* Ligne 2: Message dynamique si applicable */}
+                                  {ghostData.message && (
+                                    <div className={`mt-2 text-xs font-medium ${isBeatingSoon ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                      {ghostData.type === 'beating' && '🔥 '}
+                                      {ghostData.type === 'increase' && '💪 '}
+                                      {ghostData.message}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -2020,6 +2138,104 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     );
   };
 
+  const renderGhostRecordModal = () => {
+    if (!showGhostRecordModal) return null;
+
+    const { exerciseName, ghost } = showGhostRecordModal;
+
+    // Fonction pour formater le poids depuis SetDetailLog
+    const formatGhostSetWeight = (set: SetDetailLog): string => {
+      if (!set.load) {
+        return set.weight ? `${set.weight} kg` : '-';
+      }
+
+      const load = set.load;
+      if (load.type === 'single') {
+        return load.weightKg !== null ? `${load.weightKg} kg` : '-';
+      }
+      if (load.type === 'double') {
+        return load.weightKg !== null ? `${load.weightKg} kg/côté` : '-';
+      }
+      if (load.type === 'barbell') {
+        const bar = load.barKg || 0;
+        const added = load.addedKg || 0;
+        const total = bar + added;
+        return `${total} kg`;
+      }
+      if (load.type === 'machine') {
+        return load.weightKg !== null ? `${load.weightKg} kg` : '-';
+      }
+      if (load.type === 'assisted') {
+        return load.assistanceKg !== null ? `-${load.assistanceKg} kg` : '-';
+      }
+      if (load.type === 'distance') {
+        if (load.distanceValue === null) return '-';
+        return load.unit === 'm' ? `${load.distanceValue} m` : `${load.distanceValue} cm`;
+      }
+      return '-';
+    };
+
+    // Formater le tonnage total
+    const formatTonnage = (kg: number) => {
+      if (kg >= 1000) {
+        return `${(kg / 1000).toFixed(2)} T`;
+      }
+      return `${kg} kg`;
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">👻</span>
+              <h3 className="text-lg font-bold text-white">
+                Record {exerciseName}
+              </h3>
+            </div>
+            <button
+              onClick={() => setShowGhostRecordModal(null)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div>
+            {/* Date et tonnage total */}
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-slate-400">
+                {new Date(ghost.date).toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+              <div className="bg-purple-500/20 border border-purple-500/30 rounded-lg px-3 py-1">
+                <span className="text-purple-400 font-semibold">
+                  {formatTonnage(Math.round(ghost.totalVolume))}
+                </span>
+              </div>
+            </div>
+
+            {/* Détail des séries */}
+            <div className="space-y-2">
+              {ghost.sets.map((set, idx) => (
+                <div key={idx} className="flex items-center gap-4 bg-slate-800/50 rounded-lg p-3">
+                  <span className="text-sm text-slate-400">Série {set.setNumber}</span>
+                  <span className="text-white font-medium">{set.reps || '-'}</span>
+                  <span className="text-slate-500">×</span>
+                  <span className="text-emerald-400 font-medium">{formatGhostSetWeight(set)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ===========================================
   // MAIN RENDER
   // ===========================================
@@ -2055,7 +2271,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       {showForceFinishModal && renderForceFinishModal()}
       {showHistoryModal !== null && renderHistoryModal()}
       {showConsignesModal !== null && renderConsignesModal()}
-      
+      {showGhostRecordModal !== null && renderGhostRecordModal()}
+
       {showSessionRpeModal && pendingSessionLog && (
         <SessionRpeModal
           onSubmit={handleSessionRpeSubmit}

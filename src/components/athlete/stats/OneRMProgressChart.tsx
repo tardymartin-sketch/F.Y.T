@@ -1,11 +1,12 @@
 // ============================================================
 // F.Y.T - 1RM PROGRESS CHART
 // src/components/athlete/stats/OneRMProgressChart.tsx
-// Graphique d'évolution du 1RM estimé par groupe musculaire
+// Graphique d'évolution du 1RM estimé par catégorie
+// Filtre catégorie + légende interactive pour masquer exercices
 // ============================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, Loader2, TrendingUp, Calendar, Info, X, Check } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { ChevronDown, Loader2, TrendingUp, Calendar, Info, X, Eye, EyeOff, Search } from 'lucide-react';
 import {
   XAxis,
   YAxis,
@@ -16,7 +17,8 @@ import {
   ScatterChart,
   ZAxis,
 } from 'recharts';
-import { fetchUserMuscleGroupsWithExercises, fetch1RMHistoryByExercises } from '../../../services/supabaseService';
+import { fetch1RMFilterHierarchy, fetch1RMHistoryByExercises, CategoryWithMuscleGroups } from '../../../services/supabaseService';
+import { ChartTooltipOverlay } from './ChartTooltipOverlay';
 
 // ===========================================
 // TYPES
@@ -24,12 +26,7 @@ import { fetchUserMuscleGroupsWithExercises, fetch1RMHistoryByExercises } from '
 
 interface Props {
   userId: string;
-}
-
-interface MuscleGroupWithExercises {
-  id: string;
-  name: string;
-  exercises: string[];
+  onViewDate?: (date: string) => void;
 }
 
 interface DataPoint {
@@ -39,6 +36,7 @@ interface DataPoint {
   estimated1RM: number;
   timestamp: number;
 }
+
 
 // ===========================================
 // CONSTANTS
@@ -80,6 +78,16 @@ function getTodayDate(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Normalise une chaîne pour la recherche (lowercase, sans accents)
+ */
+function normalizeString(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 // ===========================================
 // CUSTOM TOOLTIP COMPONENT
 // ===========================================
@@ -87,20 +95,40 @@ function getTodayDate(): string {
 interface CustomTooltipProps {
   active?: boolean;
   payload?: any[];
+  coordinate?: { x: number; y: number };
+  viewBox?: { width: number; height: number };
+  onViewDate?: (date: string) => void;
+  onCoordinateChange?: (coord: { x: number; y: number }) => void;
 }
 
-const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
-  if (active && payload && payload.length > 0) {
-    const data = payload[0].payload;
-    return (
-      <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-xl">
-        <p className="text-white font-medium text-sm">{data.exerciseName}</p>
-        <p className="text-slate-400 text-xs mt-1">{data.dateLabel}</p>
-        <p className="text-green-400 font-bold mt-1">{data.estimated1RM} kg</p>
-      </div>
-    );
+const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, coordinate, viewBox, onViewDate, onCoordinateChange }) => {
+  if (!active || !payload || !payload[0]) return null;
+
+  const data = payload[0].payload as DataPoint;
+  const x = coordinate?.x ?? payload[0].cx ?? 0;
+  const y = coordinate?.y ?? payload[0].cy ?? 0;
+
+  if (onCoordinateChange) {
+    onCoordinateChange({ x, y });
   }
-  return null;
+
+  return (
+    <ChartTooltipOverlay
+      data={{
+        date: data.date,
+        label: data.exerciseName,
+        primaryValue: `${data.estimated1RM} kg`,
+        primaryColor: 'text-green-400',
+      }}
+      position={{
+        x,
+        y,
+        containerWidth: viewBox?.width,
+        containerHeight: viewBox?.height,
+      }}
+      onViewDate={onViewDate}
+    />
+  );
 };
 
 // ===========================================
@@ -183,80 +211,148 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose }) => {
 // MAIN COMPONENT
 // ===========================================
 
-export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
-  // States
-  const [muscleGroups, setMuscleGroups] = useState<MuscleGroupWithExercises[]>([]);
-  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<MuscleGroupWithExercises | null>(null);
-  const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
+export const OneRMProgressChart: React.FC<Props> = ({ userId, onViewDate }) => {
+  // Hierarchical data
+  const [hierarchyData, setHierarchyData] = useState<CategoryWithMuscleGroups[]>([]);
+
+  // Filter selections
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedExercisesFromSearch, setSelectedExercisesFromSearch] = useState<string[]>([]);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Chart data
   const [rawData, setRawData] = useState<DataPoint[]>([]);
+
+  // UI states
   const [loading, setLoading] = useState(true);
   const [loadingChart, setLoadingChart] = useState(false);
-  const [showMuscleDropdown, setShowMuscleDropdown] = useState(false);
-  const [showExerciseDropdown, setShowExerciseDropdown] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+
+  // Pinned tooltip state
+  const [pinnedData, setPinnedData] = useState<DataPoint | null>(null);
+  const [pinnedCoordinate, setPinnedCoordinate] = useState<{ x: number; y: number } | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const lastHoverCoordRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Legend visibility state
+  const [hiddenExercises, setHiddenExercises] = useState<Set<string>>(new Set());
 
   // Date filters
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>(getTodayDate());
 
   // Hidden date inputs refs
-  const startDateInputRef = React.useRef<HTMLInputElement>(null);
-  const endDateInputRef = React.useRef<HTMLInputElement>(null);
+  const startDateInputRef = useRef<HTMLInputElement>(null);
+  const endDateInputRef = useRef<HTMLInputElement>(null);
 
-  // Load muscle groups with exercises (filtered by dates)
+  // ===========================================
+  // DERIVED DATA
+  // ===========================================
+
+  // Get all exercises for selected category (from all muscle groups)
+  const availableExercises = useMemo((): string[] => {
+    if (!selectedCategory) return [];
+    const category = hierarchyData.find(c => c.categoryCode === selectedCategory);
+    if (!category) return [];
+
+    const exercises = new Set<string>();
+    category.muscleGroups.forEach(mg => mg.exercises.forEach(ex => exercises.add(ex)));
+    return Array.from(exercises).sort();
+  }, [hierarchyData, selectedCategory]);
+
+  // Selected category name
+  const selectedCategoryName = useMemo(() => {
+    const category = hierarchyData.find(c => c.categoryCode === selectedCategory);
+    return category?.categoryName || null;
+  }, [hierarchyData, selectedCategory]);
+
+  // Get ALL exercises from all categories (for search)
+  const allExercises = useMemo((): string[] => {
+    const exercises = new Set<string>();
+    hierarchyData.forEach(cat => {
+      cat.muscleGroups.forEach(mg => {
+        mg.exercises.forEach(ex => exercises.add(ex));
+      });
+    });
+    return Array.from(exercises).sort();
+  }, [hierarchyData]);
+
+  // Search suggestions (filtered exercises based on search query, excluding already selected)
+  const searchSuggestions = useMemo((): string[] => {
+    if (!searchQuery || searchQuery.length < 2) return [];
+
+    const normalizedQuery = normalizeString(searchQuery);
+    const selectedSet = new Set(selectedExercisesFromSearch);
+
+    // Exercices qui commencent par la recherche (excluant ceux déjà sélectionnés)
+    const startsWithQuery = allExercises
+      .filter(ex => !selectedSet.has(ex) && normalizeString(ex).startsWith(normalizedQuery))
+      .sort((a, b) => a.localeCompare(b));
+
+    // Exercices qui contiennent la recherche (mais ne commencent pas par)
+    const containsQuery = allExercises
+      .filter(ex =>
+        !selectedSet.has(ex) &&
+        !normalizeString(ex).startsWith(normalizedQuery) &&
+        normalizeString(ex).includes(normalizedQuery)
+      )
+      .sort((a, b) => a.localeCompare(b));
+
+    return [...startsWithQuery, ...containsQuery].slice(0, 8); // Limiter à 8 suggestions
+  }, [allExercises, searchQuery, selectedExercisesFromSearch]);
+
+  // Check if we're in search mode or category mode
+  const isSearchMode = selectedExercisesFromSearch.length > 0;
+  const displayMode: 'none' | 'category' | 'search' = isSearchMode
+    ? 'search'
+    : selectedCategory
+      ? 'category'
+      : 'none';
+
+  // ===========================================
+  // EFFECTS
+  // ===========================================
+
+  // Load hierarchy data
   useEffect(() => {
-    const loadMuscleGroups = async () => {
+    const loadHierarchy = async () => {
       try {
         setLoading(true);
-        const groups = await fetchUserMuscleGroupsWithExercises(
+        const data = await fetch1RMFilterHierarchy(
           userId,
           startDate || undefined,
           endDate || undefined
         );
-        setMuscleGroups(groups);
+        setHierarchyData(data);
 
-        // Reset selection if the current muscle group is no longer available
-        if (selectedMuscleGroup) {
-          const stillExists = groups.find(g => g.id === selectedMuscleGroup.id);
-          if (!stillExists) {
-            setSelectedMuscleGroup(null);
-            setSelectedExercises([]);
-          } else {
-            // Update the muscle group data (exercises may have changed)
-            setSelectedMuscleGroup(stillExists);
-            // Filter selected exercises to only include those still available
-            const validExercises = selectedExercises.filter(e => stillExists.exercises.includes(e));
-            if (validExercises.length !== selectedExercises.length) {
-              setSelectedExercises(validExercises);
-            }
+        // Reset selections if category no longer exists
+        if (selectedCategory) {
+          const categoryStillExists = data.some(c => c.categoryCode === selectedCategory);
+          if (!categoryStillExists) {
+            setSelectedCategory(null);
           }
         }
       } catch (err) {
-        console.error('Error loading muscle groups:', err);
+        console.error('Error loading hierarchy:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    loadMuscleGroups();
+    loadHierarchy();
   }, [userId, startDate, endDate]);
 
-  // Auto-select single exercise when muscle group changes
+  // Reset hidden exercises when category changes
   useEffect(() => {
-    if (selectedMuscleGroup) {
-      if (selectedMuscleGroup.exercises.length === 1) {
-        setSelectedExercises(selectedMuscleGroup.exercises);
-      } else {
-        setSelectedExercises([]);
-      }
-    } else {
-      setSelectedExercises([]);
-    }
-  }, [selectedMuscleGroup?.id]);
+    setHiddenExercises(new Set());
+  }, [selectedCategory]);
 
-  // Load chart data when exercises or dates change
+  // Load chart data when category changes (load all exercises for that category)
   useEffect(() => {
-    if (selectedExercises.length === 0) {
+    if (availableExercises.length === 0) {
       setRawData([]);
       return;
     }
@@ -266,7 +362,7 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
         setLoadingChart(true);
         const history = await fetch1RMHistoryByExercises(
           userId,
-          selectedExercises,
+          availableExercises,
           startDate || undefined,
           endDate || undefined
         );
@@ -288,32 +384,123 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
     };
 
     loadChartData();
-  }, [userId, selectedExercises, startDate, endDate]);
+  }, [userId, availableExercises, startDate, endDate]);
 
-  // Toggle exercise selection
-  const toggleExercise = (exercise: string) => {
-    setSelectedExercises((prev) => {
-      if (prev.includes(exercise)) {
-        return prev.filter((e) => e !== exercise);
+  // Load chart data when exercises are selected from search
+  useEffect(() => {
+    if (selectedExercisesFromSearch.length === 0) {
+      return;
+    }
+
+    const loadSearchExerciseData = async () => {
+      try {
+        setLoadingChart(true);
+        const history = await fetch1RMHistoryByExercises(
+          userId,
+          selectedExercisesFromSearch,
+          startDate || undefined,
+          endDate || undefined
+        );
+
+        const data: DataPoint[] = history.map((h) => ({
+          exerciseName: h.exerciseName,
+          date: h.date,
+          dateLabel: formatDateLabel(h.date),
+          estimated1RM: Math.round(h.estimated1RM * 10) / 10,
+          timestamp: new Date(h.date).getTime(),
+        }));
+
+        setRawData(data);
+      } catch (err) {
+        console.error('Error loading search exercise data:', err);
+      } finally {
+        setLoadingChart(false);
       }
-      return [...prev, exercise];
+    };
+
+    loadSearchExerciseData();
+  }, [userId, selectedExercisesFromSearch, startDate, endDate]);
+
+  // ===========================================
+  // HANDLERS
+  // ===========================================
+
+  const handleCategorySelect = (categoryCode: string) => {
+    setSelectedCategory(categoryCode);
+    setSelectedExercisesFromSearch([]);
+    setSearchQuery('');
+    setShowCategoryDropdown(false);
+  };
+
+  const handleSearchExerciseSelect = (exerciseName: string) => {
+    // Ajouter l'exercice à la liste existante
+    setSelectedExercisesFromSearch(prev => [...prev, exerciseName]);
+    setSelectedCategory(null);
+    setSearchQuery('');
+  };
+
+  const clearAllSearchExercises = () => {
+    setSelectedExercisesFromSearch([]);
+    setSearchQuery('');
+  };
+
+  const removeSearchExercise = (exerciseName: string) => {
+    setSelectedExercisesFromSearch(prev => prev.filter(ex => ex !== exerciseName));
+  };
+
+  const toggleExerciseVisibility = (exerciseName: string) => {
+    setHiddenExercises(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(exerciseName)) {
+        newSet.delete(exerciseName);
+      } else {
+        newSet.add(exerciseName);
+      }
+      return newSet;
     });
   };
 
-  // Select all exercises
-  const selectAllExercises = () => {
-    if (selectedMuscleGroup) {
-      setSelectedExercises(selectedMuscleGroup.exercises);
+  const handleChartClick = useCallback((chartEvent: any) => {
+    if (pinnedData) {
+      setPinnedData(null);
+      setPinnedCoordinate(null);
+      return;
     }
-  };
 
-  // Clear all exercises
-  const clearAllExercises = () => {
-    setSelectedExercises([]);
-  };
+    if (chartEvent && chartEvent.activePayload && chartEvent.activePayload[0] && lastHoverCoordRef.current) {
+      const clickedData = chartEvent.activePayload[0].payload as DataPoint;
+      setPinnedData(clickedData);
+      setPinnedCoordinate({
+        x: lastHoverCoordRef.current.x,
+        y: lastHoverCoordRef.current.y,
+      });
+    }
+  }, [pinnedData]);
 
-  // Group data by exercise for chart
-  const { exerciseNames, chartData, colorMap } = useMemo(() => {
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.pinned-tooltip')) {
+      return;
+    }
+    if (pinnedData && !target.closest('.recharts-wrapper')) {
+      setPinnedData(null);
+      setPinnedCoordinate(null);
+    }
+  }, [pinnedData]);
+
+  const handleCoordinateChange = useCallback((coord: { x: number; y: number }) => {
+    lastHoverCoordRef.current = coord;
+  }, []);
+
+  const renderHoverTooltip = useMemo(() => {
+    return (props: any) => <CustomTooltip {...props} onViewDate={onViewDate} onCoordinateChange={handleCoordinateChange} />;
+  }, [onViewDate, handleCoordinateChange]);
+
+  // ===========================================
+  // CHART DATA
+  // ===========================================
+
+  const { exerciseNames, chartData, colorMap, visibleChartData } = useMemo(() => {
     const exerciseSet = new Set<string>();
     rawData.forEach((d) => exerciseSet.add(d.exerciseName));
     const names = Array.from(exerciseSet).sort();
@@ -323,12 +510,20 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
       colors[name] = EXERCISE_COLORS[index % EXERCISE_COLORS.length];
     });
 
+    // Filter out hidden exercises for the chart
+    const visibleData = rawData.filter(d => !hiddenExercises.has(d.exerciseName));
+
     return {
       exerciseNames: names,
       chartData: rawData,
+      visibleChartData: visibleData,
       colorMap: colors,
     };
-  }, [rawData]);
+  }, [rawData, hiddenExercises]);
+
+  // ===========================================
+  // RENDER
+  // ===========================================
 
   if (loading) {
     return (
@@ -338,7 +533,7 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
     );
   }
 
-  if (muscleGroups.length === 0 && !startDate && !endDate) {
+  if (hierarchyData.length === 0 && !startDate && !endDate) {
     return (
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8 text-center">
         <TrendingUp className="w-12 h-12 text-slate-600 mx-auto mb-3" />
@@ -350,9 +545,251 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
 
   return (
     <div className="space-y-3">
-      {/* Date Filters - Full width */}
+      {/* Search Bar */}
+      {hierarchyData.length > 0 && (
+        <div className="relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher un exercice..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Suggestions Dropdown */}
+          {searchSuggestions.length > 0 && (
+            <div className="absolute z-30 mt-2 w-full bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+              {searchSuggestions.map((exercise) => (
+                <button
+                  key={exercise}
+                  onClick={() => handleSearchExerciseSelect(exercise)}
+                  className="w-full px-4 py-3 text-left text-white hover:bg-slate-700 transition-colors"
+                >
+                  {exercise}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Selected Exercises from Search (chips) */}
+      {selectedExercisesFromSearch.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedExercisesFromSearch.map((exercise) => (
+            <div
+              key={exercise}
+              className="flex items-center gap-1.5 bg-purple-500/20 border border-purple-500/30 rounded-lg px-3 py-1.5"
+            >
+              <span className="text-purple-400 text-sm font-medium">{exercise}</span>
+              <button
+                onClick={() => removeSearchExercise(exercise)}
+                className="p-0.5 text-purple-400 hover:text-purple-200 transition-colors"
+                title="Retirer cet exercice"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+          {selectedExercisesFromSearch.length > 1 && (
+            <button
+              onClick={clearAllSearchExercises}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-slate-600 transition-colors text-sm"
+              title="Tout effacer"
+            >
+              Tout effacer
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Category Filter - Only show when not in search mode */}
+      {hierarchyData.length > 0 && selectedExercisesFromSearch.length === 0 && (
+        <div className="relative">
+          <button
+            onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+            className="w-full flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-left"
+          >
+            <span className={`font-medium truncate ${selectedCategoryName ? 'text-white' : 'text-slate-400'}`}>
+              {selectedCategoryName || 'Sélectionner une catégorie'}
+            </span>
+            <ChevronDown
+              className={`w-5 h-5 text-slate-400 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {showCategoryDropdown && (
+            <div className="absolute z-20 mt-2 w-full bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+              {hierarchyData.map((category) => (
+                <button
+                  key={category.categoryCode}
+                  onClick={() => handleCategorySelect(category.categoryCode)}
+                  className={`
+                    w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center justify-between
+                    ${category.categoryCode === selectedCategory ? 'bg-purple-500/20 text-purple-400' : 'text-white'}
+                  `}
+                >
+                  <span>{category.categoryName}</span>
+                  <span className="text-xs text-slate-500">
+                    {category.muscleGroups.reduce((sum, mg) => sum + mg.exercises.length, 0)} exercices
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Chart */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+        <h3 className="text-white font-medium mb-4 flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-green-400" />
+          Évolution 1RM Estimé
+        </h3>
+
+        {hierarchyData.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">
+            <p>Aucune donnée pour cette période</p>
+            <p className="text-xs mt-1">Modifie les dates pour voir les données</p>
+          </div>
+        ) : !selectedCategory && selectedExercisesFromSearch.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">
+            <p>Recherche un exercice ou sélectionne une catégorie</p>
+          </div>
+        ) : loadingChart ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">
+            <p>Pas de données pour cette sélection</p>
+          </div>
+        ) : (
+          <>
+            {/* Scatter Chart */}
+            <div className="h-64 relative" ref={chartContainerRef} onClick={handleContainerClick}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  margin={{ top: 5, right: 5, left: -10, bottom: 5 }}
+                  onClick={handleChartClick}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis
+                    dataKey="timestamp"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
+                    tick={{ fill: '#94a3b8', fontSize: 10 }}
+                    tickLine={{ stroke: '#475569' }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                    }}
+                  />
+                  <YAxis
+                    dataKey="estimated1RM"
+                    type="number"
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    tickLine={{ stroke: '#475569' }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickFormatter={(value) => `${value}kg`}
+                  />
+                  <ZAxis range={[60, 60]} />
+                  {!pinnedData && (
+                    <Tooltip
+                      content={renderHoverTooltip}
+                      cursor={{ stroke: '#475569', strokeDasharray: '3 3' }}
+                      wrapperStyle={{ zIndex: 100, pointerEvents: 'none' }}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                      position={{ y: 0 }}
+                    />
+                  )}
+                  {exerciseNames
+                    .filter(name => !hiddenExercises.has(name))
+                    .map((name) => (
+                      <Scatter
+                        key={name}
+                        name={name}
+                        data={visibleChartData.filter((d) => d.exerciseName === name)}
+                        fill={colorMap[name]}
+                        line={{ stroke: colorMap[name], strokeWidth: 1.5 }}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                </ScatterChart>
+              </ResponsiveContainer>
+
+              {/* Pinned Tooltip */}
+              {pinnedData && pinnedCoordinate && (
+                <div className="pinned-tooltip" onClick={(e) => e.stopPropagation()}>
+                  <ChartTooltipOverlay
+                    data={{
+                      date: pinnedData.date,
+                      label: pinnedData.exerciseName,
+                      primaryValue: `${pinnedData.estimated1RM} kg`,
+                      primaryColor: 'text-green-400',
+                    }}
+                    position={{
+                      x: pinnedCoordinate.x,
+                      y: pinnedCoordinate.y,
+                      containerWidth: chartContainerRef.current?.offsetWidth,
+                      containerHeight: chartContainerRef.current?.offsetHeight,
+                    }}
+                    onViewDate={onViewDate}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Legend - Below chart with full width and eye toggle */}
+            <div className="mt-4 pt-3 border-t border-slate-700 space-y-2">
+              {exerciseNames.map((name) => {
+                const isHidden = hiddenExercises.has(name);
+                return (
+                  <button
+                    key={name}
+                    onClick={() => toggleExerciseVisibility(name)}
+                    className={`
+                      w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
+                      ${isHidden
+                        ? 'bg-slate-800/30 opacity-50'
+                        : 'bg-slate-800/50 hover:bg-slate-700/50'
+                      }
+                    `}
+                  >
+                    <div
+                      className={`w-3 h-3 rounded-full flex-shrink-0 ${isHidden ? 'opacity-40' : ''}`}
+                      style={{ backgroundColor: colorMap[name] }}
+                    />
+                    <span className={`flex-1 text-left text-sm ${isHidden ? 'text-slate-500' : 'text-slate-300'}`}>
+                      {name}
+                    </span>
+                    {isHidden ? (
+                      <EyeOff className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Date Filters - Below chart */}
       <div className="flex items-start gap-2">
-        {/* Start Date */}
         <div className="flex-1 flex flex-col items-center">
           <button
             onClick={() => startDateInputRef.current?.showPicker()}
@@ -376,7 +813,6 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
           )}
         </div>
 
-        {/* End Date */}
         <div className="flex-1 flex flex-col items-center">
           <button
             onClick={() => endDateInputRef.current?.showPicker()}
@@ -400,7 +836,6 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
           )}
         </div>
 
-        {/* Info Button */}
         <div className="flex flex-col items-center">
           <button
             onClick={() => setShowInfoModal(true)}
@@ -411,205 +846,6 @@ export const OneRMProgressChart: React.FC<Props> = ({ userId }) => {
           </button>
         </div>
       </div>
-
-      {/* Chart */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <h3 className="text-white font-medium mb-4 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-green-400" />
-          Évolution 1RM Estimé
-        </h3>
-
-        {muscleGroups.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">
-            <p>Aucune donnée pour cette période</p>
-            <p className="text-xs mt-1">Modifie les dates pour voir les données</p>
-          </div>
-        ) : !selectedMuscleGroup ? (
-          <div className="text-center py-8 text-slate-500">
-            <p>Sélectionne un groupe musculaire</p>
-          </div>
-        ) : selectedExercises.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">
-            <p>Sélectionne au moins un exercice</p>
-          </div>
-        ) : loadingChart ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
-          </div>
-        ) : chartData.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">
-            <p>Pas de données pour cette sélection</p>
-            <p className="text-xs mt-1">Modifie les filtres de dates</p>
-          </div>
-        ) : (
-          <>
-            {/* Legend */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {exerciseNames.map((name) => (
-                <div key={name} className="flex items-center gap-1.5 text-xs">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: colorMap[name] }}
-                  />
-                  <span className="text-slate-400 truncate max-w-[120px]">{name}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Scatter Chart */}
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis
-                    dataKey="timestamp"
-                    type="number"
-                    domain={['dataMin', 'dataMax']}
-                    tick={{ fill: '#94a3b8', fontSize: 10 }}
-                    tickLine={{ stroke: '#475569' }}
-                    axisLine={{ stroke: '#475569' }}
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-                    }}
-                  />
-                  <YAxis
-                    dataKey="estimated1RM"
-                    type="number"
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    tickLine={{ stroke: '#475569' }}
-                    axisLine={{ stroke: '#475569' }}
-                    tickFormatter={(value) => `${value}kg`}
-                  />
-                  <ZAxis range={[60, 60]} />
-                  <Tooltip content={<CustomTooltip />} />
-                  {exerciseNames.map((name) => (
-                    <Scatter
-                      key={name}
-                      name={name}
-                      data={chartData.filter((d) => d.exerciseName === name)}
-                      fill={colorMap[name]}
-                      line={{ stroke: colorMap[name], strokeWidth: 1.5 }}
-                    />
-                  ))}
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Filters below chart */}
-      {muscleGroups.length > 0 && (
-        <div className="space-y-3">
-          {/* Muscle Group Selector */}
-          <div>
-            <button
-              onClick={() => {
-                setShowMuscleDropdown(!showMuscleDropdown);
-                setShowExerciseDropdown(false);
-              }}
-              className="w-full flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-left"
-            >
-              <span className="text-white font-medium truncate">
-                {selectedMuscleGroup?.name || 'Sélectionner un groupe musculaire'}
-              </span>
-              <ChevronDown
-                className={`w-5 h-5 text-slate-400 transition-transform ${showMuscleDropdown ? 'rotate-180' : ''}`}
-              />
-            </button>
-
-            {showMuscleDropdown && (
-              <div className="mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl">
-                {muscleGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => {
-                      setSelectedMuscleGroup(group);
-                      setShowMuscleDropdown(false);
-                    }}
-                    className={`
-                      w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center justify-between
-                      ${group.id === selectedMuscleGroup?.id ? 'bg-purple-500/20 text-purple-400' : 'text-white'}
-                    `}
-                  >
-                    <span>{group.name}</span>
-                    <span className="text-xs text-slate-500">{group.exercises.length} exo</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Exercise Multi-Select (only shown when muscle group is selected) */}
-          {selectedMuscleGroup && (
-            <div>
-              <button
-                onClick={() => {
-                  setShowExerciseDropdown(!showExerciseDropdown);
-                  setShowMuscleDropdown(false);
-                }}
-                className="w-full flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-left"
-              >
-                <span className={`truncate ${selectedExercises.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                  {selectedExercises.length === 0
-                    ? 'Sélectionner les exercices'
-                    : selectedExercises.length === 1
-                      ? selectedExercises[0]
-                      : `${selectedExercises.length} exercices sélectionnés`}
-                </span>
-                <ChevronDown
-                  className={`w-5 h-5 text-slate-400 transition-transform ${showExerciseDropdown ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              {showExerciseDropdown && (
-                <div className="mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl">
-                  {/* Actions rapides */}
-                  <div className="flex border-b border-slate-700 px-2 py-2 gap-2">
-                    <button
-                      onClick={selectAllExercises}
-                      className="flex-1 text-xs text-purple-400 hover:text-purple-300 py-1"
-                    >
-                      Tout sélectionner
-                    </button>
-                    <button
-                      onClick={clearAllExercises}
-                      className="flex-1 text-xs text-slate-400 hover:text-slate-300 py-1"
-                    >
-                      Tout effacer
-                    </button>
-                  </div>
-
-                  {selectedMuscleGroup.exercises.map((exercise) => {
-                    const isSelected = selectedExercises.includes(exercise);
-                    return (
-                      <button
-                        key={exercise}
-                        onClick={() => toggleExercise(exercise)}
-                        className={`
-                          w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center gap-3
-                          ${isSelected ? 'bg-purple-500/10' : ''}
-                        `}
-                      >
-                        <div
-                          className={`
-                            w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0
-                            ${isSelected ? 'bg-purple-500 border-purple-500' : 'border-slate-600'}
-                          `}
-                        >
-                          {isSelected && <Check className="w-3 h-3 text-white" />}
-                        </div>
-                        <span className={isSelected ? 'text-white' : 'text-slate-300'}>{exercise}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Info Modal */}
       <InfoModal isOpen={showInfoModal} onClose={() => setShowInfoModal(false)} />

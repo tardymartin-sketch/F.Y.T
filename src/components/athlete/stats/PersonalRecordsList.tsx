@@ -16,7 +16,8 @@ import {
   X,
   Clock,
   Repeat,
-  History
+  History,
+  Zap
 } from 'lucide-react';
 
 // Icône haut du corps avec traits arrondis
@@ -97,42 +98,10 @@ interface PRRecord {
   movementPattern: string | null;
   muscleGroup: string | null;
   muscleGroupId: string | null;
+  categoryCode: string | null;
 }
 
-type FilterType = 'recent' | 'upper' | 'lower' | 'core' | null;
-
-// ===========================================
-// CONSTANTS - Muscle Group Mapping
-// ===========================================
-
-// Haut du corps
-const UPPER_BODY_MUSCLES = [
-  'Dos',
-  'Biceps',
-  'Pectoraux',
-  'Épaules',
-  'Triceps',
-  'Avant-bras',
-  'Trapèzes',
-  'Cou'
-];
-
-// Bas du corps
-const LOWER_BODY_MUSCLES = [
-  'Mollets',
-  'Fessiers',
-  'Ischio-jambiers',
-  'Quadriceps',
-  'Adducteurs',
-  'Abducteurs'
-];
-
-// Gainage
-const CORE_MUSCLES = [
-  'Abdominaux',
-  'Lombaires',
-  'Obliques'
-];
+type FilterType = 'recent' | 'upper' | 'lower' | 'core' | 'saq' | null;
 
 // ===========================================
 // HELPERS
@@ -176,24 +145,6 @@ function normalizeString(str: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/**
- * Vérifie si un muscle group appartient à une catégorie
- */
-function getMuscleCategory(muscleGroup: string | null): 'upper' | 'lower' | 'core' | null {
-  if (!muscleGroup) return null;
-
-  if (UPPER_BODY_MUSCLES.some(m => normalizeString(m) === normalizeString(muscleGroup))) {
-    return 'upper';
-  }
-  if (LOWER_BODY_MUSCLES.some(m => normalizeString(m) === normalizeString(muscleGroup))) {
-    return 'lower';
-  }
-  if (CORE_MUSCLES.some(m => normalizeString(m) === normalizeString(muscleGroup))) {
-    return 'core';
-  }
-  return null;
-}
-
 // ===========================================
 // COMPONENT
 // ===========================================
@@ -229,6 +180,7 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession }) 
           movementPattern: values.movementPattern,
           muscleGroup: values.muscleGroup,
           muscleGroupId: values.muscleGroupId,
+          categoryCode: values.categoryCode,
         }));
 
         setRecords(recordsList);
@@ -255,13 +207,9 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession }) 
 
     let results = records;
 
-    // Filtre par catégorie musculaire
-    if (activeFilter === 'upper') {
-      results = results.filter(r => getMuscleCategory(r.muscleGroup) === 'upper');
-    } else if (activeFilter === 'lower') {
-      results = results.filter(r => getMuscleCategory(r.muscleGroup) === 'lower');
-    } else if (activeFilter === 'core') {
-      results = results.filter(r => getMuscleCategory(r.muscleGroup) === 'core');
+    // Filtre par catégorie (utilise categoryCode de la base)
+    if (activeFilter === 'upper' || activeFilter === 'lower' || activeFilter === 'core' || activeFilter === 'saq') {
+      results = results.filter(r => r.categoryCode === activeFilter);
     }
 
     // Recherche texte (accent-insensitive, case-insensitive)
@@ -315,6 +263,44 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession }) 
     setActiveFilter(null);
   };
 
+  // Catégories présentes dans les records de l'utilisateur
+  // IMPORTANT: Ces hooks doivent être avant tout return conditionnel
+  const userCategoryCodes = useMemo(() => {
+    const codes = new Set<string>();
+    records.forEach(r => {
+      if (r.categoryCode) codes.add(r.categoryCode);
+    });
+    return codes;
+  }, [records]);
+
+  // Filtres dynamiques : "Récents" toujours visible + catégories présentes dans l'historique
+  const filters = useMemo(() => {
+    const allCategoryFilters: { id: FilterType; icon: React.ReactNode; title: string }[] = [
+      { id: 'upper', icon: <UpperBodyIcon className="w-7 h-7" />, title: 'Haut du corps' },
+      { id: 'lower', icon: <LowerBodyIcon className="w-7 h-7" />, title: 'Bas du corps' },
+      { id: 'core', icon: <Flame className="w-7 h-7" strokeWidth={2.5} />, title: 'Gainage' },
+      { id: 'saq', icon: <Zap className="w-7 h-7" strokeWidth={2.5} />, title: 'S.A.Q.' },
+    ];
+
+    const visibleFilters: { id: FilterType; icon: React.ReactNode; title: string }[] = [
+      { id: 'recent', icon: <History className="w-7 h-7" strokeWidth={2.5} />, title: 'Récents' },
+    ];
+
+    // TODO: Remettre ce filtre après les tests
+    // allCategoryFilters.forEach(filter => {
+    //   if (filter.id && userCategoryCodes.has(filter.id)) {
+    //     visibleFilters.push(filter);
+    //   }
+    // });
+
+    // TEMPORAIRE: Afficher toutes les catégories pour les tests
+    allCategoryFilters.forEach(filter => {
+      visibleFilters.push(filter);
+    });
+
+    return visibleFilters;
+  }, [userCategoryCodes]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -341,14 +327,6 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession }) 
     );
   }
 
-  // Filtres avec icônes uniquement
-  const filters: { id: FilterType; icon: React.ReactNode; title: string }[] = [
-    { id: 'recent', icon: <History className="w-7 h-7" strokeWidth={2.5} />, title: 'Récents' },
-    { id: 'upper', icon: <UpperBodyIcon className="w-7 h-7" />, title: 'Haut du corps' },
-    { id: 'lower', icon: <LowerBodyIcon className="w-7 h-7" />, title: 'Bas du corps' },
-    { id: 'core', icon: <Flame className="w-7 h-7" strokeWidth={2.5} />, title: 'Gainage' },
-  ];
-
   return (
     <div className="space-y-4">
       {/* Barre de recherche */}
@@ -372,7 +350,7 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession }) 
       </div>
 
       {/* Filtres icônes */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${filters.length}, 1fr)` }}>
         {filters.map((filter) => (
           <button
             key={filter.id}

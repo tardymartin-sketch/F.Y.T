@@ -4,14 +4,14 @@
 
 ---
 
-## Tables (24)
+## Tables (25)
 
 ### Tables Principales
 
 | Table | Colonnes | RLS | Description |
 |-------|----------|-----|-------------|
 | `profiles` | 10 | ✅ | Utilisateurs (id, email, username, first_name, last_name, role, coach_id, **weight**, created_at, updated_at) |
-| `exercises` | 12 | ✅ | Catalogue exercices (+ limb_type, primary_muscle_group_id, movement_pattern_id) |
+| `exercises` | 13 | ✅ | Catalogue exercices (+ limb_type, primary_muscle_group_id, movement_pattern_id, **category_id**) |
 | `training_plans` | 19 | ✅ | Programmes d'entraînement |
 | `session_logs` | 11 | ✅ | Séances (exercises JSONB écrit mais jamais lu, **deleted_at** pour soft delete) |
 | `exercise_logs` | 28 | ✅ | Analytics dénormalisés (backup_temp supprimé, **deleted_at** ajouté, **estimated_1rm** ajouté) |
@@ -24,6 +24,7 @@
 | `muscles` | 5 | 66 muscles individuels |
 | `movement_patterns` | 4 | 26 patterns de mouvement |
 | `equipment` | 4 | 24 types d'équipement |
+| `exercise_categories` | 4 | Catégories d'exercices (id, name, code, display_order) |
 | `exercise_muscles` | 3 | Jonction exercises↔muscles (role: primary/secondary) |
 | `exercise_equipment` | 2 | Jonction exercises↔equipment |
 
@@ -149,8 +150,12 @@
 - `idx_training_plans_exercise_id`
 - `idx_training_plans_week_dates`
 
+### exercises (1 index)
+- `idx_exercises_category_id` (category_id)
+
 ### Contraintes UNIQUE notables
 - `exercises`: (name, coach_id)
+- `exercise_categories`: (code), (name)
 - `badges`: (code)
 - `user_badges`: (user_id, badge_id)
 - `conversations`: (athlete_id, coach_id, session_id, exercise_name)
@@ -175,6 +180,7 @@
 
 | De | Vers | ON DELETE |
 |----|------|-----------|
+| exercises.category_id | exercise_categories.id | RESTRICT |
 | exercise_logs.session_log_id | session_logs.id | CASCADE |
 | exercise_logs.user_id | profiles.id | CASCADE |
 | athlete_comments.user_id | profiles.id | CASCADE |
@@ -199,3 +205,6 @@
 - ✅ Ajout fonction `get_best_1rm_from_sets(sets_detail)`
 - ✅ Ajout fonction `migrate_weight_to_load(weight)`
 - ✅ Ajout index `idx_exercise_logs_1rm` pour requêtes PR
+- ✅ Ajout table `exercise_categories` (upper, lower, core, saq)
+- ✅ Ajout `exercises.category_id` (FK → exercise_categories)
+- ✅ Ajout index `idx_exercises_category_id`
