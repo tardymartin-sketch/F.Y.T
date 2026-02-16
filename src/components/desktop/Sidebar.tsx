@@ -1,0 +1,324 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Home, Download, Users, MessageSquare, Settings, Menu, X, LogOut, History, BarChart3, User, Library, Palette } from 'lucide-react';
+import { useUnreadCount } from '../../hooks/useUnreadCount';
+
+// Toutes les vues possibles
+type ViewId = 'home' | 'history' | 'stats' | 'coach' | 'profile' | 'import' | 'team' | 'messages' | 'settings' | 'library' | 'storybook';
+
+// Rôles utilisateur
+type UserRole = 'athlete' | 'coach' | 'admin';
+
+interface MenuItem {
+  id: ViewId;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  showBadge?: boolean;
+  // Rôles autorisés (si undefined, accessible à tous)
+  allowedRoles?: UserRole[];
+}
+
+interface SidebarProps {
+  currentView: ViewId;
+  onNavigate: (viewId: ViewId) => void;
+  coachName?: string;
+  athletesCount?: number;
+  onLogout?: () => void;
+  // Desktop adaptation - filtrage des menus par rôle
+  userRole?: UserRole;
+  // UserId pour le compteur de messages non lus
+  userId?: string;
+  // Session active indicators
+  hasActiveSession?: boolean;
+  // [DEAD CODE] hasAddSession?: boolean;
+}
+
+// Menus avec restrictions par rôle (voir plan section 7)
+// - Athlète: home, history, stats, coach (messages), profile
+// - Coach: tout ce que athlète + import, team
+// - Admin: tout ce que coach + settings admin
+const allMenuItems: MenuItem[] = [
+  { id: 'home', icon: Home, label: 'Accueil' },
+  { id: 'history', icon: History, label: 'Historique' },
+  { id: 'stats', icon: BarChart3, label: 'Statistiques' },
+  { id: 'coach', icon: MessageSquare, label: 'Messages', showBadge: true },
+  { id: 'profile', icon: User, label: 'Profil' },
+  // Menus coach uniquement
+  { id: 'library', icon: Library, label: 'Exercices et Séances', allowedRoles: ['coach', 'admin'] },
+  { id: 'import', icon: Download, label: 'Importer', allowedRoles: ['coach', 'admin'] },
+  { id: 'team', icon: Users, label: 'Mes Athlètes', allowedRoles: ['coach', 'admin'] },
+  // Menus admin uniquement
+  { id: 'settings', icon: Settings, label: 'Admin', allowedRoles: ['admin'] },
+  { id: 'storybook', icon: Palette, label: 'Storybook', allowedRoles: ['admin'] },
+];
+
+export function Sidebar({
+  currentView,
+  onNavigate,
+  coachName = 'Coach',
+  athletesCount = 0,
+  onLogout,
+  userRole = 'athlete', // Desktop adaptation - default preserves safety (athlete sees less)
+  userId,
+  hasActiveSession,
+  // [DEAD CODE] hasAddSession
+}: SidebarProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const { count: unreadCount } = useUnreadCount(userId);
+
+  // Filtrer les menus selon le rôle utilisateur
+  const menuItems = useMemo(() => {
+    return allMenuItems.filter(item => {
+      // Si pas de restriction, accessible à tous
+      if (!item.allowedRoles) return true;
+      // Sinon vérifier que le rôle est autorisé
+      return item.allowedRoles.includes(userRole);
+    });
+  }, [userRole]);
+  
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout>();
+  const closeTimerRef = useRef<NodeJS.Timeout>();
+
+  // Gérer l'ouverture au hover
+  const handleHoverZoneEnter = () => {
+    if (!isOpen) {
+      hoverTimerRef.current = setTimeout(() => {
+        setIsOpen(true);
+      }, 150);
+    }
+  };
+
+  const handleHoverZoneLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+  };
+
+  // Gérer la fermeture quand la souris quitte
+  const handleSidebarMouseEnter = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+  };
+
+  const handleSidebarMouseLeave = () => {
+    closeTimerRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 300);
+  };
+
+  // Toggle via hamburger
+  const toggleSidebar = () => {
+    setIsOpen(prev => !prev);
+  };
+
+  // Fermer la sidebar
+  const closeSidebar = () => {
+    setIsOpen(false);
+  };
+
+  // Gérer la navigation
+  const handleNavigate = (viewId: ViewId) => {
+    onNavigate(viewId);
+    closeSidebar();
+  };
+
+  // Gérer le clic en dehors (overlay)
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isOpen && sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        const hamburger = document.getElementById('hamburger-button');
+        if (hamburger && hamburger.contains(event.target as Node)) {
+          return;
+        }
+        closeSidebar();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Gérer l'accessibilité clavier
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        closeSidebar();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen]);
+
+  // Cleanup timers
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  return (
+    <>
+      {/* Hamburger button - toujours visible */}
+      <button
+        id="hamburger-button"
+        onClick={toggleSidebar}
+        className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-theme-secondary border border-theme text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+        aria-label={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+        aria-expanded={isOpen}
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Zone de hover pour ouverture */}
+      {!isOpen && (
+        <div
+          className="fixed top-0 left-0 w-[50px] h-full z-40"
+          onMouseEnter={handleHoverZoneEnter}
+          onMouseLeave={handleHoverZoneLeave}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
+          onClick={closeSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        ref={sidebarRef}
+        onMouseEnter={handleSidebarMouseEnter}
+        onMouseLeave={handleSidebarMouseLeave}
+        className={`
+          fixed top-0 left-0 h-full bg-theme-secondary border-r border-theme z-50
+          transition-transform duration-300 ease-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+        style={{ width: 'clamp(256px, 20vw, 320px)' }}
+        role="navigation"
+        aria-label="Navigation coach"
+        aria-hidden={!isOpen}
+      >
+        <div className="flex flex-col h-full">
+          {/* Header avec close button */}
+          <div className="flex items-center justify-between p-4 border-b border-theme">
+            <h2 className="text-lg font-semibold text-theme">F.Y.T Coach</h2>
+            <button
+              onClick={closeSidebar}
+              className="p-1 rounded-lg text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              aria-label="Fermer le menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Menu items */}
+          <nav className="flex-1 overflow-y-auto py-4">
+            <ul className="space-y-1 px-2">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
+                const showBadgeCount = item.showBadge && unreadCount > 0;
+                // Session active indicator sur le menu Accueil
+                const showActiveSessionDot = item.id === 'home' && hasActiveSession;
+                // [DEAD CODE] const showAddSessionDot = item.id === 'home' && hasAddSession;
+
+                return (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => handleNavigate(item.id)}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20
+                        ${isActive
+                          ? 'bg-[var(--color-primary)]/10 text-theme border-l-2 border-[var(--color-primary)]'
+                          : 'text-theme-muted hover:bg-theme-tertiary hover:text-theme'
+                        }
+                      `}
+                      aria-current={isActive ? 'page' : undefined}
+                    >
+                      <div className="relative">
+                        <Icon className="w-5 h-5" aria-hidden="true" />
+
+                        {/* Badge non-lus */}
+                        {showBadgeCount && (
+                          <div
+                            className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center rounded-full bg-[var(--color-danger)] text-white text-xs font-semibold"
+                            aria-label={`${unreadCount} message${unreadCount > 1 ? 's' : ''} non lu${unreadCount > 1 ? 's' : ''}`}
+                          >
+                            {unreadCount}
+                          </div>
+                        )}
+
+                        {/* Session active indicator (orange) */}
+                        {showActiveSessionDot && (
+                          <div
+                            className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 animate-pulse"
+                            aria-label="Séance en cours"
+                          />
+                        )}
+
+                        {/* [DEAD CODE] Add session indicator (blue-purple) - décalé si les deux sont actifs */}
+                        {/* showAddSessionDot && (
+                          <div
+                            className={`absolute w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse ${showActiveSessionDot ? '-top-1 right-2' : '-top-1 -right-1'}`}
+                            aria-label="Ajout de séance en cours"
+                          />
+                        ) */}
+                      </div>
+
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          {/* Footer */}
+          <div className="border-t border-theme p-4 space-y-3">
+            {/* Coach info */}
+            <div className="flex items-center gap-3 px-2">
+              <div className="w-10 h-10 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
+                <span className="text-sm font-semibold text-[var(--color-primary)]">
+                  {coachName.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-theme truncate">{coachName}</p>
+                <p className="text-xs text-theme-muted">
+                  {athletesCount} athlète{athletesCount !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            {/* Logout button */}
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-theme-muted hover:bg-theme-tertiary hover:text-theme transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                aria-label="Se déconnecter"
+              >
+                <LogOut className="w-5 h-5" aria-hidden="true" />
+                <span className="text-sm font-medium">Déconnexion</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}

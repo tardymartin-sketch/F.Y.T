@@ -1,0 +1,1150 @@
+// ============================================================
+// F.Y.T - HOME ATHLETE (Mobile-First) - V3
+// src/components/athlete/HomeAthlete.tsx
+// Écran d'accueil avec KPI encouragement, sélection de séances,
+// modal preview et vue filtres avancés
+// ============================================================
+
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import {
+  WorkoutRow,
+  SessionLog,
+  User,
+  WeekOrganizerLog,
+} from '../../../types';
+import { Card, CardContent } from '../shared/Card';
+import { EncouragementKPI } from '../common/EncouragementKPI';
+import { SessionPreviewModal } from '../common/SessionPreviewModal';
+import { CoachMessagesCarousel } from './CoachMessagesCarousel';
+import { SessionBadgesGrid } from './SessionBadgesGrid';
+import {
+  Play,
+  Clock,
+  Dumbbell,
+  ChevronRight,
+  ChevronDown,
+  Calendar,
+  Timer,
+  CheckCircle2,
+  AlertCircle,
+  Check,
+  FolderOpen,
+  ArrowLeft,
+  Eye,
+  PlusCircle
+} from 'lucide-react';
+import { useDemoTour } from '../../contexts/DemoTourContext';
+
+// ===========================================
+// TYPES
+// ===========================================
+
+interface Props {
+  user: User;
+  trainingData: WorkoutRow[];
+  history: SessionLog[];
+  activeWeekOrganizers?: WeekOrganizerLog[];
+  onStartSession: (exercises: WorkoutRow[]) => void;
+  onResumeSession?: () => void;
+  hasActiveSession?: boolean;
+  onSelectSession?: () => void;
+  onViewCoachMessages?: (messageId?: string) => void;
+  // [DEAD CODE] onAddSession?: () => void;
+  // [DEAD CODE] hasAddSession?: boolean;
+}
+
+interface SessionChip {
+  name: string;
+  exercises: WorkoutRow[];
+  exerciseCount: number;
+  estimatedDuration: number;
+  isCompleted: boolean;
+  completedDate?: string;
+  isSuggested: boolean;
+}
+
+interface WeekInfo {
+  weekNumber: string;
+  startDate?: string;
+  endDate?: string;
+  year: string;
+}
+
+interface FilterOptions {
+  years: string[];
+  months: { num: string; name: string }[];
+  weeks: string[];
+  sessions: string[];
+}
+
+// ===========================================
+// UTILITY FUNCTIONS
+// ===========================================
+
+function getWeekStart(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getWeekEnd(date: Date): Date {
+  const start = getWeekStart(date);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function getCurrentProgramWeek(): number {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  const diff = now.getTime() - start.getTime();
+  const oneWeek = 1000 * 60 * 60 * 24 * 7;
+  return Math.ceil(diff / oneWeek);
+}
+
+function estimateSessionDuration(exercises: WorkoutRow[]): number {
+  let totalMinutes = 0;
+  exercises.forEach(exercise => {
+    const sets = parseInt(exercise.series) || 3;
+    const effortTime = sets * 0.75;
+    const restSeconds = parseInt(exercise.repos) || 90;
+    const restTime = (sets - 1) * (restSeconds / 60);
+    const transitionTime = 1;
+    totalMinutes += effortTime + restTime + transitionTime;
+  });
+  return Math.round(totalMinutes / 5) * 5;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `~${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `~${hours}h`;
+  return `~${hours}h${mins.toString().padStart(2, '0')}`;
+}
+
+function formatDateRange(startDate?: string, endDate?: string): string {
+  if (!startDate || !endDate) return '';
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+  const startMonth = start.toLocaleDateString('fr-FR', { month: 'short' });
+  const endMonth = end.toLocaleDateString('fr-FR', { month: 'short' });
+
+  if (startMonth === endMonth) {
+    return `${startDay} - ${endDay} ${startMonth}`;
+  }
+  return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
+}
+
+function getGreeting(hour: number, firstName: string): { text: string; emoji: string } {
+  if (hour >= 5 && hour < 12) return { text: `Bonjour ${firstName}`, emoji: '🌅' };
+  if (hour >= 12 && hour < 18) return { text: `Salut ${firstName}`, emoji: '👋' };
+  if (hour >= 18 && hour < 22) return { text: `Bonsoir ${firstName}`, emoji: '🌆' };
+  return { text: `Hey ${firstName}`, emoji: '🌙' };
+}
+
+function getFirstName(user: User): string {
+  if (user.firstName) return user.firstName;
+  if (user.username?.includes('.')) {
+    const parts = user.username.split('.');
+    const firstName = parts[parts.length - 1];
+    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  }
+  return user.username || 'Athlète';
+}
+
+// ===========================================
+// COMPONENT
+// ===========================================
+
+const ENCOURAGEMENT_DISMISSED_KEY = 'fyt_encouragement_dismissed';
+const ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY = 'fyt_encouragement_dismissed_timestamp';
+const ONE_HOUR_MS = 60 * 60 * 1000; // 1 heure en millisecondes
+
+export const HomeAthlete: React.FC<Props> = ({
+  user,
+  trainingData,
+  history,
+  activeWeekOrganizers = [],
+  onStartSession,
+  onResumeSession,
+  hasActiveSession = false,
+  onSelectSession,
+  onViewCoachMessages,
+  // [DEAD CODE] onAddSession,
+  // [DEAD CODE] hasAddSession = false,
+}) => {
+  // ===========================================
+  // STATE
+  // ===========================================
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [sessionNameFontPx, setSessionNameFontPx] = useState<number>(14);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const gridRefFilters = useRef<HTMLDivElement | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<string[]>([]);
+  const [selectedOrderFilters, setSelectedOrderFilters] = useState<string[]>([]);
+
+  // Demo tour hook
+  const { currentStepIndex, isActive: isTourActive } = useDemoTour();
+
+  // State pour fermeture message d'encouragement
+  // Réapparaît à chaque nouvelle session OU après 1h d'inactivité
+  const [showEncouragement, setShowEncouragement] = useState(() => {
+    const dismissedTimestamp = localStorage.getItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY);
+
+    if (!dismissedTimestamp) {
+      // Jamais fermé → afficher
+      return true;
+    }
+
+    const timeSinceDismiss = Date.now() - parseInt(dismissedTimestamp, 10);
+
+    if (timeSinceDismiss >= ONE_HOUR_MS) {
+      // Plus d'1h écoulée → réafficher et réinitialiser
+      localStorage.removeItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY);
+      return true;
+    }
+
+    // Moins d'1h écoulée → ne pas afficher
+    return false;
+  });
+
+  // Filtres avancés
+  const [filterYear, setFilterYear] = useState<string | null>(null);
+  const [filterMonth, setFilterMonth] = useState<string | null>(null);
+  const [filterWeek, setFilterWeek] = useState<string | null>(null);
+  const [filterSessions, setFilterSessions] = useState<Set<string>>(new Set());
+
+  // ===========================================
+  // DEMO TOUR: Écouter les événements de sélection de séance
+  // ===========================================
+  useEffect(() => {
+    const handleDemoSelectSession = (event: CustomEvent<string>) => {
+      const sessionName = event.detail;
+      if (sessionName) {
+        // Accumuler les sélections au lieu de remplacer
+        setSelectedSessions(prev => new Set([...prev, sessionName]));
+        setSelectedOrder(prev => prev.includes(sessionName) ? prev : [...prev, sessionName]);
+      }
+    };
+
+    const handleDemoDeselectAll = () => {
+      // Désélectionner toutes les séances
+      setSelectedSessions(new Set());
+      setSelectedOrder([]);
+    };
+
+    window.addEventListener('demo-select-session', handleDemoSelectSession as EventListener);
+    window.addEventListener('demo-deselect-all-sessions', handleDemoDeselectAll);
+    return () => {
+      window.removeEventListener('demo-select-session', handleDemoSelectSession as EventListener);
+      window.removeEventListener('demo-deselect-all-sessions', handleDemoDeselectAll);
+    };
+  }, []);
+
+  // ===========================================
+  // COMPUTED: Selection Order (dynamique)
+  // ===========================================
+
+  // Calcul dynamique des numéros d'ordre basés sur l'ordre de sélection
+  const sessionSelectionOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    let index = 1;
+    selectedSessions.forEach(sessionName => {
+      order.set(sessionName, index);
+      index++;
+    });
+    return order;
+  }, [selectedSessions]);
+
+  const filterSelectionOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    let index = 1;
+    filterSessions.forEach(sessionName => {
+      order.set(sessionName, index);
+      index++;
+    });
+    return order;
+  }, [filterSessions]);
+
+  // ===========================================
+  // COMPUTED: Week Info & Session Chips (Vue suggérée)
+  // ===========================================
+
+  // DEBUG: Afficher l'historique pour voir le format des sessionName
+  console.log('[HomeAthlete] Historique des séances:', {
+    historyCount: history.length,
+    lastLogs: history.slice(-5).map(log => ({
+      sessionName: log.sessionName,
+      date: log.completedAt,
+      seance: log.sessionKey?.seance
+    }))
+  });
+
+  const { weekInfo, sessionChips, suggestedSessionName } = useMemo(() => {
+    if (trainingData.length === 0) {
+      return { weekInfo: null, sessionChips: [], suggestedSessionName: null };
+    }
+
+    const now = new Date();
+    const weekStart = getWeekStart(now);
+    const weekEnd = getWeekEnd(now);
+
+    // Trouver la semaine courante dans les données
+    let targetWeekData = trainingData.filter(d => {
+      if (d.weekStartDate && d.weekEndDate) {
+        const start = new Date(d.weekStartDate);
+        const end = new Date(d.weekEndDate);
+        return now >= start && now <= end;
+      }
+      return false;
+    });
+
+    if (targetWeekData.length === 0) {
+      const availableWeeks = [...new Set(trainingData.map(d => d.semaine))].sort(
+        (a, b) => parseInt(a) - parseInt(b)
+      );
+      const currentWeekNumber = getCurrentProgramWeek();
+      const targetWeek = availableWeeks.find(w => parseInt(w) >= currentWeekNumber % 52)
+        || availableWeeks[availableWeeks.length - 1];
+
+      targetWeekData = trainingData.filter(d => d.semaine === targetWeek);
+    }
+
+    if (targetWeekData.length === 0) {
+      return { weekInfo: null, sessionChips: [], suggestedSessionName: null };
+    }
+
+    const firstRow = targetWeekData[0];
+    const info: WeekInfo = {
+      weekNumber: firstRow.semaine,
+      startDate: firstRow.weekStartDate,
+      endDate: firstRow.weekEndDate,
+      year: firstRow.annee,
+    };
+
+    // DEBUG: Vérifier les dates de weekInfo
+    console.log('[HomeAthlete] weekInfo créé:', {
+      weekNumber: info.weekNumber,
+      startDate: info.startDate,
+      endDate: info.endDate,
+      year: info.year,
+      firstRowData: {
+        semaine: firstRow.semaine,
+        weekStartDate: firstRow.weekStartDate,
+        weekEndDate: firstRow.weekEndDate
+      }
+    });
+
+    const sessionTypes = [...new Set(targetWeekData.map(d => d.seance))];
+
+    // NOTE: On met isCompleted à false ici car l'ancienne détection ne gère pas les séances combinées
+    // SessionBadgesGrid recalculera isCompleted avec la logique qui parse "Séance 1 + Séance 2"
+
+    const chips: SessionChip[] = sessionTypes.map(sessionType => {
+      const exercises = targetWeekData
+        .filter(d => d.seance === sessionType)
+        .sort((a, b) => a.ordre - b.ordre);
+
+      return {
+        name: sessionType,
+        exercises,
+        exerciseCount: exercises.length,
+        estimatedDuration: estimateSessionDuration(exercises),
+        isCompleted: false, // Sera recalculé par SessionBadgesGrid avec parsing des séances combinées
+        isSuggested: false,
+      };
+    });
+    chips.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Préselection désactivée (commentée à la demande)
+    // const suggested = chips.find(c => !c.isCompleted);
+    // if (suggested) {
+    //   suggested.isSuggested = true;
+    // }
+
+    return {
+      weekInfo: info,
+      sessionChips: chips,
+      // Préselection désactivée (pas de suggestedSessionName)
+      suggestedSessionName: null,
+    };
+  }, [trainingData, history]);
+
+  
+  // ===========================================
+  // COMPUTED: Filter Options (Vue filtres avancés)
+  // ===========================================
+
+  const filterOptions = useMemo((): FilterOptions => {
+    const years = [...new Set(trainingData.map(d => d.annee))].sort().reverse();
+
+    let filteredData = trainingData;
+
+    // Filtrer par année si sélectionnée
+    if (filterYear) {
+      filteredData = filteredData.filter(d => d.annee === filterYear);
+    }
+
+    // Mois disponibles
+    const monthsSet = new Map<string, string>();
+    filteredData.forEach(d => {
+      if (d.moisNum && d.moisNom) {
+        monthsSet.set(d.moisNum, d.moisNom);
+      }
+    });
+    const months = Array.from(monthsSet.entries())
+      .map(([num, name]) => ({
+        num,
+        name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+      }))
+      .sort((a, b) => parseInt(a.num) - parseInt(b.num));
+
+    // Filtrer par mois si sélectionné
+    if (filterMonth) {
+      filteredData = filteredData.filter(d => d.moisNum === filterMonth);
+    }
+
+    // Semaines disponibles
+    const weeks = [...new Set(filteredData.map(d => d.semaine))]
+      .sort((a, b) => parseInt(a) - parseInt(b));
+
+    // Filtrer par semaine si sélectionnée
+    if (filterWeek) {
+      filteredData = filteredData.filter(d => d.semaine === filterWeek);
+    }
+
+    // Séances disponibles
+    const sessions = [...new Set(filteredData.map(d => d.seance))].sort((a, b) => a.localeCompare(b));
+
+    return { years, months, weeks, sessions };
+  }, [trainingData, filterYear, filterMonth, filterWeek]);
+
+  useEffect(() => {
+    const currentRef = showAdvancedFilters ? gridRefFilters.current : gridRef.current;
+    if (!currentRef) return;
+    const names = showAdvancedFilters
+      ? filterOptions.sessions
+      : sessionChips.map(c => c.name);
+    if (names.length === 0) return;
+    const longestName = names.reduce((max, n) => (n.length > max.length ? n : max), '');
+    const firstButton = currentRef.querySelector('button') as HTMLElement | null;
+    const cellWidth = firstButton?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+    if (!cellWidth) return;
+    const horizontalPadding = 24;
+    const reservedForIcon = 24;
+    const contentWidth = Math.max(0, cellWidth - horizontalPadding - reservedForIcon);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const maxSize = 14;
+    const minSize = 10;
+    let size = maxSize;
+    while (size >= minSize) {
+      ctx.font = `${size}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+      const w = ctx.measureText(longestName).width;
+      if (w <= contentWidth) break;
+      size -= 1;
+    }
+    setSessionNameFontPx(size);
+    const onResize = () => {
+      const names2 = showAdvancedFilters ? filterOptions.sessions : sessionChips.map(c => c.name);
+      if (names2.length === 0) return;
+      const longest2 = names2.reduce((max, n) => (n.length > max.length ? n : max), '');
+      const firstBtn2 = currentRef.querySelector('button') as HTMLElement | null;
+      const cellW2 = firstBtn2?.offsetWidth || Math.floor(currentRef.clientWidth / 3);
+      if (!cellW2) return;
+      const contentW2 = Math.max(0, cellW2 - horizontalPadding - reservedForIcon);
+      let size2 = maxSize;
+      while (size2 >= minSize) {
+        ctx.font = `${size2}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto`;
+        const w2 = ctx.measureText(longest2).width;
+        if (w2 <= contentW2) break;
+        size2 -= 1;
+      }
+      setSessionNameFontPx(size2);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [sessionChips, filterOptions.sessions, showAllSessions, showAdvancedFilters]);
+  // ===========================================
+  // COMPUTED: Filtered Exercises (Vue filtres avancés)
+  // ===========================================
+
+  const filteredExercises = useMemo(() => {
+    if (!showAdvancedFilters) return [];
+
+    let filtered = trainingData;
+
+    if (filterYear) {
+      filtered = filtered.filter(d => d.annee === filterYear);
+    }
+    if (filterMonth) {
+      filtered = filtered.filter(d => d.moisNum === filterMonth);
+    }
+    if (filterWeek) {
+      filtered = filtered.filter(d => d.semaine === filterWeek);
+    }
+    
+    // Filtre sur les séances sélectionnées (multi-sélection)
+    if (filterSessions.size > 0) {
+      filtered = filtered.filter(d => filterSessions.has(d.seance));
+    } else {
+      // Si aucune séance sélectionnée, on ne retourne rien pour la preview
+      return [];
+    }
+
+    return filtered.sort((a, b) => a.ordre - b.ordre);
+  }, [trainingData, showAdvancedFilters, filterYear, filterMonth, filterWeek, filterSessions]);
+
+  const filteredSessionName = useMemo(() => {
+    if (filterSessions.size > 0) {
+      const names = Array.from(filterSessions);
+      return names.length === 1 ? names[0] : names.join(' + ');
+    }
+    return 'Séance';
+  }, [filterSessions]);
+
+  // Dates de la semaine filtrée (pour détecter les séances complétées)
+  const filteredWeekDates = useMemo(() => {
+    if (!filterWeek) return { startDate: undefined, endDate: undefined };
+
+    // Trouver les données de la semaine filtrée
+    const weekData = trainingData.find(d =>
+      d.semaine === filterWeek &&
+      (!filterYear || d.annee === filterYear) &&
+      (!filterMonth || d.moisNum === filterMonth)
+    );
+
+    return {
+      startDate: weekData?.weekStartDate,
+      endDate: weekData?.weekEndDate
+    };
+  }, [filterWeek, filterYear, filterMonth, trainingData]);
+
+  // ===========================================
+  // EFFECTS
+  // ===========================================
+
+  // Pré-remplir les filtres avec la date du jour lors de l'ouverture
+  useEffect(() => {
+    if (showAdvancedFilters) {
+      const now = new Date();
+      // Trouver la semaine correspondante dans les données
+      const matchingWeek = trainingData.find(d => {
+        if (d.weekStartDate && d.weekEndDate) {
+          const start = new Date(d.weekStartDate);
+          const end = new Date(d.weekEndDate);
+          // On compare les dates en ignorant l'heure pour être sûr
+          start.setHours(0,0,0,0);
+          end.setHours(23,59,59,999);
+          return now >= start && now <= end;
+        }
+        return false;
+      });
+
+      if (matchingWeek) {
+        setFilterYear(matchingWeek.annee);
+        setFilterMonth(matchingWeek.moisNum);
+        setFilterWeek(matchingWeek.semaine);
+      }
+    }
+  }, [showAdvancedFilters, trainingData]);
+
+  // Réinitialiser les filtres dépendants lors du changement
+  useEffect(() => {
+    setFilterMonth(null);
+    setFilterWeek(null);
+    setFilterSessions(new Set());
+  }, [filterYear]);
+
+  useEffect(() => {
+    setFilterWeek(null);
+    setFilterSessions(new Set());
+  }, [filterMonth]);
+
+  useEffect(() => {
+    setFilterSessions(new Set());
+  }, [filterWeek]);
+
+  // ===========================================
+  // COMPUTED: Greeting
+  // ===========================================
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    const firstName = getFirstName(user);
+    return getGreeting(hour, firstName);
+  }, [user]);
+
+  // ===========================================
+  // HANDLERS
+  // ===========================================
+
+  const toggleSessionChip = useCallback((sessionName: string) => {
+    setSelectedOrder(prev => {
+      const next = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setSelectedSessions(new Set(next));
+      return next;
+    });
+  }, []);
+
+  const handleDismissEncouragement = useCallback(() => {
+    setShowEncouragement(false);
+    // Stocker le timestamp de fermeture dans localStorage
+    localStorage.setItem(ENCOURAGEMENT_DISMISSED_TIMESTAMP_KEY, Date.now().toString());
+  }, []);
+
+  const handleClickWeekOrganizer = useCallback((message: WeekOrganizerLog) => {
+    // Passer l'ID du message cliqué pour l'ouvrir automatiquement
+    onViewCoachMessages?.(message.id);
+  }, [onViewCoachMessages]);
+
+  const handleStartSelectedSessions = useCallback(() => {
+    if (selectedSessions.size === 0) return;
+
+    const allExercises: WorkoutRow[] = [];
+
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
+        const sortedExercises = [...chip.exercises].sort((a, b) => a.ordre - b.ordre);
+        allExercises.push(...sortedExercises);
+      }
+    });
+
+    onStartSession(allExercises);
+  }, [selectedSessions, selectedOrder, sessionChips, onStartSession]);
+
+  const handleStartFilteredSession = useCallback(() => {
+    if (filteredExercises.length === 0) return;
+    onStartSession(filteredExercises);
+  }, [filteredExercises, onStartSession]);
+
+  const handleOpenPreview = useCallback(() => {
+    setShowPreviewModal(true);
+  }, []);
+
+  const handleClosePreview = useCallback(() => {
+    setShowPreviewModal(false);
+  }, []);
+
+  const handleToggleAdvancedFilters = useCallback(() => {
+    setShowAdvancedFilters(prev => !prev);
+    // Reset filtres quand on ferme
+    if (showAdvancedFilters) {
+      setFilterYear(null);
+      setFilterMonth(null);
+      setFilterWeek(null);
+      setFilterSessions(new Set());
+    }
+  }, [showAdvancedFilters]);
+
+  const toggleFilterSession = useCallback((sessionName: string) => {
+    setSelectedOrderFilters(prev => {
+      const nextOrder = prev.includes(sessionName)
+        ? prev.filter(n => n !== sessionName)
+        : [...prev, sessionName];
+      setFilterSessions(new Set(nextOrder));
+      return nextOrder;
+    });
+  }, []);
+
+  // ===========================================
+  // COMPUTED: Selected Stats
+  // ===========================================
+
+  const selectedStats = useMemo(() => {
+    let totalExercises = 0;
+    let totalDuration = 0;
+
+    sessionChips.forEach(chip => {
+      if (selectedSessions.has(chip.name)) {
+        totalExercises += chip.exerciseCount;
+        totalDuration += chip.estimatedDuration;
+      }
+    });
+
+    return { totalExercises, totalDuration };
+  }, [selectedSessions, sessionChips]);
+
+  // Exercices pour le modal (séances sélectionnées)
+  const previewExercises = useMemo(() => {
+    const exercises: WorkoutRow[] = [];
+    selectedOrder.forEach(name => {
+      const chip = sessionChips.find(c => c.name === name);
+      if (chip) {
+        exercises.push(...chip.exercises);
+      }
+    });
+    return exercises.sort((a, b) => a.ordre - b.ordre);
+  }, [selectedOrder, sessionChips]);
+
+  const previewSessionName = useMemo(() => {
+    const names = selectedOrder.filter(n => selectedSessions.has(n));
+    return names.length > 1 ? names.join(' + ') : names[0] || 'Séance';
+  }, [selectedOrder, selectedSessions]);
+
+  // ===========================================
+  // RENDER: Card Sélection (Vue suggérée)
+  // ===========================================
+
+  const renderSuggestedCard = () => {
+    if (sessionChips.length === 0) {
+      // Aucun programme
+      return (
+        <Card variant="default" className="p-6">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-theme-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-theme-muted" />
+            </div>
+            <h2 className="text-lg font-semibold text-theme mb-2">
+              Aucune séance programmée
+            </h2>
+            <p className="text-theme-muted text-sm mb-4">
+              Ton programme n'est pas encore configuré
+            </p>
+            <button
+              onClick={handleToggleAdvancedFilters}
+              className="text-[var(--color-primary)] text-sm font-medium hover:text-[var(--color-primary-light)]"
+            >
+              Voir toutes les séances →
+            </button>
+          </div>
+        </Card>
+      );
+    }
+
+    return (
+      <Card variant="gradient" className="overflow-hidden">
+        <CardContent className="p-0">
+          {/* Header avec infos semaine */}
+          <div className="bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20 px-4 py-3 border-b border-theme/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[var(--color-primary)]" />
+                <span className="text-sm font-medium text-theme-muted">
+                  Semaine {weekInfo?.weekNumber}
+                </span>
+                {weekInfo?.startDate && weekInfo?.endDate && (
+                  <span className="text-sm font-medium text-theme-muted">
+                    • {formatDateRange(weekInfo.startDate, weekInfo.endDate)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Chips de sélection */}
+          <div className="p-4">
+            <p className="text-sm text-theme-muted mb-3">
+              Sélectionne une ou plusieurs séances :
+            </p>
+
+            {/* DEBUG: Props passées à SessionBadgesGrid (vue suggérée) */}
+            {console.log('[HomeAthlete] Props SessionBadgesGrid (vue suggérée):', {
+              sessionsCount: sessionChips.length,
+              showCompletionStatus: true,
+              hasHistory: !!history,
+              historyCount: history.length,
+              weekStartDate: weekInfo?.startDate,
+              weekEndDate: weekInfo?.endDate,
+              weekInfo
+            })}
+
+            <div data-tour-id="tour-session-selector">
+              <SessionBadgesGrid
+                sessions={sessionChips}
+                selectedSessions={selectedSessions}
+                selectionOrder={sessionSelectionOrder}
+                onToggle={toggleSessionChip}
+                showCompletionStatus={true}
+                showSuggestedIndicator={true}
+                maxVisibleItems={9}
+                className="mb-4"
+                history={history}
+                weekStartDate={weekInfo?.startDate}
+                weekEndDate={weekInfo?.endDate}
+              />
+            </div>
+
+            {/* Stats des séances sélectionnées */}
+            {selectedSessions.size > 0 && (
+              <div className="flex items-center justify-between gap-4 text-sm text-theme-muted mb-4 pb-4 border-b border-theme/50">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1">
+                    <Dumbbell className="w-4 h-4" />
+                    {selectedStats.totalExercises} exercices
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Bouton Démarrer */}
+            <button
+              onClick={handleStartSelectedSessions}
+              disabled={selectedSessions.size === 0}
+              data-tour-id="tour-start-session-button"
+              className={`
+                w-full flex items-center justify-center gap-3 py-4 px-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+                ${selectedSessions.size > 0
+                  ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] hover:opacity-90 text-white shadow-lg shadow-[var(--shadow-color)]'
+                  : 'bg-theme-secondary text-theme-muted cursor-not-allowed'
+                }
+              `}
+            >
+              <Play className="w-5 h-5 fill-current flex-shrink-0" />
+              <span className="text-center">
+                {selectedSessions.size === 0
+                  ? 'Sélectionne une séance'
+                  : Array.from(selectedSessions).join(' + ')
+                }
+              </span>
+            </button>
+
+            {/* Bouton Choisir ma séance */}
+            <button
+              onClick={handleToggleAdvancedFilters}
+              className="w-full mt-3 flex items-center justify-center gap-2 text-sm text-theme-muted hover:text-theme transition-colors py-3 rounded-xl border border-theme/50 hover:border-theme"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Choisir ma séance
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ===========================================
+  // RENDER: Card Filtres Avancés
+  // ===========================================
+
+  const renderAdvancedFiltersCard = () => (
+    <Card variant="gradient" className="overflow-hidden">
+      <CardContent className="p-0">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20 px-4 py-3 border-b border-theme/50">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-[var(--color-primary)]" />
+            <span className="text-sm font-medium text-theme-muted">
+              Choisir ma séance
+            </span>
+          </div>
+        </div>
+
+        {/* Filtres */}
+        <div className="p-4 space-y-4">
+          {/* Année */}
+          <div>
+            <label className="block text-xs text-theme-muted mb-1.5">Année</label>
+            <div className="relative">
+              <select
+                value={filterYear || ''}
+                onChange={(e) => setFilterYear(e.target.value || null)}
+                className="
+                  w-full bg-theme-secondary border border-theme rounded-xl
+                  px-4 py-3 text-theme appearance-none cursor-pointer
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
+                "
+              >
+                <option value="">Toutes les années</option>
+                {filterOptions.years.map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-theme-muted pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Mois */}
+          <div>
+            <label className="block text-xs text-theme-muted mb-1.5">Mois</label>
+            <div className="relative">
+              <select
+                value={filterMonth || ''}
+                onChange={(e) => setFilterMonth(e.target.value || null)}
+                disabled={!filterYear}
+                className="
+                  w-full bg-theme-secondary border border-theme rounded-xl
+                  px-4 py-3 text-theme appearance-none cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
+                "
+              >
+                <option value="">Tous les mois</option>
+                {filterOptions.months.map(month => (
+                  <option key={month.num} value={month.num}>{month.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-theme-muted pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Semaine */}
+          <div>
+            <label className="block text-xs text-theme-muted mb-1.5">Semaine</label>
+            <div className="relative">
+              <select
+                value={filterWeek || ''}
+                onChange={(e) => setFilterWeek(e.target.value || null)}
+                disabled={!filterMonth}
+                className="
+                  w-full bg-theme-secondary border border-theme rounded-xl
+                  px-4 py-3 text-theme appearance-none cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
+                "
+              >
+                <option value="">Toutes les semaines</option>
+                {filterOptions.weeks.map(week => (
+                  <option key={week} value={week}>Semaine {week}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-theme-muted pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Séance */}
+          <div>
+            <label className="block text-xs text-theme-muted mb-1.5">Séance</label>
+            {!filterWeek ? (
+              <div className="text-sm text-theme-muted italic">
+                Sélectionne une semaine d'abord
+              </div>
+            ) : filterOptions.sessions.length > 0 ? (
+              <>
+                {/* DEBUG: Props passées à SessionBadgesGrid (vue filtres) */}
+                {console.log('[HomeAthlete] Props SessionBadgesGrid (vue filtres):', {
+                  sessionsCount: filterOptions.sessions.length,
+                  sessions: filterOptions.sessions,
+                  showCompletionStatus: true,
+                  hasHistory: !!history,
+                  historyCount: history.length,
+                  weekStartDate: filteredWeekDates.startDate,
+                  weekEndDate: filteredWeekDates.endDate,
+                  filterWeek,
+                  filterYear,
+                  filterMonth
+                })}
+
+                <SessionBadgesGrid
+                  key={filterWeek || 'no-week'}
+                  sessions={filterOptions.sessions}
+                  selectedSessions={filterSessions}
+                  selectionOrder={filterSelectionOrder}
+                  onToggle={toggleFilterSession}
+                  showCompletionStatus={true}
+                  showSuggestedIndicator={false}
+                  maxVisibleItems={9}
+                  history={history}
+                  weekStartDate={filteredWeekDates.startDate}
+                  weekEndDate={filteredWeekDates.endDate}
+                />
+              </>
+            ) : (
+              <div className="text-sm text-theme-muted italic">
+                Aucune séance disponible pour cette semaine
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="p-4 pt-0 space-y-3">
+          {/* Bouton Démarrer */}
+          <button
+            onClick={handleStartFilteredSession}
+            disabled={filteredExercises.length === 0}
+            className={`
+              w-full flex items-center justify-center gap-3 py-4 px-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+              ${filteredExercises.length > 0
+                ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] hover:opacity-90 text-white shadow-lg shadow-[var(--shadow-color)]'
+                : 'bg-theme-secondary text-theme-muted cursor-not-allowed'
+              }
+            `}
+          >
+            <Play className="w-5 h-5 fill-current flex-shrink-0" />
+            <span className="text-center">{filteredSessionName}</span>
+          </button>
+
+          {/* Bouton Retour */}
+          <button
+            onClick={handleToggleAdvancedFilters}
+            className="w-full flex items-center justify-center gap-2 text-sm text-theme-muted hover:text-theme transition-colors py-3"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Retour séance suggérée
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // ===========================================
+  // MAIN RENDER
+  // ===========================================
+
+  return (
+    <div className="space-y-4 pb-4">
+      {/* Header - Salutation */}
+      <div className="pt-2">
+        <h1 className="text-2xl font-bold text-theme">
+          {greeting.text} <span className="ml-1">{greeting.emoji}</span>
+        </h1>
+        <p className="text-theme-muted text-sm mt-1">
+          Prêt à repousser tes limites ?
+        </p>
+      </div>
+
+      {/* Zone FIXE - KPI encouragement */}
+      {showEncouragement && (
+        <EncouragementKPI
+          history={history}
+          onDismiss={handleDismissEncouragement}
+        />
+      )}
+
+      {/* Carte Session Active (si en cours) */}
+      {hasActiveSession && onResumeSession && (() => {
+        // Déterminer si c'est une modification ou une nouvelle séance
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_active_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+        return (
+          <button
+            onClick={onResumeSession}
+            className="w-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 shadow-lg shadow-orange-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Timer className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre là où tu en étais'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
+            </div>
+          </button>
+        );
+      })()}
+
+      {/* [DEAD CODE] Carte Ajout/Modification de Séance en cours */}
+      {/* hasAddSession && onAddSession && (() => {
+        // Déterminer si c'est un ajout ou une modification
+        let isEditMode = false;
+        try {
+          const saved = localStorage.getItem('F.Y.T_add_session');
+          if (saved) {
+            const data = JSON.parse(saved);
+            isEditMode = data.isEditMode === true;
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        return (
+          <button
+            onClick={onAddSession}
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 shadow-lg shadow-blue-500/25 animate-pulse-slow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <PlusCircle className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold">
+                    {isEditMode ? 'Modification de séance en cours' : 'Ajout de séance en cours'}
+                  </p>
+                  <p className="text-white/80 text-sm">
+                    {isEditMode ? 'Reprendre la modification' : 'Reprendre l\'ajout de ta séance'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-white" />
+            </div>
+          </button>
+        );
+      })() */}
+
+      {/* Zone FIXE - Messages coach */}
+      {activeWeekOrganizers.length > 0 && (
+        <CoachMessagesCarousel
+          messages={activeWeekOrganizers}
+          variant="compact"
+          onMessageClick={handleClickWeekOrganizer}
+          maxContentLines={2}
+          className="mb-4"
+        />
+      )}
+
+      {/* Zone FIXE - Titre */}
+      {!hasActiveSession && (
+        <h2 className="text-xl font-bold text-theme mb-4">
+          Compose ta séance :
+        </h2>
+      )}
+
+      {/* Zone VARIABLE - Cards (les deux existent, une seule visible) */}
+      {!hasActiveSession && (
+        <>
+          {/* Card de sélection - cachée si filtres actifs */}
+          <div className={showAdvancedFilters ? 'hidden' : 'block'}>
+            {renderSuggestedCard()}
+          </div>
+
+          {/* Card de filtres - cachée si filtres inactifs */}
+          <div className={showAdvancedFilters ? 'block' : 'hidden'}>
+            {renderAdvancedFiltersCard()}
+          </div>
+
+          {/* Spacer pour le tour à l'étape 1 (home-intro) - sous le bloc complet */}
+          {isTourActive && currentStepIndex === 1 && (
+            <div className="h-[200px] transition-all duration-300" />
+          )}
+        </>
+      )}
+
+      {/* Modal Preview */}
+      <SessionPreviewModal
+        isOpen={showPreviewModal}
+        onClose={handleClosePreview}
+        sessionName={previewSessionName}
+        exercises={previewExercises}
+        onStartSession={handleStartSelectedSessions}
+      />
+    </div>
+  );
+};
+
+// Alias pour nouveau nom + compatibilité
+export const HomeMobile = HomeAthlete;
+export default HomeMobile;

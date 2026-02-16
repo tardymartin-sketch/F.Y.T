@@ -4,5 +4,13 @@
 // Export centralisé des layouts
 // ===========================================
 
-export { AthleteLayout, AthleteLayoutMinimal } from './AthleteLayout';
+// Mobile layout (nouveau nom)
+export { MobileLayout, MobileLayoutMinimal } from './MobileLayout';
+
+// Alias pour compatibilité avec l'ancien code
+export { AthleteLayout, AthleteLayoutMinimal } from './MobileLayout';
+
+// Desktop layout
 export { CoachLayout } from './CoachLayout';
+// Alias pour futur renommage
+export { CoachLayout as DesktopLayout } from './CoachLayout';

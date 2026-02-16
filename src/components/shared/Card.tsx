@@ -2,6 +2,7 @@
 // F.Y.T - Card Component
 // src/components/shared/Card.tsx
 // Composant carte réutilisable avec plusieurs variantes
+// Utilise les CSS Variables du système de thèmes
 // ============================================================
 
 import React from 'react';
@@ -20,15 +21,15 @@ interface CardProps {
 }
 
 // ===========================================
-// VARIANTS
+// VARIANTS - Using CSS Variables
 // ===========================================
 
 const variantStyles: Record<NonNullable<CardProps['variant']>, string> = {
-  default: 'bg-slate-800/50 border border-slate-700/50',
-  elevated: 'bg-slate-800 border border-slate-700 shadow-lg shadow-black/20',
-  outlined: 'bg-transparent border border-slate-700',
-  gradient: 'bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700/50',
-  glass: 'bg-slate-800/30 backdrop-blur-lg border border-slate-700/30',
+  default: 'bg-theme-secondary border border-theme',
+  elevated: 'bg-theme-secondary border border-theme shadow-lg shadow-[var(--shadow-color)]',
+  outlined: 'bg-transparent border border-theme',
+  gradient: 'bg-theme-secondary border border-theme',
+  glass: 'bg-theme-secondary/80 backdrop-blur-lg border border-theme/50',
 };
 
 const paddingStyles: Record<NonNullable<CardProps['padding']>, string> = {
@@ -51,19 +52,19 @@ export const Card: React.FC<CardProps> = ({
   interactive = false,
 }) => {
   const isClickable = onClick !== undefined || interactive;
-  
+
   const baseStyles = `
     rounded-xl
     transition-all duration-200
     ${variantStyles[variant]}
     ${paddingStyles[padding]}
-    ${isClickable ? 'cursor-pointer hover:bg-slate-700/50 active:scale-[0.98]' : ''}
+    ${isClickable ? 'cursor-pointer hover:bg-theme-tertiary active:scale-[0.98]' : ''}
     ${className}
   `;
 
   if (onClick) {
     return (
-      <button 
+      <button
         onClick={onClick}
         className={`${baseStyles} w-full text-left`}
       >
@@ -124,7 +125,7 @@ export const CardTitle: React.FC<CardTitleProps> = ({
   size = 'md',
 }) => {
   return (
-    <h3 className={`text-white ${titleSizes[size]} ${className}`}>
+    <h3 className={`text-theme ${titleSizes[size]} ${className}`}>
       {children}
     </h3>
   );
@@ -144,7 +145,7 @@ export const CardDescription: React.FC<CardDescriptionProps> = ({
   className = '',
 }) => {
   return (
-    <p className={`text-sm text-slate-400 ${className}`}>
+    <p className={`text-sm text-theme-muted ${className}`}>
       {children}
     </p>
   );
@@ -184,7 +185,7 @@ export const CardFooter: React.FC<CardFooterProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`mt-4 pt-4 border-t border-slate-700/50 ${className}`}>
+    <div className={`mt-4 pt-4 border-t border-theme ${className}`}>
       {children}
     </div>
   );
@@ -205,14 +206,14 @@ export const CardStat: React.FC<CardStatProps> = ({
   value,
   label,
   className = '',
-  valueColor = 'text-white',
+  valueColor = 'text-theme',
 }) => {
   return (
     <div className={`text-center ${className}`}>
       <div className={`text-2xl font-bold ${valueColor}`}>
         {value}
       </div>
-      <div className="text-xs text-slate-400 mt-1">
+      <div className="text-xs text-theme-muted mt-1">
         {label}
       </div>
     </div>
@@ -223,11 +224,11 @@ export const CardStat: React.FC<CardStatProps> = ({
 // EXPORT TYPES
 // ===========================================
 
-export type { 
-  CardProps, 
-  CardHeaderProps, 
-  CardTitleProps, 
-  CardContentProps, 
+export type {
+  CardProps,
+  CardHeaderProps,
+  CardTitleProps,
+  CardContentProps,
   CardFooterProps,
   CardDescriptionProps,
 };

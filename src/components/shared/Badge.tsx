@@ -25,7 +25,7 @@ interface BadgeProps {
 // ===========================================
 
 const variantStyles: Record<Exclude<BadgeProps['variant'], 'rpe' | undefined>, string> = {
-  default: 'bg-slate-700 text-slate-300',
+  default: 'bg-theme-tertiary text-theme',
   primary: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
   success: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
   warning: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
@@ -79,7 +79,7 @@ export const Badge: React.FC<BadgeProps> = ({
             ${variant === 'warning' ? 'bg-amber-400' : ''}
             ${variant === 'danger' ? 'bg-red-400' : ''}
             ${variant === 'primary' ? 'bg-blue-400' : ''}
-            ${variant === 'default' ? 'bg-slate-400' : ''}
+            ${variant === 'default' ? 'bg-theme-tertiary' : ''}
           `}
         />
       )}
@@ -188,7 +188,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
 }) => {
   const statusColors: Record<StatusBadgeProps['status'], string> = {
     online: 'bg-emerald-500',
-    offline: 'bg-slate-500',
+    offline: 'bg-theme-tertiary',
     busy: 'bg-red-500',
     away: 'bg-amber-500',
   };

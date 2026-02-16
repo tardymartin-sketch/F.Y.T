@@ -126,6 +126,10 @@ export interface TrainingPlanRow {
   week_end_date: string | null;
   coach_id: string | null;           // UUID du coach (NULL = global)
   athlete_target: string[] | null;   // Liste d'UUIDs athlètes ciblés (NULL = tous)
+  // Champs mode d'exécution (superset, triset, etc.)
+  execution_mode: string | null;     // 'straight' | 'superset' | 'triset' | etc.
+  execution_group_id: string | null; // UUID partagé par les exercices d'un groupe
+  execution_group_position: number | null; // Position dans le groupe (0, 1, 2...)
 }
 
 // Type utilisé dans l'application (camelCase, valeurs par défaut)
@@ -149,6 +153,10 @@ export interface WorkoutRow {
   weekEndDate?: string;
   coachId?: string;           // UUID du coach (undefined = global)
   athleteTarget?: string[];   // Liste d'UUIDs athlètes ciblés (undefined = tous)
+  // Champs mode d'exécution (superset, triset, etc.)
+  executionMode?: ExecutionMode;       // Défaut: 'straight'
+  executionGroupId?: string;           // UUID partagé par les exercices d'un groupe
+  executionGroupPosition?: number;     // Position dans le groupe (0, 1, 2...)
 }
 
 // Alias pour compatibilité
@@ -176,6 +184,10 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     weekEndDate: row.week_end_date ?? undefined,
     coachId: row.coach_id ?? undefined,
     athleteTarget: row.athlete_target ?? undefined,
+    // Champs mode d'exécution
+    executionMode: (row.execution_mode as ExecutionMode) ?? 'straight',
+    executionGroupId: row.execution_group_id ?? undefined,
+    executionGroupPosition: row.execution_group_position ?? undefined,
   };
 }
 
@@ -195,6 +207,7 @@ export interface ExerciseRow {
   limb_type: 'bilateral' | 'unilateral' | 'asymmetrical' | null;
   primary_muscle_group_id: string | null;
   movement_pattern_id: string | null;
+  category_id: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -211,6 +224,7 @@ export interface Exercise {
   limbType?: 'bilateral' | 'unilateral' | 'asymmetrical';
   primaryMuscleGroupId?: string;
   movementPatternId?: string;
+  categoryId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -228,6 +242,7 @@ export function mapExerciseRowToExercise(row: ExerciseRow): Exercise {
     limbType: row.limb_type ?? undefined,
     primaryMuscleGroupId: row.primary_muscle_group_id ?? undefined,
     movementPatternId: row.movement_pattern_id ?? undefined,
+    categoryId: row.category_id ?? undefined,
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
   };
@@ -246,7 +261,238 @@ export function mapExerciseToRow(exercise: Partial<Exercise>): Partial<ExerciseR
     ...(exercise.limbType !== undefined && { limb_type: exercise.limbType || null }),
     ...(exercise.primaryMuscleGroupId !== undefined && { primary_muscle_group_id: exercise.primaryMuscleGroupId || null }),
     ...(exercise.movementPatternId !== undefined && { movement_pattern_id: exercise.movementPatternId || null }),
+    ...(exercise.categoryId !== undefined && { category_id: exercise.categoryId || null }),
   };
+}
+
+// ===========================================
+// TYPES MODE D'EXÉCUTION (Superset, Triset, etc.)
+// ===========================================
+
+/**
+ * Mode d'exécution d'un exercice ou groupe d'exercices
+ * - 'straight': Mode classique, exercice individuel avec repos entre les séries
+ * - 'superset': 2 exercices enchaînés sans repos entre eux
+ * - 'triset': 3 exercices enchaînés sans repos (futur)
+ * - 'giant_set': 4+ exercices enchaînés sans repos (futur)
+ * - 'pre_fatigue': Variante superset - isolation avant composé (futur)
+ * - 'post_fatigue': Variante superset - composé avant isolation (futur)
+ */
+export type ExecutionMode =
+  | 'straight'
+  | 'superset'
+  | 'triset'
+  | 'giant_set'
+  | 'pre_fatigue'
+  | 'post_fatigue';
+
+/**
+ * Métadonnées des modes d'exécution
+ */
+export const EXECUTION_MODES: Record<ExecutionMode, {
+  label: string;
+  labelShort: string;
+  description: string;
+  exerciseCount: number | null; // null = illimité (giant set)
+  icon: string; // Nom de l'icône lucide-react
+}> = {
+  straight: {
+    label: 'Séries classiques',
+    labelShort: 'Classique',
+    description: 'Exercice individuel avec repos entre les séries',
+    exerciseCount: 1,
+    icon: 'Dumbbell'
+  },
+  superset: {
+    label: 'Superset',
+    labelShort: 'Superset',
+    description: '2 exercices enchaînés sans repos entre eux, repos uniquement après les 2',
+    exerciseCount: 2,
+    icon: 'Link2'
+  },
+  triset: {
+    label: 'Triset',
+    labelShort: 'Triset',
+    description: '3 exercices enchaînés sans repos entre eux',
+    exerciseCount: 3,
+    icon: 'Link2'
+  },
+  giant_set: {
+    label: 'Giant Set',
+    labelShort: 'Giant',
+    description: '4+ exercices enchaînés sans repos entre eux',
+    exerciseCount: null,
+    icon: 'Layers'
+  },
+  pre_fatigue: {
+    label: 'Pré-fatigue',
+    labelShort: 'Pré-fat',
+    description: 'Exercice d\'isolation suivi d\'un exercice composé du même muscle',
+    exerciseCount: 2,
+    icon: 'ArrowDownCircle'
+  },
+  post_fatigue: {
+    label: 'Post-fatigue',
+    labelShort: 'Post-fat',
+    description: 'Exercice composé suivi d\'un exercice d\'isolation pour finition',
+    exerciseCount: 2,
+    icon: 'ArrowUpCircle'
+  }
+};
+
+/**
+ * Vérifie si un mode d'exécution est un "compound set" (plusieurs exercices liés)
+ */
+export function isCompoundSetMode(mode: ExecutionMode | undefined): boolean {
+  return mode !== undefined && mode !== 'straight';
+}
+
+/**
+ * Retourne le nombre d'exercices attendus pour un mode d'exécution
+ */
+export function getExpectedExerciseCount(mode: ExecutionMode): number | null {
+  return EXECUTION_MODES[mode].exerciseCount;
+}
+
+/**
+ * Groupe d'exercices pour affichage (superset/triset)
+ * Utilisé uniquement côté affichage, pas stocké en DB
+ */
+export interface ExerciseLogGroup {
+  /** ID du groupe (= executionGroupId des exercices) */
+  groupId: string;
+
+  /** Mode d'exécution */
+  executionMode: ExecutionMode;
+
+  /** Exercices du groupe, ordonnés par executionGroupPosition */
+  exercises: ExerciseLog[];
+
+  /** RPE moyen du groupe (calculé) */
+  avgRpe?: number;
+}
+
+/**
+ * Helper: Regroupe les ExerciseLog par executionGroupId
+ * Les exercices sans groupe ou en mode 'straight' restent individuels
+ */
+export function groupExerciseLogs(exercises: ExerciseLog[]): (ExerciseLog | ExerciseLogGroup)[] {
+  const result: (ExerciseLog | ExerciseLogGroup)[] = [];
+  const grouped = new Map<string, ExerciseLog[]>();
+  const processedGroupIds = new Set<string>();
+
+  // Grouper les exercices par executionGroupId
+  exercises.forEach(ex => {
+    const mode = ex.executionMode ?? 'straight';
+    if (ex.executionGroupId && mode !== 'straight') {
+      if (!grouped.has(ex.executionGroupId)) {
+        grouped.set(ex.executionGroupId, []);
+      }
+      grouped.get(ex.executionGroupId)!.push(ex);
+    }
+  });
+
+  // Reconstruire l'ordre original
+  exercises.forEach(ex => {
+    const mode = ex.executionMode ?? 'straight';
+
+    if (ex.executionGroupId && mode !== 'straight') {
+      // Premier exercice du groupe rencontré: ajouter le groupe entier
+      if (!processedGroupIds.has(ex.executionGroupId)) {
+        const groupExercises = grouped.get(ex.executionGroupId)!;
+        groupExercises.sort((a, b) => (a.executionGroupPosition ?? 0) - (b.executionGroupPosition ?? 0));
+
+        const rpes = groupExercises.map(e => e.rpe).filter((r): r is number => typeof r === 'number');
+        const avgRpe = rpes.length > 0 ? Math.round(rpes.reduce((a, b) => a + b, 0) / rpes.length) : undefined;
+
+        result.push({
+          groupId: ex.executionGroupId,
+          executionMode: mode,
+          exercises: groupExercises,
+          avgRpe
+        });
+
+        processedGroupIds.add(ex.executionGroupId);
+      }
+    } else {
+      // Exercice individuel (straight ou sans groupe)
+      result.push(ex);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Type guard: est-ce un groupe d'exercices?
+ */
+export function isExerciseLogGroup(item: ExerciseLog | ExerciseLogGroup): item is ExerciseLogGroup {
+  return 'groupId' in item && 'exercises' in item && Array.isArray((item as ExerciseLogGroup).exercises);
+}
+
+/**
+ * Groupe d'exercices pour templates de séances (superset/triset)
+ */
+export interface SessionExerciseGroup {
+  /** ID du groupe (= executionGroupId des exercices) */
+  groupId: string;
+
+  /** Mode d'exécution */
+  executionMode: ExecutionMode;
+
+  /** Exercices du groupe, ordonnés par executionGroupPosition */
+  exercises: SessionExercise[];
+}
+
+/**
+ * Helper: Regroupe les SessionExercise par executionGroupId
+ */
+export function groupSessionExercises(exercises: SessionExercise[]): (SessionExercise | SessionExerciseGroup)[] {
+  const result: (SessionExercise | SessionExerciseGroup)[] = [];
+  const grouped = new Map<string, SessionExercise[]>();
+  const processedGroupIds = new Set<string>();
+
+  // Grouper les exercices par executionGroupId
+  exercises.forEach(ex => {
+    const mode = ex.executionMode ?? 'straight';
+    if (ex.executionGroupId && mode !== 'straight') {
+      if (!grouped.has(ex.executionGroupId)) {
+        grouped.set(ex.executionGroupId, []);
+      }
+      grouped.get(ex.executionGroupId)!.push(ex);
+    }
+  });
+
+  // Reconstruire l'ordre original (basé sur position du premier exercice du groupe)
+  exercises.forEach(ex => {
+    const mode = ex.executionMode ?? 'straight';
+
+    if (ex.executionGroupId && mode !== 'straight') {
+      if (!processedGroupIds.has(ex.executionGroupId)) {
+        const groupExercises = grouped.get(ex.executionGroupId)!;
+        groupExercises.sort((a, b) => (a.executionGroupPosition ?? 0) - (b.executionGroupPosition ?? 0));
+
+        result.push({
+          groupId: ex.executionGroupId,
+          executionMode: mode,
+          exercises: groupExercises
+        });
+
+        processedGroupIds.add(ex.executionGroupId);
+      }
+    } else {
+      result.push(ex);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Type guard: est-ce un groupe de SessionExercise?
+ */
+export function isSessionExerciseGroup(item: SessionExercise | SessionExerciseGroup): item is SessionExerciseGroup {
+  return 'groupId' in item && 'exercises' in item && Array.isArray((item as SessionExerciseGroup).exercises);
 }
 
 // ===========================================
@@ -313,6 +559,10 @@ export interface ExerciseLog {
   sets: SetLog[];
   notes?: string;
   rpe?: number;
+  // Mode d'exécution (superset, triset, etc.)
+  executionMode?: ExecutionMode;        // Défaut: 'straight'
+  executionGroupId?: string;            // UUID partagé par les exos d'un superset
+  executionGroupPosition?: number;      // 0 = premier, 1 = second, etc.
 }
 
 export interface SessionKey {
@@ -450,6 +700,10 @@ export interface ExerciseLogRow {
   sets_detail: SetDetailLog[] | null;  // Enrichi avec loadType et exerciseType par set
   notes: string | null;
   created_at: string;
+  // Champs superset
+  execution_mode: string | null;
+  execution_group_id: string | null;
+  execution_group_position: number | null;
 }
 
 // Type utilisé dans l'application
@@ -480,6 +734,10 @@ export interface ExerciseLogEntry {
   rpe?: number;
   setsDetail?: SetDetailLog[];  // Enrichi avec loadType et exerciseType par set
   notes?: string;
+  // Champs superset
+  executionMode?: ExecutionMode;
+  executionGroupId?: string;
+  executionGroupPosition?: number;
 }
 
 // Mapping DB -> App
@@ -511,6 +769,10 @@ export function mapExerciseLogRowToEntry(row: ExerciseLogRow): ExerciseLogEntry 
     rpe: row.rpe ?? undefined,
     setsDetail: row.sets_detail ?? undefined,
     notes: row.notes ?? undefined,
+    // Champs superset
+    executionMode: (row.execution_mode as ExecutionMode) ?? undefined,
+    executionGroupId: row.execution_group_id ?? undefined,
+    executionGroupPosition: row.execution_group_position ?? undefined,
   };
 }
 
@@ -1029,4 +1291,345 @@ export interface GhostSet {
   weight: number;
   reps: number;
   volume: number;
+}
+
+// ===========================================
+// TYPES BIBLIOTHÈQUE COACH (Exercices, Séances, Programmes)
+// ===========================================
+
+// Référentiels
+export interface MuscleGroup {
+  id: string;
+  nameFr: string;
+  nameEn?: string;
+  code: string;
+}
+
+export interface MovementPattern {
+  id: string;
+  nameFr: string;
+  nameEn?: string;
+  code: string;
+}
+
+// Types DB pour référentiels
+export interface MuscleGroupRow {
+  id: string;
+  name_fr: string;
+  name_en: string | null;
+  code: string;
+}
+
+export interface MovementPatternRow {
+  id: string;
+  name_fr: string;
+  name_en: string | null;
+  code: string;
+}
+
+export interface ExerciseCategory {
+  id: string;
+  name: string;
+  code: string;
+  displayOrder: number;
+}
+
+export interface ExerciseCategoryRow {
+  id: string;
+  name: string;
+  code: string;
+  display_order: number;
+}
+
+export function mapExerciseCategoryRowToExerciseCategory(row: ExerciseCategoryRow): ExerciseCategory {
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.code,
+    displayOrder: row.display_order,
+  };
+}
+
+// Mapping référentiels
+export function mapMuscleGroupRowToMuscleGroup(row: MuscleGroupRow): MuscleGroup {
+  return {
+    id: row.id,
+    nameFr: row.name_fr,
+    nameEn: row.name_en ?? undefined,
+    code: row.code,
+  };
+}
+
+export function mapMovementPatternRowToMovementPattern(row: MovementPatternRow): MovementPattern {
+  return {
+    id: row.id,
+    nameFr: row.name_fr,
+    nameEn: row.name_en ?? undefined,
+    code: row.code,
+  };
+}
+
+// Types DB pour session_templates (nouvelle architecture)
+export interface SessionTemplateRow {
+  id: string;
+  coach_id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  validity_year: number | null;
+  validity_month: number | null;
+  validity_week: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+// Types DB pour session_template_exercises
+export interface SessionTemplateExerciseRow {
+  id: string;
+  session_template_id: string;
+  exercise_id: string;
+  position: number;
+  default_sets: number | null;
+  default_reps: string | null;
+  default_rest: string | null;
+  default_tempo: string | null;
+  notes: string | null;
+  created_at: string;
+  // Champs superset
+  execution_mode: string | null;
+  execution_group_id: string | null;
+  execution_group_position: number | null;
+}
+
+// Exercice dans une séance (avec paramètres d'exécution)
+export interface SessionExercise {
+  id: string;                    // UUID de session_template_exercises
+  exerciseId: string;            // FK vers exercises
+  exerciseName: string;          // Dénormalisé pour affichage
+  position: number;              // Renommé de orderIndex
+  targetSets?: string;           // "3" ou "3-4"
+  targetReps?: string;           // "8" ou "8-10" ou "30s"
+  restTimeSec?: number;
+  tempo?: string;
+  notes?: string;                // Consignes spécifiques
+  videoUrl?: string;             // Dénormalisé depuis exercise
+  // Mode d'exécution (superset, triset, etc.)
+  executionMode?: ExecutionMode;        // Défaut: 'straight'
+  executionGroupId?: string;            // UUID partagé par les exos d'un superset
+  executionGroupPosition?: number;      // 0 = premier, 1 = second
+}
+
+// Template de séance (nouvelle architecture avec table session_templates)
+export interface SessionTemplate {
+  id: string;                    // UUID de la table session_templates
+  coachId: string;
+  seanceType: string;            // = name dans la table session_templates
+  description?: string;
+  category?: string;             // 'force', 'cardio', 'mobilite', etc.
+  exercises: SessionExercise[];
+  // Période de validité
+  validityYear?: number;
+  validityMonth?: number;
+  validityWeek?: number;
+  startDate?: string;            // Format YYYY-MM-DD
+  endDate?: string;              // Format YYYY-MM-DD
+  isArchived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Programme (séances assignées à des athlètes)
+export interface Program {
+  coachId: string;
+  programName?: string;          // Nom personnalisé du programme (optionnel)
+  seanceType: string;
+  year: number;
+  week?: number;
+  monthNum?: number;
+  startDate?: string;            // Format YYYY-MM-DD
+  endDate?: string;              // Format YYYY-MM-DD
+  athleteTarget: string[];       // UUIDs des athlètes assignés
+  groupTarget?: string[];        // UUIDs des groupes assignés (optionnel, pour affichage)
+  exercises: SessionExercise[];
+  sourceTemplateId?: string;     // Référence au template source (session_templates.id)
+}
+
+// Variante d'exercice (exercices avec même nom mais données primaires différentes)
+export interface ExerciseVariant {
+  exercise: Exercise;
+  isDifferentVideo: boolean;
+  isDifferentMuscleGroup: boolean;
+  isDifferentMovementPattern: boolean;
+  isDifferentLimbType: boolean;
+}
+
+// Helper: Vérifie si deux exercices sont des variantes (données primaires différentes)
+export function areExerciseVariants(a: Exercise, b: Exercise): boolean {
+  if (a.name !== b.name) return false;  // Pas même nom = pas variante
+  if (a.id === b.id) return false;       // Même exercice = pas variante
+
+  // Au moins une donnée primaire doit être différente
+  return (
+    a.videoUrl !== b.videoUrl ||
+    a.primaryMuscleGroupId !== b.primaryMuscleGroupId ||
+    a.movementPatternId !== b.movementPatternId ||
+    a.limbType !== b.limbType
+  );
+}
+
+// ===========================================
+// EXERCISE VARIANT NAMING
+// ===========================================
+
+// Separator used to distinguish base name from variant name
+export const VARIANT_NAME_SEPARATOR = ' :: ';
+export const DEFAULT_VARIANT_NAME = 'Ma variante';
+
+/**
+ * Parse an exercise full name into base name and variant name
+ * Example: "Squat :: Force" -> { baseName: "Squat", variantName: "Force" }
+ * Example: "Squat" -> { baseName: "Squat", variantName: undefined }
+ */
+export function parseExerciseName(fullName: string): { baseName: string; variantName?: string } {
+  const separatorIndex = fullName.indexOf(VARIANT_NAME_SEPARATOR);
+  if (separatorIndex === -1) {
+    return { baseName: fullName.trim() };
+  }
+  return {
+    baseName: fullName.substring(0, separatorIndex).trim(),
+    variantName: fullName.substring(separatorIndex + VARIANT_NAME_SEPARATOR.length).trim() || undefined
+  };
+}
+
+/**
+ * Build a full exercise name from base name and variant name
+ * Example: buildExerciseName("Squat", "Force") -> "Squat :: Force"
+ * Example: buildExerciseName("Squat") -> "Squat"
+ */
+export function buildExerciseName(baseName: string, variantName?: string): string {
+  if (!variantName || variantName.trim() === '') {
+    return baseName.trim();
+  }
+  return `${baseName.trim()}${VARIANT_NAME_SEPARATOR}${variantName.trim()}`;
+}
+
+/**
+ * Get display name for an exercise variant tab
+ * If has variant name, show just the variant name
+ * If no variant name, show "Ma variante" for personal or date for common
+ */
+export function getExerciseVariantDisplayName(exercise: Exercise, isPersonal: boolean): string {
+  const { variantName } = parseExerciseName(exercise.name);
+  if (variantName) {
+    return variantName;
+  }
+  // Default display based on ownership
+  if (isPersonal) {
+    return DEFAULT_VARIANT_NAME;
+  }
+  // For common exercises, use creation date
+  if (exercise.createdAt) {
+    return new Date(exercise.createdAt).toLocaleDateString('fr-FR');
+  }
+  return 'Originale';
+}
+
+// Helper: Regroupe les lignes training_plans par (coach_id, seance_type, dates)
+export function groupTrainingPlansToSessions(rows: WorkoutRow[]): SessionTemplate[] {
+  const grouped = new Map<string, SessionTemplate>();
+
+  for (const row of rows) {
+    // Clé unique: coach_id + seance_type + startDate + endDate (pour les variantes par date)
+    const key = `${row.coachId || 'null'}_${row.seance}_${row.weekStartDate || ''}_${row.weekEndDate || ''}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: '',  // Sera rempli lors de la migration vers session_templates
+        coachId: row.coachId || '',
+        seanceType: row.seance,
+        exercises: [],
+        validityYear: row.annee ? parseInt(row.annee) : undefined,
+        validityWeek: row.semaine ? parseInt(row.semaine) : undefined,
+        validityMonth: row.moisNum ? parseInt(row.moisNum) : undefined,
+        startDate: row.weekStartDate,
+        endDate: row.weekEndDate,
+      });
+    }
+
+    const session = grouped.get(key)!;
+    session.exercises.push({
+      id: row.id.toString(),
+      exerciseId: row.exerciseId || '',
+      exerciseName: row.exercice,
+      position: row.ordre,
+      targetSets: row.series || undefined,
+      targetReps: row.repsDuree || undefined,
+      restTimeSec: row.repos ? parseInt(row.repos) : undefined,
+      tempo: row.tempoRpe || undefined,
+      notes: row.notes || undefined,
+      videoUrl: row.video || undefined,
+    });
+  }
+
+  // Trier les exercices par position
+  for (const session of grouped.values()) {
+    session.exercises.sort((a, b) => a.position - b.position);
+  }
+
+  return Array.from(grouped.values());
+}
+
+// ===========================================
+// MAPPING FONCTIONS - SESSION TEMPLATES
+// ===========================================
+
+// Mapping SessionTemplate DB -> App
+export function mapSessionTemplateRowToSessionTemplate(
+  row: SessionTemplateRow,
+  exercises: SessionExercise[] = []
+): SessionTemplate {
+  return {
+    id: row.id,
+    coachId: row.coach_id,
+    seanceType: row.name,
+    description: row.description ?? undefined,
+    category: row.category ?? undefined,
+    exercises,
+    validityYear: row.validity_year ?? undefined,
+    validityMonth: row.validity_month ?? undefined,
+    validityWeek: row.validity_week ?? undefined,
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
+    isArchived: row.is_archived,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Mapping SessionTemplateExercise DB -> SessionExercise App
+export function mapSessionTemplateExerciseRowToSessionExercise(
+  row: SessionTemplateExerciseRow,
+  exerciseName: string,
+  videoUrl?: string
+): SessionExercise {
+  return {
+    id: row.id,
+    exerciseId: row.exercise_id,
+    exerciseName,
+    position: row.position,
+    targetSets: row.default_sets?.toString() ?? undefined,
+    targetReps: row.default_reps ?? undefined,
+    restTimeSec: row.default_rest ? parseInt(row.default_rest) : undefined,
+    tempo: row.default_tempo ?? undefined,
+    notes: row.notes ?? undefined,
+    videoUrl,
+    // Champs superset
+    executionMode: (row.execution_mode as ExecutionMode) ?? 'straight',
+    executionGroupId: row.execution_group_id ?? undefined,
+    executionGroupPosition: row.execution_group_position ?? undefined,
+  };
 }

@@ -32,19 +32,19 @@ const variantStyles: Record<NonNullable<ButtonProps['variant']>, string> = {
     active:shadow-md
   `,
   secondary: `
-    bg-slate-700 hover:bg-slate-600
+    bg-theme-tertiary hover:bg-theme-secondary
     text-white font-medium
-    border border-slate-600
+    border border-theme
   `,
   outline: `
-    bg-transparent hover:bg-slate-800
-    text-slate-300 hover:text-white
-    border border-slate-600 hover:border-slate-500
+    bg-transparent hover:bg-theme-tertiary
+    text-theme hover:text-theme
+    border border-theme hover:border-theme
     font-medium
   `,
   ghost: `
-    bg-transparent hover:bg-slate-800
-    text-slate-400 hover:text-white
+    bg-transparent hover:bg-theme-tertiary
+    text-theme-muted hover:text-theme
     font-medium
   `,
   danger: `
@@ -90,7 +90,7 @@ export const Button: React.FC<ButtonProps> = ({
         inline-flex items-center justify-center
         transition-all duration-200 ease-out
         active:scale-[0.98]
-        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900
+        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-theme-secondary
         disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
         ${variantStyles[variant]}
         ${sizeStyles[size]}
@@ -169,7 +169,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
         rounded-lg
         transition-all duration-200 ease-out
         active:scale-95
-        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900
+        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-theme-secondary
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variantStyles[variant]}
         ${iconSizes[size]}

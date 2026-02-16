@@ -42,8 +42,36 @@ import {
   SetLog,
   SetLoad,
   PRDetected,
+  // Bibliothèque Coach
+  MuscleGroup,
+  MovementPattern,
+  ExerciseCategory,
+  mapMuscleGroupRowToMuscleGroup,
+  mapMovementPatternRowToMovementPattern,
+  mapExerciseCategoryRowToExerciseCategory,
+  SessionTemplate,
+  SessionExercise,
+  Program,
+  ExerciseVariant,
+  groupTrainingPlansToSessions,
+  ExecutionMode,
+  // Nouvelles fonctions de mapping pour session_templates
+  mapSessionTemplateRowToSessionTemplate,
+  mapSessionTemplateExerciseRowToSessionExercise,
 } from '../../types';
 import { syncUserBadgesProgress } from './badgeService';
+import {
+  isDemoMode,
+  getDemoTrainingPlans,
+  getDemoSessionHistory,
+  saveDemoSessionLog,
+  getDemoPersonalRecords,
+  getDemoDailyVolume,
+  getDemoCategoryDistribution,
+  getDemoSessionTrends,
+  getDemo1RMHistory,
+  getDemo1RMFilterHierarchy
+} from './demoService';
 
 // ===========================================
 // AUTH & PROFILE
@@ -92,6 +120,12 @@ export async function updateUserProfile(userId: string, updates: Partial<Profile
  * @param _userId - Paramètre conservé pour compatibilité (non utilisé, RLS gère le filtrage)
  */
 export async function fetchTrainingPlans(_userId?: string): Promise<WorkoutRow[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchTrainingPlans] Mode démo - retour données locales');
+    return getDemoTrainingPlans();
+  }
+
   const { data, error } = await supabase
     .from('training_plans')
     .select(`
@@ -134,6 +168,12 @@ export async function fetchTrainingPlans(_userId?: string): Promise<WorkoutRow[]
 // ===========================================
 
 export async function saveSessionLog(log: SessionLog, userId: string): Promise<SessionLog> {
+  // Mode démo : sauvegarder localement
+  if (isDemoMode()) {
+    console.log('[saveSessionLog] Mode démo - sauvegarde locale');
+    return saveDemoSessionLog(log);
+  }
+
   console.log('[saveSessionLog] Début sauvegarde:', {
     logId: log.id,
     userId,
@@ -755,6 +795,10 @@ export async function saveExerciseLogs(
       rpe: ex.rpe || null,
       sets_detail: metrics.setsDetail,  // Enrichi avec loadType et exerciseType par set
       notes: ex.notes || null,
+      // Champs superset
+      execution_mode: ex.executionMode || 'straight',
+      execution_group_id: ex.executionGroupId || null,
+      execution_group_position: ex.executionGroupPosition ?? null,
     };
   });
 
@@ -934,6 +978,12 @@ export async function compareExercisePeriods(
  * Reconstruit la structure SessionLog attendue par les composants
  */
 export async function fetchSessionLogsFromExerciseLogs(userId: string): Promise<SessionLog[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchSessionLogsFromExerciseLogs] Mode démo - retour données locales');
+    return getDemoSessionHistory();
+  }
+
   // 1. Récupérer tous les exercise_logs de l'utilisateur
   // Tri par date de séance effective (pas created_at), puis par session_id pour stabilité
   const { data: exerciseLogs, error } = await supabase
@@ -1361,6 +1411,12 @@ export async function fetchCategoryDistribution(
   startDate?: string,
   endDate?: string
 ): Promise<CategoryDistribution[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchCategoryDistribution] Mode démo - retour données locales');
+    return getDemoCategoryDistribution(startDate, endDate);
+  }
+
   let query = supabase
     .from('exercise_logs')
     .select('analytics_category, total_volume, session_log_id')
@@ -1423,6 +1479,12 @@ export async function fetchDailyVolume(
   userId: string,
   year: number
 ): Promise<DailyVolume[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchDailyVolume] Mode démo - retour données locales');
+    return getDemoDailyVolume(year);
+  }
+
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
@@ -1783,6 +1845,20 @@ export async function fetchSessionTrends(
   userId: string,
   weeksBack: number = 12
 ): Promise<SessionTrendData[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchSessionTrends] Mode démo - retour données locales');
+    const demoTrends = getDemoSessionTrends(weeksBack);
+    // Mapper vers le format SessionTrendData attendu
+    return demoTrends.map(t => ({
+      date: t.date,
+      totalVolume: t.totalVolume,
+      avgRpe: t.avgRpe,
+      sessionCount: t.sessionCount,
+      sessionNames: []
+    }));
+  }
+
   // Calculer la date de début basée sur weeksBack
   const endDate = new Date();
   const startDate = new Date();
@@ -1872,6 +1948,12 @@ export async function fetchPersonalRecordsEnhanced(userId: string): Promise<Reco
   muscleGroupId: string | null;
   categoryCode: string | null;
 }>> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetchPersonalRecordsEnhanced] Mode démo - retour données locales');
+    return getDemoPersonalRecords();
+  }
+
   // Récupérer les logs d'exercices
   const { data, error } = await supabase
     .from('exercise_logs')
@@ -2067,6 +2149,27 @@ export async function fetch1RMHistoryByExercises(
     return [];
   }
 
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetch1RMHistoryByExercises] Mode démo - retour données locales');
+    const result: { exerciseName: string; date: string; estimated1RM: number }[] = [];
+    exerciseNames.forEach(name => {
+      const history = getDemo1RMHistory(name);
+      history.forEach(h => {
+        // Appliquer les filtres de date
+        if (startDate && h.date < startDate) return;
+        if (endDate && h.date > endDate) return;
+        result.push({
+          exerciseName: name,
+          date: h.date,
+          estimated1RM: h.estimated1RM
+        });
+      });
+    });
+    result.sort((a, b) => a.date.localeCompare(b.date));
+    return result;
+  }
+
   let query = supabase
     .from('exercise_logs')
     .select('exercise_name, date, estimated_1rm')
@@ -2117,6 +2220,12 @@ export async function fetch1RMFilterHierarchy(
   startDate?: string,
   endDate?: string
 ): Promise<CategoryWithMuscleGroups[]> {
+  // Mode démo : retourner les données locales
+  if (isDemoMode()) {
+    console.log('[fetch1RMFilterHierarchy] Mode démo - retour données locales');
+    return getDemo1RMFilterHierarchy();
+  }
+
   // Requête pour récupérer les exercise_logs avec les infos de catégorie via exercises
   let query = supabase
     .from('exercise_logs')
@@ -2908,4 +3017,854 @@ export async function deleteExercise(exerciseId: string): Promise<void> {
 export async function getCurrentUserId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
+}
+
+// ===========================================
+// BIBLIOTHÈQUE COACH - RÉFÉRENTIELS
+// ===========================================
+
+/**
+ * Récupère tous les groupes musculaires
+ */
+export async function fetchMuscleGroups(): Promise<MuscleGroup[]> {
+  const { data, error } = await supabase
+    .from('muscle_groups')
+    .select('id, name_fr, name_en, code')
+    .order('name_fr');
+
+  if (error) {
+    console.error('Error fetching muscle groups:', error);
+    throw error;
+  }
+
+  return (data || []).map(mapMuscleGroupRowToMuscleGroup);
+}
+
+/**
+ * Récupère tous les patterns de mouvement
+ */
+export async function fetchMovementPatterns(): Promise<MovementPattern[]> {
+  const { data, error } = await supabase
+    .from('movement_patterns')
+    .select('id, name_fr, name_en, code')
+    .order('name_fr');
+
+  if (error) {
+    console.error('Error fetching movement patterns:', error);
+    throw error;
+  }
+
+  return (data || []).map(mapMovementPatternRowToMovementPattern);
+}
+
+/**
+ * Récupère toutes les catégories d'exercices
+ */
+export async function fetchExerciseCategories(): Promise<ExerciseCategory[]> {
+  const { data, error } = await supabase
+    .from('exercise_categories')
+    .select('id, name, code, display_order')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching exercise categories:', error);
+    throw error;
+  }
+
+  return (data || []).map(mapExerciseCategoryRowToExerciseCategory);
+}
+
+/**
+ * Crée un nouveau groupe musculaire
+ */
+export async function createMuscleGroup(nameFr: string): Promise<MuscleGroup> {
+  // Generate a simple code from the name
+  const code = nameFr
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+
+  const { data, error } = await supabase
+    .from('muscle_groups')
+    .insert({ name_fr: nameFr, code })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating muscle group:', error);
+    throw error;
+  }
+
+  return mapMuscleGroupRowToMuscleGroup(data);
+}
+
+/**
+ * Crée un nouveau pattern de mouvement
+ */
+export async function createMovementPattern(nameFr: string): Promise<MovementPattern> {
+  // Generate a simple code from the name
+  const code = nameFr
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+
+  const { data, error } = await supabase
+    .from('movement_patterns')
+    .insert({ name_fr: nameFr, code })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating movement pattern:', error);
+    throw error;
+  }
+
+  return mapMovementPatternRowToMovementPattern(data);
+}
+
+// ===========================================
+// BIBLIOTHÈQUE COACH - EXERCICES (avec variantes)
+// ===========================================
+
+/**
+ * Récupère les exercices visibles par un coach (communs + personnels)
+ * Si isAdmin = true, récupère TOUS les exercices
+ */
+export async function fetchExercisesForCoach(coachId: string, isAdmin: boolean = false): Promise<Exercise[]> {
+  let query = supabase
+    .from('exercises')
+    .select('*')
+    .is('deleted_at', null)
+    .order('name');
+
+  // Si admin, pas de filtre sur coach_id (voir tout)
+  // Sinon, filtre classique: communs + personnels
+  if (!isAdmin) {
+    query = query.or(`coach_id.is.null,coach_id.eq.${coachId}`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching exercises for coach:', error);
+    throw error;
+  }
+
+  return (data || []).map(mapExerciseRowToExercise);
+}
+
+/**
+ * Récupère un exercice par son nom pour un coach donné
+ */
+export async function fetchExerciseByName(name: string, coachId: string): Promise<Exercise | null> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('name', name)
+    .eq('coach_id', coachId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching exercise by name:', error);
+    throw error;
+  }
+
+  return data ? mapExerciseRowToExercise(data) : null;
+}
+
+/**
+ * Récupère les variantes d'un exercice (même nom, données primaires différentes)
+ */
+export async function fetchExerciseVariants(
+  exerciseId: string,
+  coachId: string
+): Promise<ExerciseVariant[]> {
+  // D'abord récupérer l'exercice de référence
+  const { data: refData, error: refError } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('id', exerciseId)
+    .single();
+
+  if (refError || !refData) {
+    console.error('Error fetching reference exercise:', refError);
+    return [];
+  }
+
+  const reference = mapExerciseRowToExercise(refData);
+
+  // Ensuite chercher les exercices avec le même nom
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('name', reference.name)
+    .neq('id', exerciseId)
+    .or(`coach_id.is.null,coach_id.eq.${coachId}`)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.error('Error fetching exercise variants:', error);
+    return [];
+  }
+
+  // Filtrer pour ne garder que les vraies variantes (données primaires différentes)
+  const variants: ExerciseVariant[] = [];
+  for (const row of data || []) {
+    const exercise = mapExerciseRowToExercise(row);
+
+    const isDifferentVideo = exercise.videoUrl !== reference.videoUrl;
+    const isDifferentMuscleGroup = exercise.primaryMuscleGroupId !== reference.primaryMuscleGroupId;
+    const isDifferentMovementPattern = exercise.movementPatternId !== reference.movementPatternId;
+    const isDifferentLimbType = exercise.limbType !== reference.limbType;
+
+    // Au moins une donnée primaire doit être différente pour être une variante
+    if (isDifferentVideo || isDifferentMuscleGroup || isDifferentMovementPattern || isDifferentLimbType) {
+      variants.push({
+        exercise,
+        isDifferentVideo,
+        isDifferentMuscleGroup,
+        isDifferentMovementPattern,
+        isDifferentLimbType,
+      });
+    }
+  }
+
+  return variants;
+}
+
+/**
+ * Crée un exercice pour un coach (avec son coach_id)
+ */
+export async function createExerciseForCoach(
+  exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>,
+  coachId: string
+): Promise<Exercise> {
+  const row = mapExerciseToRow({ ...exercise, coachId });
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating exercise:', error);
+    throw error;
+  }
+
+  return mapExerciseRowToExercise(data);
+}
+
+/**
+ * Met à jour un exercice. Si c'est un exercice commun, crée une copie pour le coach.
+ */
+export async function updateExerciseForCoach(
+  exerciseId: string,
+  updates: Partial<Exercise>,
+  coachId: string
+): Promise<Exercise> {
+  // D'abord vérifier si c'est un exercice commun ou du coach
+  const { data: existing, error: fetchError } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('id', exerciseId)
+    .single();
+
+  if (fetchError || !existing) {
+    throw new Error('Exercise not found');
+  }
+
+  const existingExercise = mapExerciseRowToExercise(existing);
+
+  // Si exercice commun (coach_id = null), créer une copie
+  if (!existingExercise.coachId) {
+    const newExercise = {
+      ...existingExercise,
+      ...updates,
+      coachId,
+    };
+    delete (newExercise as Record<string, unknown>).id;
+    delete (newExercise as Record<string, unknown>).createdAt;
+    delete (newExercise as Record<string, unknown>).updatedAt;
+
+    return createExerciseForCoach(newExercise, coachId);
+  }
+
+  // Sinon, mise à jour directe
+  const row = mapExerciseToRow(updates);
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .update(row)
+    .eq('id', exerciseId)
+    .eq('coach_id', coachId) // Sécurité: seulement si c'est son exercice
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating exercise:', error);
+    throw error;
+  }
+
+  return mapExerciseRowToExercise(data);
+}
+
+/**
+ * Supprime (soft delete) un exercice du coach. Impossible de supprimer un exercice commun.
+ */
+export async function deleteExerciseForCoach(
+  exerciseId: string,
+  coachId: string
+): Promise<void> {
+  // Vérifier que ce n'est pas un exercice commun
+  const { data: existing, error: fetchError } = await supabase
+    .from('exercises')
+    .select('coach_id')
+    .eq('id', exerciseId)
+    .single();
+
+  if (fetchError || !existing) {
+    throw new Error('Exercise not found');
+  }
+
+  if (!existing.coach_id) {
+    throw new Error('Cannot delete a common exercise');
+  }
+
+  if (existing.coach_id !== coachId) {
+    throw new Error('Cannot delete another coach\'s exercise');
+  }
+
+  // Soft delete
+  const { error } = await supabase
+    .from('exercises')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', exerciseId)
+    .eq('coach_id', coachId);
+
+  if (error) {
+    console.error('Error deleting exercise:', error);
+    throw error;
+  }
+}
+
+// ===========================================
+// BIBLIOTHÈQUE COACH - SÉANCES (via training_plans)
+// ===========================================
+
+/**
+ * Récupère les templates de séances d'un coach depuis session_templates
+ * Si isAdmin = true, récupère TOUS les templates
+ */
+export async function fetchSessionTemplates(coachId: string, isAdmin: boolean = false): Promise<SessionTemplate[]> {
+  // 1. Récupérer les templates (non supprimés, non archivés)
+  let query = supabase
+    .from('session_templates')
+    .select('*')
+    .is('deleted_at', null)
+    .order('name');
+
+  // Si admin, pas de filtre sur coach_id (voir tout)
+  if (!isAdmin) {
+    query = query.eq('coach_id', coachId);
+  }
+
+  const { data: templates, error } = await query;
+
+  if (error) {
+    console.error('Error fetching session templates:', error);
+    throw error;
+  }
+
+  if (!templates || templates.length === 0) return [];
+
+  // 2. Récupérer tous les exercices de ces templates
+  const templateIds = templates.map(t => t.id);
+  const { data: exerciseRows, error: exError } = await supabase
+    .from('session_template_exercises')
+    .select(`
+      *,
+      exercises (id, name, video_url)
+    `)
+    .in('session_template_id', templateIds)
+    .order('position');
+
+  if (exError) {
+    console.error('Error fetching template exercises:', exError);
+  }
+
+  // 3. Grouper les exercices par template
+  const exercisesByTemplate = new Map<string, SessionExercise[]>();
+  (exerciseRows || []).forEach((row: any) => {
+    const templateId = row.session_template_id;
+    if (!exercisesByTemplate.has(templateId)) {
+      exercisesByTemplate.set(templateId, []);
+    }
+    exercisesByTemplate.get(templateId)!.push(
+      mapSessionTemplateExerciseRowToSessionExercise(
+        row,
+        row.exercises?.name || '',
+        row.exercises?.video_url
+      )
+    );
+  });
+
+  // 4. Mapper les templates avec leurs exercices
+  return templates.map(row =>
+    mapSessionTemplateRowToSessionTemplate(
+      row,
+      exercisesByTemplate.get(row.id) || []
+    )
+  );
+}
+
+/**
+ * Récupère les variantes d'une séance (même seance_type, périodes différentes)
+ */
+export async function fetchSessionVariants(
+  seanceType: string,
+  coachId: string
+): Promise<SessionTemplate[]> {
+  const { data, error } = await supabase
+    .from('training_plans')
+    .select('*')
+    .eq('seance_type', seanceType)
+    .or(`coach_id.is.null,coach_id.eq.${coachId}`)
+    .order('year', { ascending: true })
+    .order('week', { ascending: true })
+    .order('order_index', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching session variants:', error);
+    throw error;
+  }
+
+  const workouts = (data || []).map(mapTrainingPlanToWorkout);
+  return groupTrainingPlansToSessions(workouts);
+}
+
+/**
+ * Crée un template de séance pour un coach
+ */
+export async function createSessionTemplate(
+  session: {
+    seanceType: string;
+    description?: string;
+    category?: string;
+    validityYear?: number;
+    validityMonth?: number;
+    validityWeek?: number;
+    startDate?: string;
+    endDate?: string;
+    coachId: string;
+    exercises: Array<{
+      exerciseId: string;
+      exerciseName: string;
+      position: number;
+      targetSets?: string;
+      targetReps?: string;
+      restTimeSec?: number;
+      tempo?: string;
+      notes?: string;
+      videoUrl?: string;
+      // Champs superset
+      executionMode?: ExecutionMode;
+      executionGroupId?: string;
+      executionGroupPosition?: number;
+    }>;
+  },
+  coachId: string
+): Promise<SessionTemplate> {
+  // 1. Insérer le template
+  const { data: template, error: templateError } = await supabase
+    .from('session_templates')
+    .insert({
+      coach_id: coachId,
+      name: session.seanceType,
+      description: session.description || null,
+      category: session.category || null,
+      validity_year: session.validityYear || null,
+      validity_month: session.validityMonth || null,
+      validity_week: session.validityWeek || null,
+      start_date: session.startDate || null,
+      end_date: session.endDate || null,
+      is_archived: false,
+    })
+    .select()
+    .single();
+
+  if (templateError) {
+    console.error('Error creating session template:', templateError);
+    throw templateError;
+  }
+
+  // 2. Insérer les exercices
+  if (session.exercises.length > 0) {
+    const exerciseRows = session.exercises.map((ex, index) => ({
+      session_template_id: template.id,
+      exercise_id: ex.exerciseId,
+      position: index + 1,
+      default_sets: ex.targetSets ? parseInt(ex.targetSets) || null : null,
+      default_reps: ex.targetReps || null,
+      default_rest: ex.restTimeSec?.toString() || null,
+      default_tempo: ex.tempo || null,
+      notes: ex.notes || null,
+      // Champs superset
+      execution_mode: ex.executionMode || 'straight',
+      execution_group_id: ex.executionGroupId || null,
+      execution_group_position: ex.executionGroupPosition ?? null,
+    }));
+
+    const { error: exError } = await supabase
+      .from('session_template_exercises')
+      .insert(exerciseRows);
+
+    if (exError) {
+      console.error('Error creating template exercises:', exError);
+      throw exError;
+    }
+  }
+
+  return mapSessionTemplateRowToSessionTemplate(template, session.exercises as SessionExercise[]);
+}
+
+/**
+ * Met à jour un template de séance existant
+ */
+export async function updateSessionTemplate(
+  templateId: string,
+  updates: Partial<SessionTemplate>,
+  newExercises?: Omit<SessionExercise, 'id'>[],
+  coachId?: string
+): Promise<void> {
+  // 1. Mettre à jour le template si nécessaire
+  if (updates.seanceType || updates.description !== undefined ||
+      updates.category !== undefined || updates.startDate !== undefined ||
+      updates.endDate !== undefined) {
+    const { error } = await supabase
+      .from('session_templates')
+      .update({
+        ...(updates.seanceType && { name: updates.seanceType }),
+        ...(updates.description !== undefined && { description: updates.description }),
+        ...(updates.category !== undefined && { category: updates.category }),
+        ...(updates.startDate !== undefined && { start_date: updates.startDate }),
+        ...(updates.endDate !== undefined && { end_date: updates.endDate }),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', templateId);
+
+    if (error) {
+      console.error('Error updating session template:', error);
+      throw error;
+    }
+  }
+
+  // 2. Remplacer les exercices si fournis
+  if (newExercises) {
+    // Supprimer les anciens
+    const { error: deleteError } = await supabase
+      .from('session_template_exercises')
+      .delete()
+      .eq('session_template_id', templateId);
+
+    if (deleteError) {
+      console.error('Error deleting old exercises:', deleteError);
+      throw deleteError;
+    }
+
+    // Insérer les nouveaux
+    if (newExercises.length > 0) {
+      const exerciseRows = newExercises.map((ex, index) => ({
+        session_template_id: templateId,
+        exercise_id: ex.exerciseId,
+        position: index + 1,
+        default_sets: ex.targetSets ? parseInt(ex.targetSets) || null : null,
+        default_reps: ex.targetReps || null,
+        default_rest: ex.restTimeSec?.toString() || null,
+        default_tempo: ex.tempo || null,
+        notes: ex.notes || null,
+        // Champs superset
+        execution_mode: ex.executionMode || 'straight',
+        execution_group_id: ex.executionGroupId || null,
+        execution_group_position: ex.executionGroupPosition ?? null,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('session_template_exercises')
+        .insert(exerciseRows);
+
+      if (insertError) {
+        console.error('Error inserting new exercises:', insertError);
+        throw insertError;
+      }
+    }
+  }
+}
+
+/**
+ * Supprime un template de séance (soft delete)
+ */
+export async function deleteSessionTemplate(
+  templateId: string,
+  coachId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('session_templates')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', templateId)
+    .eq('coach_id', coachId);
+
+  if (error) {
+    console.error('Error deleting session template:', error);
+    throw error;
+  }
+}
+
+/**
+ * Duplique un template de séance
+ */
+export async function duplicateSessionTemplate(
+  templateId: string,
+  newName: string,
+  coachId: string
+): Promise<SessionTemplate> {
+  // 1. Récupérer le template source
+  const { data: source, error: sourceError } = await supabase
+    .from('session_templates')
+    .select('*')
+    .eq('id', templateId)
+    .single();
+
+  if (sourceError) throw sourceError;
+
+  // 2. Récupérer les exercices du template source
+  const { data: exercises, error: exError } = await supabase
+    .from('session_template_exercises')
+    .select('*')
+    .eq('session_template_id', templateId)
+    .order('position');
+
+  if (exError) throw exError;
+
+  // 3. Créer le nouveau template
+  const { data: newTemplate, error: insertError } = await supabase
+    .from('session_templates')
+    .insert({
+      coach_id: coachId,
+      name: newName,
+      description: source.description,
+      category: source.category,
+      validity_year: source.validity_year,
+      validity_month: source.validity_month,
+      validity_week: source.validity_week,
+      start_date: source.start_date,
+      end_date: source.end_date,
+      is_archived: false,
+    })
+    .select()
+    .single();
+
+  if (insertError) throw insertError;
+
+  // 4. Copier les exercices
+  if (exercises && exercises.length > 0) {
+    // Générer de nouveaux UUIDs pour les groupes de superset
+    const groupIdMapping = new Map<string, string>();
+    exercises.forEach(ex => {
+      if (ex.execution_group_id && !groupIdMapping.has(ex.execution_group_id)) {
+        groupIdMapping.set(ex.execution_group_id, crypto.randomUUID());
+      }
+    });
+
+    const newExercises = exercises.map(ex => ({
+      session_template_id: newTemplate.id,
+      exercise_id: ex.exercise_id,
+      position: ex.position,
+      default_sets: ex.default_sets,
+      default_reps: ex.default_reps,
+      default_rest: ex.default_rest,
+      default_tempo: ex.default_tempo,
+      notes: ex.notes,
+      // Champs superset (avec nouveaux UUIDs pour les groupes)
+      execution_mode: ex.execution_mode || 'straight',
+      execution_group_id: ex.execution_group_id ? groupIdMapping.get(ex.execution_group_id) : null,
+      execution_group_position: ex.execution_group_position ?? null,
+    }));
+
+    await supabase.from('session_template_exercises').insert(newExercises);
+  }
+
+  return mapSessionTemplateRowToSessionTemplate(newTemplate, []);
+}
+
+// ===========================================
+// BIBLIOTHÈQUE COACH - PROGRAMMES
+// ===========================================
+
+/**
+ * Récupère les programmes d'un coach (séances avec athlete_target renseigné)
+ */
+export async function fetchPrograms(coachId: string): Promise<Program[]> {
+  const { data, error } = await supabase
+    .from('training_plans')
+    .select('*')
+    .eq('coach_id', coachId)
+    .not('athlete_target', 'is', null)
+    .order('year', { ascending: true })
+    .order('week', { ascending: true })
+    .order('seance_type')
+    .order('order_index', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching programs:', error);
+    throw error;
+  }
+
+  // Grouper par (seance_type, startDate, endDate, athlete_target, program_name)
+  const grouped = new Map<string, Program>();
+
+  for (const row of data || []) {
+    const athleteTarget = row.athlete_target || [];
+    const programName = row.program_name || '';
+    const key = `${programName}_${row.seance_type}_${row.week_start_date || ''}_${row.week_end_date || ''}_${athleteTarget.sort().join(',')}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        coachId: row.coach_id,
+        programName: row.program_name || undefined,
+        seanceType: row.seance_type || '',
+        year: row.year || 0,
+        week: row.week || undefined,
+        monthNum: row.Month_num || undefined,
+        startDate: row.week_start_date || undefined,
+        endDate: row.week_end_date || undefined,
+        athleteTarget,
+        groupTarget: row.group_target ?? undefined,
+        exercises: [],
+        sourceTemplateId: row.source_template_id || undefined,
+      });
+    }
+
+    const program = grouped.get(key)!;
+    program.exercises.push({
+      id: row.id.toString(),
+      exerciseId: row.exercise_id,
+      exerciseName: row.exercise_name || '',
+      position: row.order_index || 0,
+      targetSets: row.target_sets || undefined,
+      targetReps: row.target_reps || undefined,
+      restTimeSec: row.rest_time_sec || undefined,
+      tempo: row.Tempo || undefined,
+      notes: row["Notes/Consignes"] || undefined,
+      videoUrl: row.video_url || undefined,
+      // Champs mode d'exécution (superset, triset, etc.)
+      executionMode: row.execution_mode || 'straight',
+      executionGroupId: row.execution_group_id || undefined,
+      executionGroupPosition: row.execution_group_position ?? undefined,
+    });
+  }
+
+  // Trier les exercices par position
+  for (const program of grouped.values()) {
+    program.exercises.sort((a, b) => a.position - b.position);
+  }
+
+  return Array.from(grouped.values());
+}
+
+/**
+ * Crée un programme en copiant un template et en l'assignant à des athlètes
+ */
+export async function createProgram(
+  sessionTemplate: SessionTemplate,
+  year: number,
+  week: number | undefined,
+  monthNum: number | undefined,
+  athleteTarget: string[],
+  coachId: string,
+  groupTarget?: string[],
+  programName?: string
+): Promise<void> {
+  const rows = sessionTemplate.exercises.map((ex, index) => ({
+    coach_id: coachId,
+    seance_type: sessionTemplate.seanceType,
+    exercise_id: ex.exerciseId,
+    exercise_name: ex.exerciseName,
+    order_index: index + 1,
+    target_sets: ex.targetSets || null,
+    target_reps: ex.targetReps || null,
+    rest_time_sec: ex.restTimeSec || null,
+    Tempo: ex.tempo || null,
+    "Notes/Consignes": ex.notes || null,
+    video_url: ex.videoUrl || null,
+    year,
+    week: week || null,
+    Month_num: monthNum || null,
+    week_start_date: sessionTemplate.startDate || null,
+    week_end_date: sessionTemplate.endDate || null,
+    athlete_target: athleteTarget,
+    group_target: groupTarget && groupTarget.length > 0 ? groupTarget : null,
+    program_name: programName || null,
+    source_template_id: sessionTemplate.id || null,
+    // Champs mode d'exécution (superset, triset, etc.)
+    execution_mode: ex.executionMode || 'straight',
+    execution_group_id: ex.executionGroupId || null,
+    execution_group_position: ex.executionGroupPosition ?? null,
+  }));
+
+  const { error } = await supabase.from('training_plans').insert(rows);
+
+  if (error) {
+    console.error('Error creating program:', error);
+    throw error;
+  }
+}
+
+/**
+ * Supprime un programme (toutes les lignes correspondantes)
+ */
+export async function deleteProgram(
+  seanceType: string,
+  startDate: string | undefined,
+  endDate: string | undefined,
+  athleteTarget: string[],
+  coachId: string,
+  programName?: string
+): Promise<void> {
+  let query = supabase
+    .from('training_plans')
+    .delete()
+    .eq('seance_type', seanceType)
+    .eq('coach_id', coachId)
+    .contains('athlete_target', athleteTarget);
+
+  // Handle nullable dates
+  if (startDate) {
+    query = query.eq('week_start_date', startDate);
+  } else {
+    query = query.is('week_start_date', null);
+  }
+
+  if (endDate) {
+    query = query.eq('week_end_date', endDate);
+  } else {
+    query = query.is('week_end_date', null);
+  }
+
+  // Handle program_name
+  if (programName) {
+    query = query.eq('program_name', programName);
+  }
+
+  const { error } = await query;
+
+  if (error) {
+    console.error('Error deleting program:', error);
+    throw error;
+  }
 }

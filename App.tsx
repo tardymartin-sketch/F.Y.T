@@ -4,7 +4,7 @@
 // Fusion ancien code fonctionnel + nouveautés étapes 1-4
 // ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './src/supabaseClient';
 import {
@@ -57,33 +57,64 @@ import { useDeviceDetect } from './src/hooks/useDeviceDetect';
 import { useCurrentView, useScrollPersistence } from './src/hooks/useUIState';
 import { removeLocalStorageWithEvent } from './src/utils/localStorageEvents';
 
-// Components existants
-import { Auth } from './src/components/Auth';
-import { LoadingScreen } from './src/components/LoadingScreen';
-import { Sidebar } from './src/components/Sidebar';
-import { Home } from './src/components/Home';
-import { ActiveSession } from './src/components/ActiveSession';
-import { History } from './src/components/History';
-import { TeamView } from './src/components/TeamView';
-import { AdminUsersView } from './src/components/AdminUsersView';
-import { SettingsView } from './src/components/SettingsView';
-import { StravaImport } from './src/components/StravaImport';
+// Theme Context
+import { ThemeProvider } from './src/contexts/ThemeContext';
 
-// Composants V3 Athlète
-import { BottomNav } from './src/components/athlete/BottomNav';
-import { HomeAthlete } from './src/components/athlete/HomeAthlete';
-import { ActiveSessionAthlete } from './src/components/athlete/ActiveSessionAthlete';
-import { AddSession } from './src/components/athlete/AddSession';
-import { CoachTab } from './src/components/athlete/CoachTab';
-import { ProfileTab } from './src/components/athlete/ProfileTab';
+// ===========================================
+// COMMON COMPONENTS (partagés mobile/desktop)
+// ===========================================
+import { Auth } from './src/components/common/Auth';
+import { LoadingScreen } from './src/components/common/LoadingScreen';
+import { DemoBanner } from './src/components/common/DemoBanner';
+import { isDemoMode, resetDemoState } from './src/services/demoService';
+import { DemoTourProvider } from './src/contexts/DemoTourContext';
+import { DemoTourOverlay } from './src/components/common/DemoTourOverlay';
+import { DemoTourManager } from './src/components/common/DemoTourManager';
 
-// Composants V3 Coach
-import { CoachConversationsView } from './src/components/coach/CoachConversationsView';
+// ===========================================
+// MOBILE COMPONENTS
+// ===========================================
+import { BottomNav } from './src/components/mobile/BottomNav';
+import { HomeMobile } from './src/components/mobile/HomeMobile';
+import { ActiveSessionMobile } from './src/components/mobile/ActiveSessionMobile';
+// [DEAD CODE] import { AddSessionMobile } from './src/components/mobile/AddSessionMobile';
+import { HistoryMobile } from './src/components/mobile/HistoryMobile';
+import { CoachTab } from './src/components/mobile/CoachTab';
+import { ProfileTab } from './src/components/mobile/ProfileTab';
+import { PRCelebrationModal } from './src/components/mobile/PRCelebrationModal';
+import { StatsPage } from './src/components/mobile/StatsPage';
 
-// Composants Data Viz
-import { PRCelebrationModal } from './src/components/athlete/PRCelebrationModal';
-import { StatsPage } from './src/components/athlete/StatsPage';
+// ===========================================
+// DESKTOP COMPONENTS
+// ===========================================
+import { Sidebar } from './src/components/desktop/Sidebar';
+import { HomeDesktop } from './src/components/desktop/HomeDesktop';
+import { ActiveSessionDesktop } from './src/components/desktop/ActiveSessionDesktop';
+import { HistoryDesktop } from './src/components/desktop/HistoryDesktop';
+import { TeamView } from './src/components/desktop/TeamView';
+import { AdminUsersView } from './src/components/desktop/AdminUsersView';
+import { SettingsView } from './src/components/desktop/SettingsView';
+import { StravaImport } from './src/components/desktop/StravaImport';
+import { CoachConversationsView } from './src/components/desktop/CoachConversationsView';
+import { LibraryView } from './src/components/desktop/library/LibraryView';
+import { Storybook } from './src/components/Storybook';
 
+// Icônes pour le header mobile (même icônes que BottomNav/Sidebar)
+import { Home, History, BarChart3, MessageSquare, User as UserIcon, Download, Users, Settings, Library, Palette } from 'lucide-react';
+
+// Mapping vue → icône + label pour le header mobile
+const mobileViewConfig: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string }> = {
+  home: { icon: Home, label: 'Accueil' },
+  history: { icon: History, label: 'Historique' },
+  stats: { icon: BarChart3, label: 'Statistiques' },
+  coach: { icon: MessageSquare, label: 'Messages' },
+  profile: { icon: UserIcon, label: 'Profil' },
+  library: { icon: Library, label: 'Exercices et Séances' },
+  import: { icon: Download, label: 'Importer' },
+  team: { icon: Users, label: 'Mes Athlètes' },
+  settings: { icon: Settings, label: 'Admin' },
+  storybook: { icon: Palette, label: 'Storybook' },
+};
 
 const App: React.FC = () => {
   // ===========================================
@@ -123,10 +154,10 @@ const App: React.FC = () => {
   const [hasActiveSession, setHasActiveSession] = useState(false);
 
   // ===========================================
-  // ADD SESSION STATE (séance manuelle)
+  // [DEAD CODE] ADD SESSION STATE (séance manuelle)
   // ===========================================
-  const [editingManualSession, setEditingManualSession] = useState<SessionLog | null>(null);
-  const [hasAddSession, setHasAddSession] = useState(false);
+  // const [editingManualSession, setEditingManualSession] = useState<SessionLog | null>(null);
+  // const [hasAddSession, setHasAddSession] = useState(false);
 
   // ===========================================
   // WEEK ORGANIZER STATE
@@ -170,6 +201,12 @@ const App: React.FC = () => {
   const [targetHistoryDate, setTargetHistoryDate] = useState<string | null>(null);
 
   // ===========================================
+  // DEMO TOUR STATE
+  // ===========================================
+  const [demoTourStarted, setDemoTourStarted] = useState(false);
+  const [showDemoSessionPreview, setShowDemoSessionPreview] = useState(false);
+
+  // ===========================================
   // V3: DEVICE DETECTION (Étape 2)
   // ===========================================
   const { isMobile, isDesktop } = useDeviceDetect();
@@ -179,30 +216,41 @@ const App: React.FC = () => {
   // Corriger la vue persistée si elle n'est pas valide pour le rôle
   // ===========================================
 
+  // ===========================================
+  // V3 DESKTOP ADAPTATION: Validation des vues basée sur le DEVICE
+  // ===========================================
   useEffect(() => {
     if (!currentUser) return;
 
     const hasCoachAssigned = !!currentUser.coachId;
     const effectiveBehavesAsAthlete = hasCoachAssigned || currentUser.role === 'athlete';
-    const effectiveUseMobileLayout = isMobile || effectiveBehavesAsAthlete;
+    const effectiveBehavesAsCoach = hasLinkedAthletes || ((currentUser.role === 'coach' || currentUser.role === 'admin') && !hasCoachAssigned);
 
-    // Vues valides selon le contexte
-    const validAthleteViews = ['home', 'history', 'stats', 'coach', 'profile', 'active'];
-    const validCoachMobileViews = ['home', 'history', 'stats', 'coach', 'profile', 'team', 'messages', 'active'];
-    const validCoachDesktopViews = ['home', 'history', 'stats', 'team', 'messages', 'import', 'settings', 'active', 'admin'];
-
-    let validViews: string[];
-    if (effectiveBehavesAsAthlete) {
-      validViews = validAthleteViews;
-    } else if (effectiveUseMobileLayout) {
-      validViews = validCoachMobileViews;
-    } else {
-      validViews = validCoachDesktopViews;
+    // Vues valides selon le DEVICE et le RÔLE
+    // Mobile: toutes les vues de l'onglet BottomNav + vues spécifiques au rôle
+    const validMobileViews = ['home', 'history', 'stats', 'coach', 'profile', 'active', 'addSession'];
+    if (effectiveBehavesAsCoach) {
+      validMobileViews.push('team', 'messages');
     }
+
+    // Desktop: toutes les vues + sidebar
+    const validDesktopViews = ['home', 'history', 'stats', 'coach', 'profile', 'active', 'addSession', 'settings'];
+    if (effectiveBehavesAsCoach) {
+      validDesktopViews.push('team', 'messages', 'import');
+    }
+    // Library accessible à tous les coachs/admins par rôle
+    if (currentUser.role === 'coach' || currentUser.role === 'admin') {
+      validDesktopViews.push('library');
+    }
+    if (currentUser.role === 'admin') {
+      validDesktopViews.push('admin', 'storybook');
+    }
+
+    const validViews = isMobile ? validMobileViews : validDesktopViews;
 
     // Si la vue actuelle n'est pas valide, rediriger vers home
     if (!validViews.includes(currentView)) {
-      console.log(`[App] Vue '${currentView}' invalide pour ce contexte, redirection vers 'home'`);
+      console.log(`[App] Vue '${currentView}' invalide pour ce contexte (device: ${isMobile ? 'mobile' : 'desktop'}), redirection vers 'home'`);
       setCurrentView('home');
     }
   }, [currentUser, hasLinkedAthletes, isMobile]);
@@ -247,9 +295,9 @@ const App: React.FC = () => {
       }
     }
 
-    // Vérifier si une session AddSession est en cours
-    const savedAddSession = localStorage.getItem('F.Y.T_add_session');
-    setHasAddSession(!!savedAddSession);
+    // [DEAD CODE] Vérifier si une session AddSession est en cours
+    // const savedAddSession = localStorage.getItem('F.Y.T_add_session');
+    // setHasAddSession(!!savedAddSession);
   }, []);
 
   useEffect(() => {
@@ -257,9 +305,9 @@ const App: React.FC = () => {
       const savedSession = localStorage.getItem('F.Y.T_active_session');
       setHasActiveSession(!!savedSession);
 
-      // Vérifier également AddSession
-      const savedAddSession = localStorage.getItem('F.Y.T_add_session');
-      setHasAddSession(!!savedAddSession);
+      // [DEAD CODE] Vérifier également AddSession
+      // const savedAddSession = localStorage.getItem('F.Y.T_add_session');
+      // setHasAddSession(!!savedAddSession);
     };
 
     const interval = setInterval(handleStorageChange, 1000);
@@ -444,7 +492,7 @@ const App: React.FC = () => {
     }
   };
 
-  // V3: Handler pour démarrer depuis HomeAthlete (reçoit directement les exercices)
+  // V3: Handler pour démarrer depuis HomeMobile (reçoit directement les exercices)
   const handleStartSessionFromExercises = (exercises: WorkoutRow[]) => {
     if (exercises.length > 0) {
       setActiveSessionData(exercises);
@@ -586,9 +634,9 @@ const App: React.FC = () => {
   };
 
   // ===========================================
-  // ADD SESSION HANDLERS (Séance manuelle)
+  // [DEAD CODE] ADD SESSION HANDLERS (Séance manuelle)
   // ===========================================
-
+  /*
   const handleOpenAddSession = () => {
     // Vérifier s'il y a une session en cours de modification dans localStorage
     try {
@@ -637,6 +685,7 @@ const App: React.FC = () => {
     setEditingManualSession(null);
     setCurrentView('home');
   };
+  */
 
   const handleFetchTeam = async (coachId: string) => {
     return await fetchTeamAthletes(coachId);
@@ -757,6 +806,127 @@ const App: React.FC = () => {
   };
 
   // ===========================================
+  // DEMO TOUR HANDLERS
+  // ===========================================
+
+  // Sélectionner automatiquement "Lower 1" et "Core 1" pour la démo
+  const handleDemoSelectSession = useCallback(() => {
+    if (trainingData.length > 0) {
+      // Chercher "Lower 1" et "Core 1" dans les séances disponibles
+      const sessionsToSelect = ['Lower 1', 'Core 1'];
+      const foundSessions = sessionsToSelect.filter(sessionName =>
+        trainingData.some(d => d.seance === sessionName)
+      );
+
+      // Si on trouve au moins une des séances, les sélectionner
+      if (foundSessions.length > 0) {
+        foundSessions.forEach(sessionName => {
+          window.dispatchEvent(new CustomEvent('demo-select-session', { detail: sessionName }));
+        });
+      } else {
+        // Fallback: sélectionner la première séance disponible
+        const firstSession = trainingData[0]?.seance;
+        if (firstSession) {
+          window.dispatchEvent(new CustomEvent('demo-select-session', { detail: firstSession }));
+        }
+      }
+    }
+  }, [trainingData]);
+
+  // Désélectionner toutes les séances pour la démo
+  const handleDemoDeselectSessions = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('demo-deselect-all-sessions'));
+  }, []);
+
+  // Sélectionner uniquement "Lower 1" pour la démo
+  const handleDemoSelectLower1Only = useCallback(() => {
+    if (trainingData.length > 0) {
+      // D'abord désélectionner tout
+      window.dispatchEvent(new CustomEvent('demo-deselect-all-sessions'));
+      // Puis sélectionner uniquement Lower 1
+      setTimeout(() => {
+        const sessionName = 'Lower 1';
+        if (trainingData.some(d => d.seance === sessionName)) {
+          window.dispatchEvent(new CustomEvent('demo-select-session', { detail: sessionName }));
+        } else {
+          // Fallback: première séance disponible
+          const firstSession = trainingData[0]?.seance;
+          if (firstSession) {
+            window.dispatchEvent(new CustomEvent('demo-select-session', { detail: firstSession }));
+          }
+        }
+      }, 50);
+    }
+  }, [trainingData]);
+
+  // Démarrer la séance de démo avec uniquement "Lower 1"
+  const handleDemoStartSession = useCallback(() => {
+    if (trainingData.length > 0) {
+      // Trouver la semaine courante dans les données (première semaine disponible)
+      const currentWeek = trainingData[0]?.semaine;
+      const currentYear = trainingData[0]?.annee;
+      const currentMonth = trainingData[0]?.moisNum;
+
+      // Récupérer uniquement les exercices de "Lower 1" pour la semaine courante
+      const demoExercises = trainingData.filter(d =>
+        d.seance === 'Lower 1' &&
+        d.semaine === currentWeek &&
+        d.annee === currentYear &&
+        d.moisNum === currentMonth
+      );
+
+      if (demoExercises.length > 0) {
+        setShowDemoSessionPreview(false);
+        setActiveSessionData(demoExercises);
+        setEditingSession(null);
+        setCurrentView('active');
+        setHasActiveSession(true);
+      } else {
+        // Fallback: première séance disponible (semaine courante uniquement)
+        const firstSession = trainingData[0]?.seance;
+        const fallbackExercises = trainingData.filter(d =>
+          d.seance === firstSession &&
+          d.semaine === currentWeek &&
+          d.annee === currentYear &&
+          d.moisNum === currentMonth
+        );
+        if (fallbackExercises.length > 0) {
+          setShowDemoSessionPreview(false);
+          setActiveSessionData(fallbackExercises);
+          setEditingSession(null);
+          setCurrentView('active');
+          setHasActiveSession(true);
+        }
+      }
+    }
+  }, [trainingData]);
+
+  // Terminer/annuler la séance en cours pour revenir à l'accueil
+  const handleDemoKillSession = useCallback(() => {
+    setActiveSessionData(null);
+    setHasActiveSession(false);
+    setEditingSession(null);
+  }, []);
+
+  // Réinitialiser complètement l'état de la session pour le tour démo
+  const handleDemoResetSession = useCallback(() => {
+    // Utiliser la fonction du service pour nettoyer le localStorage
+    resetDemoState();
+    // Réinitialiser les états React
+    setActiveSessionData(null);
+    setHasActiveSession(false);
+    setEditingSession(null);
+    // [DEAD CODE] setEditingManualSession(null);
+    // [DEAD CODE] setHasAddSession(false);
+  }, []);
+
+  // Replier le bloc exercice via un événement custom
+  const handleDemoCollapseExercise = useCallback(() => {
+    // Dispatcher un événement custom que ActiveSessionMobile écoute
+    window.dispatchEvent(new CustomEvent('demo-collapse-exercise'));
+  }, []);
+
+  // ===========================================
   // RENDER GUARDS
   // ===========================================
 
@@ -792,118 +962,163 @@ const App: React.FC = () => {
 
   const isAdmin = currentUser.role === 'admin';
 
-  // Navigation responsive:
-  // - Si behavesAsAthlete → layout mobile (BottomNav + HomeAthlete)
-  // - Si behavesAsCoach sur desktop → layout coach (Sidebar + Home)
-  // - Si behavesAsCoach sur mobile → layout mobile avec fonctionnalités coach
-  const useMobileLayout = isMobile || behavesAsAthlete;
-  const showBottomNav = useMobileLayout;
-  const showSidebar = behavesAsCoach && isDesktop && !behavesAsAthlete;
+  // ===========================================
+  // V3 DESKTOP ADAPTATION: Navigation basée sur le DEVICE uniquement
+  // - Mobile → layout mobile (BottomNav + composants athlete/)
+  // - Desktop → layout desktop (Sidebar + composants adaptés)
+  // Les fonctionnalités accessibles restent basées sur le rôle (behavesAsAthlete/behavesAsCoach)
+  // ===========================================
+  const useMobileLayout = isMobile;
+  const useDesktopLayout = isDesktop;
+  const showBottomNav = isMobile;
+  const showSidebar = isDesktop;
 
   // ===========================================
   // RENDER
   // ===========================================
 
   return (
-    <div className="min-h-screen bg-slate-950 flex">
-      {/* Sidebar Coach (desktop uniquement) */}
+    <ThemeProvider>
+    <DemoTourProvider>
+    <div className={`bg-theme flex flex-col ${((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+      {/* Demo Tour Manager - gère la logique du tour (mobile uniquement) */}
+      {isDemoMode() && (
+        <DemoTourManager
+          onNavigate={handleViewChange}
+          onSelectSession={handleDemoSelectSession}
+          onStartSession={handleDemoStartSession}
+          onKillSession={handleDemoKillSession}
+          onResetSession={handleDemoResetSession}
+          onCollapseExercise={handleDemoCollapseExercise}
+          onDeselectSessions={handleDemoDeselectSessions}
+          onSelectLower1Only={handleDemoSelectLower1Only}
+          currentView={currentView}
+          trainingDataLoaded={trainingData.length > 0}
+          isMobile={isMobile}
+        />
+      )}
+
+      {/* Demo Tour Overlay - affiche les tooltips (mobile uniquement, après chargement des données) */}
+      {isDemoMode() && isMobile && trainingData.length > 0 && <DemoTourOverlay />}
+
+      {/* Bannière mode démo */}
+      {isDemoMode() && <DemoBanner />}
+
+      <div className="flex flex-1 min-h-0">
+      {/* Sidebar (desktop uniquement) - menus filtrés selon le rôle */}
       {showSidebar && (
         <Sidebar
-          currentView={currentView as 'home' | 'import' | 'team' | 'messages' | 'settings'}
+          currentView={currentView as any}
           onNavigate={handleViewChange}
           coachName={`${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.username}
           onLogout={handleLogout}
+          userRole={isAdmin ? 'admin' : isCoachByRole ? 'coach' : 'athlete'}
+          userId={currentUser.id}
+          hasActiveSession={hasActiveSession}
+          // [DEAD CODE] hasAddSession={hasAddSession}
         />
       )}
 
       <main
         className={`
-          flex-1 lg:ml-0 overflow-y-auto
+          flex-1 lg:ml-0
+          ${((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'overflow-hidden' : 'overflow-y-auto'}
           ${showBottomNav ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : ''}
         `}
       >
-        {/* Mobile header (si layout mobile) - uniquement sur la page d'accueil */}
-        {useMobileLayout && currentView === 'home' && (
-          <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
-            <div className="flex items-center justify-center">
-              <h1 className="font-bold text-white text-lg">F.Y.T</h1>
+        {/* Mobile header - icône + nom de la page sur tous les écrans mobiles */}
+        {isMobile && currentView !== 'active' && currentView !== 'addSession' && mobileViewConfig[currentView] && (() => {
+          const config = mobileViewConfig[currentView];
+          const Icon = config.icon;
+          return (
+            <div className="sticky top-0 z-30 bg-theme-secondary/95 backdrop-blur-xl border-b border-theme px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <Icon className="w-5 h-5 text-[var(--color-primary)]" />
+                <h1 className="font-bold text-theme text-lg">{config.label}</h1>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
-        <div className="p-4 lg:p-8">
+        <div className={((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-full' : 'p-4 lg:px-8 lg:pb-8 lg:pt-4'}>
           {dataLoading ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+              <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
             </div>
           ) : (
             <>
-              {/* V3: Home différent selon layout (mobile/athlete vs desktop/coach) */}
-              {currentView === 'home' && (
-                useMobileLayout ? (
-                  <HomeAthlete
-                    user={currentUser}
-                    trainingData={trainingData}
-                    history={history}
-                    activeWeekOrganizers={activeWeekOrganizers}
-                    onStartSession={handleStartSessionFromExercises}
-                    onResumeSession={handleResumeSession}
-                    hasActiveSession={hasActiveSession}
-                    onViewCoachMessages={(messageId) => {
-                      setTargetMessageId(messageId || null);
-                      setCurrentView('coach');
-                    }}
-                    onAddSession={handleOpenAddSession}
-                    hasAddSession={hasAddSession}
-                  />
-                ) : (
-                  <Home
-                    data={trainingData}
-                    filters={filters}
-                    setFilters={setFilters}
-                    onStartSession={handleStartSession}
-                    user={currentUser}
-                    history={history}
-                    activeWeekOrganizers={activeWeekOrganizers}
-                    pastWeekOrganizers={pastWeekOrganizers}
-                  />
-                )
+              {/* V3 DESKTOP ADAPTATION: Home basé sur le DEVICE */}
+              {currentView === 'home' && isMobile && (
+                <HomeMobile
+                  user={currentUser}
+                  trainingData={trainingData}
+                  history={history}
+                  activeWeekOrganizers={activeWeekOrganizers}
+                  onStartSession={handleStartSessionFromExercises}
+                  onResumeSession={handleResumeSession}
+                  hasActiveSession={hasActiveSession}
+                  onViewCoachMessages={(messageId) => {
+                    setTargetMessageId(messageId || null);
+                    setCurrentView('coach');
+                  }}
+                  // [DEAD CODE] onAddSession={handleOpenAddSession}
+                  // [DEAD CODE] hasAddSession={hasAddSession}
+                />
               )}
 
-              {currentView === 'active' && activeSessionData && (
-                behavesAsAthlete ? (
-                  <ActiveSessionAthlete
-                    sessionData={activeSessionData}
-                    history={history}
-                    onSave={handleSaveSession}
-                    onCancel={handleCancelSession}
-                    initialLog={editingSession}
-                    userId={currentUser.id}
-                    onSaveComment={handleSaveAthleteComment}
-                  />
-                ) : (
-                  <ActiveSession
-                    sessionData={activeSessionData}
-                    history={history}
-                    onSave={handleSaveSession}
-                    onCancel={handleCancelSession}
-                    initialLog={editingSession}
-                    userId={currentUser.id}
-                    onSaveComment={handleSaveAthleteComment}
-                    existingComments={athleteComments}
-                    onMarkCommentsAsRead={handleMarkCommentsAsRead}
-                    onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
-                  />
-                )
+              {currentView === 'home' && isDesktop && (
+                <HomeDesktop
+                  data={trainingData}
+                  filters={filters}
+                  setFilters={setFilters}
+                  onStartSession={handleStartSessionFromExercises}
+                  user={currentUser}
+                  history={history}
+                  activeWeekOrganizers={activeWeekOrganizers}
+                  pastWeekOrganizers={pastWeekOrganizers}
+                  hasActiveSession={hasActiveSession}
+                  onResumeSession={handleResumeSession}
+                  // [DEAD CODE] hasAddSession={hasAddSession}
+                  // [DEAD CODE] onAddSession={handleOpenAddSession}
+                />
               )}
 
-              {currentView === 'history' && (
-                <History
+              {/* V3 DESKTOP ADAPTATION: ActiveSession basé sur le DEVICE */}
+              {currentView === 'active' && activeSessionData && isMobile && (
+                <ActiveSessionMobile
+                  sessionData={activeSessionData}
+                  history={history}
+                  onSave={handleSaveSession}
+                  onCancel={handleCancelSession}
+                  initialLog={editingSession}
+                  userId={currentUser.id}
+                  onSaveComment={handleSaveAthleteComment}
+                />
+              )}
+
+              {currentView === 'active' && activeSessionData && isDesktop && (
+                <ActiveSessionDesktop
+                  sessionData={activeSessionData}
+                  history={history}
+                  onSave={handleSaveSession}
+                  onCancel={handleCancelSession}
+                  initialLog={editingSession}
+                  userId={currentUser.id}
+                  onSaveComment={handleSaveAthleteComment}
+                  existingComments={athleteComments}
+                  onMarkCommentsAsRead={handleMarkCommentsAsRead}
+                  onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
+                />
+              )}
+
+              {/* Historique: HistoryMobile sur mobile, HistoryDesktop sur desktop */}
+              {currentView === 'history' && isMobile && (
+                <HistoryMobile
                   history={history}
                   onDelete={handleDeleteSession}
                   onEdit={handleEditSession}
                   userId={currentUser.id}
-                  onEditManualSession={handleEditManualSession}
+                  // [DEAD CODE] onEditManualSession={handleEditManualSession}
                   targetSessionLogId={targetSessionLogId}
                   targetExerciseName={targetHistoryExerciseName}
                   targetDate={targetHistoryDate}
@@ -912,6 +1127,25 @@ const App: React.FC = () => {
                     setTargetHistoryExerciseName(null);
                     setTargetHistoryDate(null);
                   }}
+                />
+              )}
+
+              {currentView === 'history' && isDesktop && (
+                <HistoryDesktop
+                  history={history}
+                  onDelete={handleDeleteSession}
+                  onEdit={handleEditSession}
+                  userId={currentUser.id}
+                  // [DEAD CODE] onEditManualSession={handleEditManualSession}
+                  targetSessionLogId={targetSessionLogId}
+                  targetExerciseName={targetHistoryExerciseName}
+                  targetDate={targetHistoryDate}
+                  onClearTarget={() => {
+                    setTargetSessionLogId(null);
+                    setTargetHistoryExerciseName(null);
+                    setTargetHistoryDate(null);
+                  }}
+                  workoutData={trainingData}
                 />
               )}
 
@@ -931,48 +1165,56 @@ const App: React.FC = () => {
                     setTargetHistoryExerciseName(null);
                     setCurrentView('history');
                   }}
+                  layout={isDesktop ? 'desktop' : 'mobile'}
                 />
               )}
 
-              {/* V3: Vue Ajout de séance manuelle */}
-              {currentView === 'addSession' && (
-                <AddSession
+              {/* [DEAD CODE] V3: Vue Ajout de séance manuelle */}
+              {/* currentView === 'addSession' && (
+                <AddSessionMobile
                   onSave={handleSaveManualSession}
                   onCancel={handleCancelAddSession}
                   initialLog={editingManualSession}
                   userId={currentUser.id}
                 />
-              )}
+              ) */}
 
-              {/* V3: Vue Coach pour athlète (Étape 6A) */}
-              {currentView === 'coach' && useMobileLayout && behavesAsAthlete && (
-                <CoachTab
-                  userId={currentUser.id}
-                  coachId={currentUser.coachId}
-                  weekOrganizerMessages={activeWeekOrganizers}
-                  athleteComments={athleteComments}
-                  onSendMessage={async (exerciseName, message) => {
-                    await handleSaveAthleteComment(exerciseName, message, '');
-                  }}
-                  onMarkAsRead={handleMarkCommentsAsRead}
-                  initialExerciseName={targetExerciseName}
-                  onClearInitialExercise={handleClearTargetExercise}
-                  initialMessageId={targetMessageId || undefined}
-                />
-              )}
-
-              {/* V3: Vue Messages Coach en mode mobile */}
-              {currentView === 'coach' && useMobileLayout && behavesAsCoach && (
+              {/* V3 DESKTOP ADAPTATION: Vue Coach - même composant pour tous les profils */}
+              {/* Mobile: CoachConversationsView pour tous */}
+              {currentView === 'coach' && isMobile && (
                 <CoachConversationsView
-                  comments={coachTeamComments}
+                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
                   currentUserId={currentUser.id}
-                  onSendMessage={handleCoachSendMessage}
+                  onSendMessage={behavesAsAthlete
+                    ? async (athleteId, exerciseName, message, sessionId) => {
+                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                      }
+                    : handleCoachSendMessage
+                  }
                   onMarkAsRead={handleMarkCommentsAsRead}
+                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
                 />
               )}
 
-              {/* V3: Vue Profil Athlète (Étape 7A - ATH-008, ATH-012) */}
-              {currentView === 'profile' && behavesAsAthlete && (
+              {/* Desktop: CoachConversationsView pour tous */}
+              {currentView === 'coach' && isDesktop && (
+                <CoachConversationsView
+                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
+                  currentUserId={currentUser.id}
+                  onSendMessage={behavesAsAthlete
+                    ? async (athleteId, exerciseName, message, sessionId) => {
+                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                      }
+                    : handleCoachSendMessage
+                  }
+                  onMarkAsRead={handleMarkCommentsAsRead}
+                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
+                />
+              )}
+
+              {/* V3 DESKTOP ADAPTATION: Vue Profil accessible sur mobile et desktop */}
+              {/* Sur mobile: toujours via BottomNav, sur desktop: via sidebar ou menu */}
+              {currentView === 'profile' && (
                 <ProfileTab
                   user={currentUser}
                   onUpdateProfile={async (updates) => {
@@ -1001,13 +1243,24 @@ const App: React.FC = () => {
                 />
               )}
 
-              {/* V3: Vue Messages Coach avec hiérarchie athlète/séance */}
-              {currentView === 'messages' && behavesAsCoach && (
+              {/* V3: Vue Bibliothèque (Exercices et Séances) - Coach/Admin uniquement */}
+              {currentView === 'library' && isCoachByRole && (
+                <LibraryView coachId={currentUser.id} />
+              )}
+
+              {/* V3: Vue Messages - même composant pour tous les profils */}
+              {currentView === 'messages' && (
                 <CoachConversationsView
-                  comments={coachTeamComments}
+                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
                   currentUserId={currentUser.id}
-                  onSendMessage={handleCoachSendMessage}
+                  onSendMessage={behavesAsAthlete
+                    ? async (athleteId, exerciseName, message, sessionId) => {
+                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                      }
+                    : handleCoachSendMessage
+                  }
                   onMarkAsRead={handleMarkCommentsAsRead}
+                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
                 />
               )}
 
@@ -1029,6 +1282,10 @@ const App: React.FC = () => {
               {currentView === 'import' && (
                 <StravaImport user={currentUser} />
               )}
+
+              {currentView === 'storybook' && isAdmin && (
+                <Storybook />
+              )}
             </>
           )}
         </div>
@@ -1039,6 +1296,7 @@ const App: React.FC = () => {
         <BottomNav
           activeTab={currentView as 'home' | 'history' | 'stats' | 'coach' | 'profile'}
           onTabChange={handleViewChange}
+          userId={currentUser?.id}
         />
       )}
 
@@ -1053,7 +1311,11 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      </div>
     </div>
+    </DemoTourProvider>
+    </ThemeProvider>
   );
 };
 

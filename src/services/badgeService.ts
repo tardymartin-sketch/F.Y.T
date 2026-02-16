@@ -13,6 +13,17 @@ import type {
   UserBadgeRow,
   BadgeConditionType,
 } from '../../types';
+import {
+  isDemoMode,
+  getDemoCumulativeSessions,
+  getDemoStreakTolerant,
+  getDemoCumulativeHours,
+  getDemoRPECount,
+  getDemoUniqueExercises,
+  getDemoSessionTypes,
+  getDemoComeback,
+  getDemoConsistency
+} from './demoService';
 
 function parseSessionLogDate(dateStr: string): Date {
   return new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
@@ -610,6 +621,36 @@ async function calculateProgressForType(
   userId: string,
   conditionType: BadgeConditionType
 ): Promise<number> {
+  // Mode démo : utiliser les fonctions locales
+  if (isDemoMode()) {
+    switch (conditionType) {
+      case 'cumulative_sessions':
+        return getDemoCumulativeSessions();
+      case 'streak_tolerant':
+        return getDemoStreakTolerant();
+      case 'cumulative_hours':
+        return getDemoCumulativeHours();
+      case 'count_rpe_gte':
+        return getDemoRPECount(RPE_THRESHOLD);
+      case 'comeback':
+        return getDemoComeback(COMEBACK_MIN_DAYS);
+      case 'consistency':
+        return getDemoConsistency(3);
+      case 'unique_exercises':
+        return getDemoUniqueExercises();
+      case 'session_types':
+        return getDemoSessionTypes();
+      case 'message_count':
+      case 'responsive':
+      case 'strava_connected':
+      case 'strava_imports':
+        return 0; // Non supporté en mode démo
+      default:
+        return 0;
+    }
+  }
+
+  // Mode normal : requêtes Supabase
   switch (conditionType) {
     case 'cumulative_sessions':
       return calculateCumulativeSessions(userId);

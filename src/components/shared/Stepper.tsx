@@ -141,7 +141,7 @@ export const Stepper: React.FC<StepperProps> = ({
     <div className={`flex flex-col items-center gap-1 ${className}`}>
       {/* Label optionnel */}
       {label && (
-        <span className={`text-slate-400 font-medium ${classes.label}`}>
+        <span className={`text-theme-muted font-medium ${classes.label}`}>
           {label}
         </span>
       )}
@@ -160,26 +160,26 @@ export const Stepper: React.FC<StepperProps> = ({
           className={`
             ${classes.button}
             flex items-center justify-center
-            bg-slate-700 hover:bg-slate-600
+            bg-theme-tertiary hover:bg-theme-secondary
             rounded-xl
             transition-all duration-150 ease-out
-            active:scale-90 active:bg-slate-600
+            active:scale-90 active:bg-theme-secondary
             disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100
             touch-manipulation
             select-none
           `}
           aria-label="Diminuer"
         >
-          <Minus className="w-5 h-5 text-white" strokeWidth={2.5} />
+          <Minus className="w-5 h-5 text-theme" strokeWidth={2.5} />
         </button>
 
         {/* Valeur */}
         <div className="flex flex-col items-center min-w-[60px]">
-          <span className={`font-bold text-white tabular-nums ${classes.value}`}>
+          <span className={`font-bold text-theme tabular-nums ${classes.value}`}>
             {formatValue(value)}
           </span>
           {unit && (
-            <span className={`text-slate-400 ${classes.unit}`}>
+            <span className={`text-theme-muted ${classes.unit}`}>
               {unit}
             </span>
           )}
@@ -197,17 +197,17 @@ export const Stepper: React.FC<StepperProps> = ({
           className={`
             ${classes.button}
             flex items-center justify-center
-            bg-slate-700 hover:bg-slate-600
+            bg-theme-tertiary hover:bg-theme-secondary
             rounded-xl
             transition-all duration-150 ease-out
-            active:scale-90 active:bg-slate-600
+            active:scale-90 active:bg-theme-secondary
             disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100
             touch-manipulation
             select-none
           `}
           aria-label="Augmenter"
         >
-          <Plus className="w-5 h-5 text-white" strokeWidth={2.5} />
+          <Plus className="w-5 h-5 text-theme" strokeWidth={2.5} />
         </button>
       </div>
     </div>
