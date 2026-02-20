@@ -41,8 +41,10 @@ import {
   Info,
   Edit2,
   Trash2,
-  Link2
+  Link2,
+  FileText
 } from 'lucide-react';
+import { RichTextDisplay } from '../desktop/RichTextEditor';
 import { RpeSelector, SessionRpeModal, RpeBadge } from '../common/RpeSelector';
 import { Card, CardContent } from '../shared/Card';
 import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../../utils/localStorageEvents';
@@ -647,7 +649,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     } else {
       // Créer les logs depuis sessionData, en préservant l'ordre original
       // pour les supersets (ne pas grouper par nom d'exercice)
-      const initialLogs: ExerciseLog[] = sessionData.map((row) => {
+      // Filtrer les blocs texte : ils ne génèrent pas de logs d'exercice
+      const initialLogs: ExerciseLog[] = sessionData.filter(row => !row.isTextBlock).map((row) => {
         const numSets = parseInt(row.series) || 3;
         const suggestedWeight = getSuggestedWeight(row.exercice, history);
         const suggestedKg = suggestedWeight ? parseKgLikeToNumber(suggestedWeight) : null;
@@ -1554,11 +1557,22 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 const firstExerciseData = sessionData.find(d => d.exercice === group.exercises[0]?.exerciseName);
 
                 if (isDesktop) {
-                  // Desktop: Bloc superset avec tous les exercices
+                  // Desktop: Bloc superset — col-span dynamique selon le nombre d'exercices
+                  // Mapping statique pour garantir la détection par le scanner Tailwind
+                  const exCount = group.exercises.length;
+                  // col-span-1 col-span-2 col-span-3 col-span-4 lg:col-span-2 lg:col-span-3 xl:col-span-3 xl:col-span-4
+                  const COL_SPAN_MAP: Record<number, string> = {
+                    1: 'col-span-1',
+                    2: 'col-span-2',
+                    3: 'col-span-2 lg:col-span-3',
+                    4: 'col-span-2 lg:col-span-3 xl:col-span-4',
+                  };
+                  const colSpanClass = COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
+
                   return (
                     <div
                       key={`group-${group.groupId}`}
-                      className="col-span-2 bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden"
+                      className={`${colSpanClass} bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden`}
                     >
                       {/* Header Superset */}
                       <div className="bg-[var(--color-primary)]/10 px-4 py-2 flex items-center gap-2">
@@ -2282,11 +2296,32 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                   });
 
                   if (isDesktop) {
-                    // Desktop: Conteneur superset transparent avec blocs exercices alignés sur la grille
+                    // Desktop: Conteneur superset transparent, col-span dynamique selon le nombre d'exercices.
+                    // Le col-span s'adapte pour que le layer superset entoure uniquement les blocs exercices.
+                    // Mapping statique de classes Tailwind (évite les template literals dynamiques non détectés par le scanner).
+                    // Borné aux limites responsive de la grille parente : base=2 / lg=3 / xl=4.
+                    const exCount = group.exercises.length;
+                    // col-span-1 col-span-2 col-span-3 col-span-4 lg:col-span-2 lg:col-span-3 xl:col-span-3 xl:col-span-4
+                    const COL_SPAN_MAP: Record<number, string> = {
+                      1: 'col-span-1',
+                      2: 'col-span-2',
+                      3: 'col-span-2 lg:col-span-3',
+                      4: 'col-span-2 lg:col-span-3 xl:col-span-4',
+                    };
+                    // grid-cols-1 grid-cols-2 grid-cols-3 grid-cols-4 lg:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 xl:grid-cols-4
+                    const GRID_COLS_MAP: Record<number, string> = {
+                      1: 'grid-cols-1',
+                      2: 'grid-cols-2',
+                      3: 'grid-cols-2 lg:grid-cols-3',
+                      4: 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+                    };
+                    const colSpanClass = COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
+                    const gridColsClass = GRID_COLS_MAP[Math.min(exCount, 4)] || GRID_COLS_MAP[4];
+
                     renderedElements.push(
                       <div
                         key={`superset-${group.groupId}`}
-                        className="col-span-2 relative"
+                        className={`${colSpanClass} relative`}
                       >
                         {/* Bordure superset */}
                         <div className="absolute inset-0 border-2 border-[var(--color-primary)] rounded-xl pointer-events-none z-10" />
@@ -2302,8 +2337,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           )}
                         </div>
 
-                        {/* Blocs exercices côte à côte - alignés avec la grille parente */}
-                        <div className="grid grid-cols-2 gap-3 p-1.5">
+                        {/* Blocs exercices côte à côte - grille adaptée au nombre d'exercices */}
+                        <div className={`grid ${gridColsClass} gap-3 p-1.5`}>
                           {group.exercises.map((exercise, exIdx) => {
                             const exerciseIndex = exerciseIndices[exIdx];
                             const supersetLabel = String.fromCharCode(65 + exIdx);
