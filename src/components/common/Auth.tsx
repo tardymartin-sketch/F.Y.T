@@ -26,6 +26,7 @@ export const Auth: React.FC = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHello, setShowHello] = useState(false);
 
   // Lancer le mode démo
   const handleDemoMode = async () => {
@@ -312,6 +313,25 @@ export const Auth: React.FC = () => {
                 </>
               )}
             </button>
+          )}
+
+          {/* Bouton Hello World */}
+          {!isRegistering && (
+            <button
+              type="button"
+              onClick={() => setShowHello(true)}
+              disabled={loading || loadingCoach || loadingDemo}
+              className="mt-4 w-full bg-theme-tertiary hover:bg-theme-tertiary/80 text-theme py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-3 border border-theme disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Hello World
+            </button>
+          )}
+
+          {/* Message Hello World */}
+          {showHello && (
+            <div className="mt-4 p-4 rounded-xl text-center bg-green-500/10 text-green-500 border border-green-500/30">
+              Hello World 👋
+            </div>
           )}
 
           <div className="mt-6 text-center">
