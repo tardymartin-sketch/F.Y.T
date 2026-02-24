@@ -12,6 +12,7 @@ import {
   ExerciseCategory,
   User,
   AthleteGroupWithCount,
+  SessionExercise,
 } from '../../../../types';
 import {
   fetchExercisesForCoach,
@@ -58,7 +59,14 @@ const limbTypeOptions = [
 export function LibraryView({ coachId }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
   const [searchTerm, setSearchTerm] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+
+  // Sélection secondaire dans les résultats de recherche
+  const [searchSecondarySelection, setSearchSecondarySelection] = useState<{
+    type: 'exercise' | 'session';
+    label: string;
+    items: Exercise[] | SessionExercise[];
+  } | null>(null);
+
 
   // Data states
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -81,6 +89,10 @@ export function LibraryView({ coachId }: LibraryViewProps) {
 
   // Create new exercise state
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  useEffect(() => {
+    if (!searchTerm) setSearchSecondarySelection(null);
+  }, [searchTerm]);
 
   // Load initial data (including sessions and programs for counters)
   useEffect(() => {
@@ -143,6 +155,58 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     setMovementPatterns(prev => [...prev, newPattern].sort((a, b) => a.nameFr.localeCompare(b.nameFr)));
     return newPattern;
   };
+
+  const globalSearchResults = useMemo(() => {
+    const term = searchTerm.trim();
+    if (!term) return null;
+    const normalized = normalizeString(term);
+
+    // --- Exercices ---
+    // Grouper par nom de base (avant ' :: ') pour dédupliquer les variantes
+    const baseNameMap = new Map<string, Exercise[]>();
+    exercises.forEach(ex => {
+      const base = ex.name.split(' :: ')[0].trim();
+      if (!baseNameMap.has(base)) baseNameMap.set(base, []);
+      baseNameMap.get(base)!.push(ex);
+    });
+
+    const matchingExerciseIds = new Set<string>();
+    const exerciseResults: { baseName: string; variants: Exercise[] }[] = [];
+
+    baseNameMap.forEach((variants, baseName) => {
+      const matches = variants.some(ex => normalizeString(ex.name).includes(normalized));
+      if (matches) {
+        variants.forEach(ex => matchingExerciseIds.add(ex.id));
+        exerciseResults.push({ baseName, variants });
+      }
+    });
+
+    // --- Séances ---
+    const matchingSessionIds = new Set<string>();
+    const sessionResults = sessions.filter(s => {
+      const directMatch = normalizeString(s.seanceType).includes(normalized);
+      const containsExercise = s.exercises.some(e => matchingExerciseIds.has(e.exerciseId));
+      if (directMatch || containsExercise) {
+        matchingSessionIds.add(s.id);
+        return true;
+      }
+      return false;
+    });
+
+    // --- Programmes ---
+    const programResults = programs.filter(p => {
+      const directMatch =
+        normalizeString(p.seanceType).includes(normalized) ||
+        normalizeString(p.programName ?? '').includes(normalized);
+      const containsExercise = p.exercises.some(e => matchingExerciseIds.has(e.exerciseId));
+      const fromMatchingSession = p.sourceTemplateId
+        ? matchingSessionIds.has(p.sourceTemplateId)
+        : false;
+      return directMatch || containsExercise || fromMatchingSession;
+    });
+
+    return { exercises: exerciseResults, sessions: sessionResults, programs: programResults };
+  }, [searchTerm, exercises, sessions, programs]);
 
   // Filter exercises based on search and filters (accent-insensitive, ignoring "(copie)" suffix)
   const filteredExercises = useMemo(() => {
@@ -228,32 +292,11 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     return limbTypeOptions.filter(opt => types.has(opt.id as Exercise['limbType']));
   }, [exercises, exerciseCategoryFilter, muscleGroupFilter, movementPatternFilter]);
 
-  // Filter sessions based on search (accent-insensitive)
-  const filteredSessions = useMemo(() => {
-    const normalizedSearch = normalizeString(searchTerm);
-    return sessions.filter(s => {
-      return !searchTerm ||
-        normalizeString(s.seanceType).includes(normalizedSearch);
-    });
-  }, [sessions, searchTerm]);
+  // Les filtrages pour sessions et programmes se font maintenant via globalSearchResults
+  const filteredSessions = sessions;
+  const filteredPrograms = programs;
 
-  // Filter programs based on search (accent-insensitive)
-  const filteredPrograms = useMemo(() => {
-    const normalizedSearch = normalizeString(searchTerm);
-    return programs.filter(p => {
-      return !searchTerm ||
-        normalizeString(p.seanceType).includes(normalizedSearch);
-    });
-  }, [programs, searchTerm]);
 
-  const hasActiveFilters = exerciseCategoryFilter || limbTypeFilter || muscleGroupFilter || movementPatternFilter;
-
-  const handleResetFilters = () => {
-    setExerciseCategoryFilter('');
-    setLimbTypeFilter('');
-    setMuscleGroupFilter('');
-    setMovementPatternFilter('');
-  };
 
   const handleNewClick = () => {
     setIsCreatingNew(true);
@@ -284,7 +327,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
       </div>
 
       {/* Tabs (partie du header fixe) */}
-      <div className="flex-shrink-0 flex border-b border-theme">
+      <div className="flex-shrink-0 flex items-center border-b border-theme">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -306,122 +349,41 @@ export function LibraryView({ coachId }: LibraryViewProps) {
             </span>
           </button>
         ))}
-      </div>
 
-      {/* Search, Filters and Actions Bar (partie du header fixe) */}
-      <div className="flex-shrink-0 px-4 py-3 flex items-center gap-3 border-b border-theme/50">
-        {/* Search */}
-        <div className="relative w-48">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-muted" />
-          <input
-            type="text"
-            placeholder="Rechercher..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-1.5 bg-theme-secondary border border-theme rounded-lg text-sm text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-          />
-          {searchTerm && (
+        <div className="ml-auto pr-4 relative flex items-center gap-4">
+          {/* Barre de recherche */}
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 w-4 h-4 text-theme-muted pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Rechercher exercice, séance, programme..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-56 pl-9 pr-8 py-1.5 bg-theme-secondary border border-theme rounded-lg text-sm text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 text-theme-muted hover:text-theme"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Add Button - a été supprimé avec le reste de la barre d'action, on le replace ici */}
+          {showNewButton && !globalSearchResults && (
             <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-theme-muted hover:text-theme"
+              onClick={handleNewClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white rounded-lg text-sm transition-colors"
             >
-              <X className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5" />
+              Nouveau
             </button>
           )}
         </div>
-
-        {/* Filters Toggle (for exercises tab) */}
-        {activeTab === 'exercises' && (
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              showFilters || hasActiveFilters
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-theme-secondary text-theme-secondary hover:bg-theme-tertiary'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            Filtres
-            {hasActiveFilters && (
-              <span className="ml-0.5 px-1.5 py-0.5 bg-white/20 rounded text-xs">
-                {[exerciseCategoryFilter, limbTypeFilter, muscleGroupFilter, movementPatternFilter].filter(Boolean).length}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* Inline Filters (exercises only, when showFilters is true) */}
-        {activeTab === 'exercises' && showFilters && (
-          <>
-            <select
-              value={exerciseCategoryFilter}
-              onChange={(e) => setExerciseCategoryFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Catégorie</option>
-              {availableExerciseCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={muscleGroupFilter}
-              onChange={(e) => setMuscleGroupFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Muscle</option>
-              {availableMuscleGroups.map(mg => (
-                <option key={mg.id} value={mg.id}>{mg.nameFr}</option>
-              ))}
-            </select>
-
-            <select
-              value={movementPatternFilter}
-              onChange={(e) => setMovementPatternFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Pattern</option>
-              {availableMovementPatterns.map(mp => (
-                <option key={mp.id} value={mp.id}>{mp.nameFr}</option>
-              ))}
-            </select>
-
-            <select
-              value={limbTypeFilter}
-              onChange={(e) => setLimbTypeFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Type</option>
-              {availableLimbTypes.map(type => (
-                <option key={type.id} value={type.id}>{type.label}</option>
-              ))}
-            </select>
-
-            {hasActiveFilters && (
-              <button
-                onClick={handleResetFilters}
-                className="text-theme-muted hover:text-theme text-xs"
-              >
-                ✕
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Add Button - hidden for programs tab */}
-        {showNewButton && (
-          <button
-            onClick={handleNewClick}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white rounded-lg text-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Nouveau
-          </button>
-        )}
       </div>
+
 
       {/* ========== ZONE: CONTENU (Liste Item + Visualisation Item) ========== */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -429,7 +391,149 @@ export function LibraryView({ coachId }: LibraryViewProps) {
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" />
           </div>
+        ) : globalSearchResults ? (
+          /* VUE RECHERCHE : résultats + sélection secondaire */
+          <div className="flex h-full gap-4 p-4 overflow-y-auto">
+            {/* Panneau résultats */}
+            <div className="w-1/2 flex flex-col gap-4">
+              {/* Section Exercices */}
+              {globalSearchResults.exercises.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Exercices ({globalSearchResults.exercises.length})
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {globalSearchResults.exercises.map(({ baseName, variants }) => (
+                      <button
+                        key={baseName}
+                        onClick={() => {
+                          if (variants.length > 1) {
+                            setSearchSecondarySelection({ type: 'exercise', label: baseName, items: variants });
+                          } else {
+                            setSearchSecondarySelection(null);
+                            setActiveTab('exercises');
+                            setSearchTerm('');
+                            // naviguer vers l'exercice : chercher comment ExercisesList sélectionne un item
+                          }
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme flex items-center justify-between"
+                      >
+                        <span>{baseName}</span>
+                        {variants.length > 1 && (
+                          <span className="text-xs text-theme-muted">{variants.length} variantes</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section Séances */}
+              {globalSearchResults.sessions.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Séances ({globalSearchResults.sessions.length})
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {globalSearchResults.sessions.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          if (s.exercises.length > 0) {
+                            setSearchSecondarySelection({ type: 'session', label: s.seanceType, items: s.exercises });
+                          } else {
+                            setSearchSecondarySelection(null);
+                            setActiveTab('sessions');
+                            setSearchTerm('');
+                          }
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme flex items-center justify-between"
+                      >
+                        <span>{s.seanceType}</span>
+                        {s.exercises.length > 0 && (
+                          <span className="text-xs text-theme-muted">{s.exercises.length} exercices</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section Programmes */}
+              {globalSearchResults.programs.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Programmes ({globalSearchResults.programs.length})
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {globalSearchResults.programs.map((p, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setSearchSecondarySelection(null);
+                          setActiveTab('programs');
+                          setSearchTerm('');
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
+                      >
+                        {p.programName || p.seanceType}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Aucun résultat */}
+              {globalSearchResults.exercises.length === 0 &&
+                globalSearchResults.sessions.length === 0 &&
+                globalSearchResults.programs.length === 0 && (
+                <div className="text-sm text-theme-muted text-center py-8">
+                  Aucun résultat pour "{searchTerm}"
+                </div>
+              )}
+            </div>
+
+            {/* Panneau sélection secondaire */}
+            {searchSecondarySelection && (
+              <div className="w-1/2 bg-theme-secondary/30 rounded-xl border border-theme p-4 flex flex-col gap-2">
+                <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                  {searchSecondarySelection.label}
+                </h3>
+                {searchSecondarySelection.type === 'exercise' &&
+                  (searchSecondarySelection.items as Exercise[]).map(variant => (
+                    <button
+                      key={variant.id}
+                      onClick={() => {
+                        setSearchSecondarySelection(null);
+                        setActiveTab('exercises');
+                        setSearchTerm('');
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
+                    >
+                      {variant.name}
+                    </button>
+                  ))
+                }
+                {searchSecondarySelection.type === 'session' &&
+                  (searchSecondarySelection.items as SessionExercise[]).map(ex => (
+                    <button
+                      key={ex.exerciseId}
+                      onClick={() => {
+                        setSearchSecondarySelection(null);
+                        setActiveTab('exercises');
+                        setSearchTerm('');
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
+                    >
+                      {ex.exerciseName}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
         ) : (
+          /* VUE NORMALE : onglet actif */
           <>
             {activeTab === 'exercises' && (
               <ExercisesList
