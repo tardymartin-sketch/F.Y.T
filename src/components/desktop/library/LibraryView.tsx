@@ -194,7 +194,12 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     });
 
     // --- Programmes ---
-    const programResults = programs.filter(p => {
+    const programResultsMap = new Map<string, Program>();
+    programs.forEach(p => {
+      const pId = (p as any).id;
+      // Assuming program objects have a unique 'id' property, accessed via type assertion.
+      if (!pId || programResultsMap.has(pId)) return;
+
       const directMatch =
         normalizeString(p.seanceType).includes(normalized) ||
         normalizeString(p.programName ?? '').includes(normalized);
@@ -202,8 +207,12 @@ export function LibraryView({ coachId }: LibraryViewProps) {
       const fromMatchingSession = p.sourceTemplateId
         ? matchingSessionIds.has(p.sourceTemplateId)
         : false;
-      return directMatch || containsExercise || fromMatchingSession;
+        
+      if (directMatch || containsExercise || fromMatchingSession) {
+        programResultsMap.set(pId, p);
+      }
     });
+    const programResults = Array.from(programResultsMap.values());
 
     return { exercises: exerciseResults, sessions: sessionResults, programs: programResults };
   }, [searchTerm, exercises, sessions, programs]);
@@ -466,9 +475,9 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                     Programmes ({globalSearchResults.programs.length})
                   </h3>
                   <div className="flex flex-col gap-1">
-                    {globalSearchResults.programs.map((p, idx) => (
+                    {globalSearchResults.programs.map(p => (
                       <button
-                        key={idx}
+                        key={(p as any).id}
                         onClick={() => {
                           setSearchSecondarySelection(null);
                           setActiveTab('programs');
