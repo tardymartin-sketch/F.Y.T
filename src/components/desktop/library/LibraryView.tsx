@@ -196,9 +196,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     // --- Programmes ---
     const programResultsMap = new Map<string, Program>();
     programs.forEach(p => {
-      const pId = (p as any).id;
-      // Assuming program objects have a unique 'id' property, accessed via type assertion.
-      if (!pId || programResultsMap.has(pId)) return;
+      if (programResultsMap.has(p.id)) return;
 
       const directMatch =
         normalizeString(p.seanceType).includes(normalized) ||
@@ -209,7 +207,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
         : false;
         
       if (directMatch || containsExercise || fromMatchingSession) {
-        programResultsMap.set(pId, p);
+        programResultsMap.set(p.id, p);
       }
     });
     const programResults = Array.from(programResultsMap.values());
@@ -477,7 +475,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                   <div className="flex flex-col gap-1">
                     {globalSearchResults.programs.map(p => (
                       <button
-                        key={(p as any).id}
+                        key={p.id}
                         onClick={() => {
                           setSearchSecondarySelection(null);
                           setActiveTab('programs');

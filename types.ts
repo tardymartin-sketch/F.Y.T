@@ -1444,6 +1444,7 @@ export interface SessionTemplate {
 
 // Programme (séances assignées à des athlètes)
 export interface Program {
+  id: string;                    // Identifiant synthétique déterministe (clé composite : programName_seanceType_startDate_endDate_athleteTarget)
   coachId: string;
   programName?: string;          // Nom personnalisé du programme (optionnel)
   seanceType: string;
