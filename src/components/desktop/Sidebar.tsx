@@ -44,7 +44,7 @@ const allMenuItems: MenuItem[] = [
   { id: 'profile', icon: User, label: 'Profil' },
   // Menus coach uniquement
   { id: 'library', icon: Library, label: 'Exercices et Séances', allowedRoles: ['coach', 'admin'] },
-  { id: 'import', icon: Download, label: 'Importer', allowedRoles: ['coach', 'admin'] },
+  // { id: 'import', icon: Download, label: 'Importer', allowedRoles: ['coach', 'admin'] }, // Fonctionnalité désuète, masquée pour l'instant
   { id: 'team', icon: Users, label: 'Mes Athlètes', allowedRoles: ['coach', 'admin'] },
   // Menus admin uniquement
   { id: 'settings', icon: Settings, label: 'Admin', allowedRoles: ['admin'] },
