@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Home, Download, Users, MessageSquare, Settings, Menu, X, LogOut, History, BarChart3, User, Library, Palette } from 'lucide-react';
+import { Home, Users, MessageSquare, Settings, Menu, X, LogOut, History, BarChart3, User, Library, Palette } from 'lucide-react';
 import { useUnreadCount } from '../../hooks/useUnreadCount';
 
 // Toutes les vues possibles
