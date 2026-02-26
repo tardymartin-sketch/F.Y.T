@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Dumbbell, Calendar, FolderKanban, Search, Plus, Filter, X, Library } from 'lucide-react';
+import { Dumbbell, Calendar, FolderKanban, Search, Plus, Filter, X, Library, ChevronDown } from 'lucide-react';
 import { ExercisesList } from './exercises/ExercisesList';
 import { SessionsList } from './sessions/SessionsList';
 import { ProgramsList } from './programs/ProgramsList';
@@ -60,12 +60,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Sélection secondaire dans les résultats de recherche
-  const [searchSecondarySelection, setSearchSecondarySelection] = useState<{
-    type: 'exercise' | 'session';
-    label: string;
-    items: Exercise[] | SessionExercise[];
-  } | null>(null);
+  // Éléments dépliés dans les résultats de recherche
+  const [expandedSearchItems, setExpandedSearchItems] = useState<Set<string>>(new Set());
 
 
   // Data states
@@ -90,8 +86,17 @@ export function LibraryView({ coachId }: LibraryViewProps) {
   // Create new exercise state
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
+  const toggleSearchExpand = (id: string) => {
+    setExpandedSearchItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
   useEffect(() => {
-    if (!searchTerm) setSearchSecondarySelection(null);
+    if (!searchTerm) setExpandedSearchItems(new Set());
   }, [searchTerm]);
 
   // Load initial data (including sessions and programs for counters)
@@ -403,38 +408,58 @@ export function LibraryView({ coachId }: LibraryViewProps) {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" />
           </div>
         ) : globalSearchResults ? (
-          /* VUE RECHERCHE : résultats + sélection secondaire */
-          <div className="flex h-full gap-4 p-4 overflow-y-auto">
-            {/* Panneau résultats */}
-            <div className="w-1/2 flex flex-col gap-4">
+          /* VUE RECHERCHE : résultats en accordéon */
+          <div className="h-full p-4 overflow-y-auto">
+            <div className="max-w-2xl mx-auto flex flex-col gap-6">
               {/* Section Exercices */}
               {globalSearchResults.exercises.length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
                     Exercices ({globalSearchResults.exercises.length})
                   </h3>
-                  <div className="flex flex-col gap-1">
-                    {globalSearchResults.exercises.map(({ baseName, variants }) => (
-                      <button
-                        key={baseName}
-                        onClick={() => {
-                          if (variants.length > 1) {
-                            setSearchSecondarySelection({ type: 'exercise', label: baseName, items: variants });
-                          } else {
-                            setSearchSecondarySelection(null);
-                            setActiveTab('exercises');
-                            setSearchTerm('');
-                            // naviguer vers l'exercice : chercher comment ExercisesList sélectionne un item
-                          }
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme flex items-center justify-between"
-                      >
-                        <span>{baseName}</span>
-                        {variants.length > 1 && (
-                          <span className="text-xs text-theme-muted">{variants.length} variantes</span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-2">
+                    {globalSearchResults.exercises.map(({ baseName, variants }) => {
+                      const isExpanded = expandedSearchItems.has(baseName);
+                      return (
+                        <div key={baseName} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (variants.length > 1) {
+                                toggleSearchExpand(baseName);
+                              } else {
+                                setActiveTab('exercises');
+                                setSearchTerm('');
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{baseName}</span>
+                            {variants.length > 1 && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{variants.length} variantes</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && variants.length > 1 && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {variants.map(variant => (
+                                <button
+                                  key={variant.id}
+                                  onClick={() => {
+                                    setActiveTab('exercises');
+                                    setSearchTerm('');
+                                  }}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {variant.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -445,27 +470,49 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                   <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
                     Séances ({globalSearchResults.sessions.length})
                   </h3>
-                  <div className="flex flex-col gap-1">
-                    {globalSearchResults.sessions.map(s => (
-                      <button
-                        key={s.id}
-                        onClick={() => {
-                          if (s.exercises.length > 0) {
-                            setSearchSecondarySelection({ type: 'session', label: s.seanceType, items: s.exercises });
-                          } else {
-                            setSearchSecondarySelection(null);
-                            setActiveTab('sessions');
-                            setSearchTerm('');
-                          }
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme flex items-center justify-between"
-                      >
-                        <span>{s.seanceType}</span>
-                        {s.exercises.length > 0 && (
-                          <span className="text-xs text-theme-muted">{s.exercises.length} exercices</span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-2">
+                    {globalSearchResults.sessions.map(s => {
+                      const isExpanded = expandedSearchItems.has(s.id);
+                      return (
+                        <div key={s.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (s.exercises.length > 0) {
+                                toggleSearchExpand(s.id);
+                              } else {
+                                setActiveTab('sessions');
+                                setSearchTerm('');
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{s.seanceType}</span>
+                            {s.exercises.length > 0 && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{s.exercises.length} exercices</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && s.exercises.length > 0 && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {s.exercises.map(ex => (
+                                <button
+                                  key={ex.exerciseId}
+                                  onClick={() => {
+                                    setActiveTab('exercises');
+                                    setSearchTerm('');
+                                  }}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {ex.exerciseName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -476,19 +523,19 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                   <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
                     Programmes ({globalSearchResults.programs.length})
                   </h3>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-2">
                     {globalSearchResults.programs.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setSearchSecondarySelection(null);
-                          setActiveTab('programs');
-                          setSearchTerm('');
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
-                      >
-                        {p.programName || p.seanceType}
-                      </button>
+                      <div key={p.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                        <button
+                          onClick={() => {
+                            setActiveTab('programs');
+                            setSearchTerm('');
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme font-medium transition-colors"
+                        >
+                          {p.programName || p.seanceType}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -498,50 +545,11 @@ export function LibraryView({ coachId }: LibraryViewProps) {
               {globalSearchResults.exercises.length === 0 &&
                 globalSearchResults.sessions.length === 0 &&
                 globalSearchResults.programs.length === 0 && (
-                <div className="text-sm text-theme-muted text-center py-8">
+                <div className="text-sm text-theme-muted text-center py-12 bg-theme-secondary/30 rounded-xl border border-theme">
                   Aucun résultat pour "{searchTerm}"
                 </div>
               )}
             </div>
-
-            {/* Panneau sélection secondaire */}
-            {searchSecondarySelection && (
-              <div className="w-1/2 bg-theme-secondary/30 rounded-xl border border-theme p-4 flex flex-col gap-2">
-                <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
-                  {searchSecondarySelection.label}
-                </h3>
-                {searchSecondarySelection.type === 'exercise' &&
-                  (searchSecondarySelection.items as Exercise[]).map(variant => (
-                    <button
-                      key={variant.id}
-                      onClick={() => {
-                        setSearchSecondarySelection(null);
-                        setActiveTab('exercises');
-                        setSearchTerm('');
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
-                    >
-                      {variant.name}
-                    </button>
-                  ))
-                }
-                {searchSecondarySelection.type === 'session' &&
-                  (searchSecondarySelection.items as SessionExercise[]).map(ex => (
-                    <button
-                      key={ex.exerciseId}
-                      onClick={() => {
-                        setSearchSecondarySelection(null);
-                        setActiveTab('exercises');
-                        setSearchTerm('');
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-theme-secondary text-sm text-theme"
-                    >
-                      {ex.exerciseName}
-                    </button>
-                  ))
-                }
-              </div>
-            )}
           </div>
         ) : (
           /* VUE NORMALE : onglet actif */
