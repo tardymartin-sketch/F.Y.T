@@ -59,6 +59,7 @@ const limbTypeOptions = [
 export function LibraryView({ coachId }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
   const [searchTerm, setSearchTerm] = useState('');
+  const [itemIdToSelect, setItemIdToSelect] = useState<string | null>(null);
 
   // Éléments dépliés dans les résultats de recherche
   const [expandedSearchItems, setExpandedSearchItems] = useState<Set<string>>(new Set());
@@ -98,6 +99,14 @@ export function LibraryView({ coachId }: LibraryViewProps) {
   useEffect(() => {
     if (!searchTerm) setExpandedSearchItems(new Set());
   }, [searchTerm]);
+
+  const handleSelectFromSearch = (tab: LibraryTab, id: string | null) => {
+    setActiveTab(tab);
+    setItemIdToSelect(id);
+    setSearchTerm('');
+    // Ensure expanded items are cleared
+    if (searchTerm) setExpandedSearchItems(new Set());
+  };
 
   // Load initial data (including sessions and programs for counters)
   useEffect(() => {
@@ -427,8 +436,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                               if (variants.length > 1) {
                                 toggleSearchExpand(baseName);
                               } else {
-                                setActiveTab('exercises');
-                                setSearchTerm('');
+                                handleSelectFromSearch('exercises', variants[0].id);
                               }
                             }}
                             className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
@@ -446,10 +454,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                               {variants.map(variant => (
                                 <button
                                   key={variant.id}
-                                  onClick={() => {
-                                    setActiveTab('exercises');
-                                    setSearchTerm('');
-                                  }}
+                                  onClick={() => handleSelectFromSearch('exercises', variant.id)}
                                   className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
                                 >
                                   {variant.name}
@@ -480,8 +485,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                               if (s.exercises.length > 0) {
                                 toggleSearchExpand(s.id);
                               } else {
-                                setActiveTab('sessions');
-                                setSearchTerm('');
+                                handleSelectFromSearch('sessions', s.id);
                               }
                             }}
                             className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
@@ -499,10 +503,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                               {s.exercises.map(ex => (
                                 <button
                                   key={ex.exerciseId}
-                                  onClick={() => {
-                                    setActiveTab('exercises');
-                                    setSearchTerm('');
-                                  }}
+                                  onClick={() => handleSelectFromSearch('exercises', ex.exerciseId)}
                                   className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
                                 >
                                   {ex.exerciseName}
@@ -524,19 +525,45 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                     Programmes ({globalSearchResults.programs.length})
                   </h3>
                   <div className="flex flex-col gap-2">
-                    {globalSearchResults.programs.map(p => (
-                      <div key={p.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
-                        <button
-                          onClick={() => {
-                            setActiveTab('programs');
-                            setSearchTerm('');
-                          }}
-                          className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme font-medium transition-colors"
-                        >
-                          {p.programName || p.seanceType}
-                        </button>
-                      </div>
-                    ))}
+                    {globalSearchResults.programs.map(p => {
+                      const isExpanded = expandedSearchItems.has(p.id);
+                      const hasSubItems = p.exercises && p.exercises.length > 0;
+                      return (
+                        <div key={p.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (hasSubItems) {
+                                toggleSearchExpand(p.id);
+                              } else {
+                                handleSelectFromSearch('programs', p.id);
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{p.programName || p.seanceType}</span>
+                            {hasSubItems && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{p.exercises.length} exercices</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && hasSubItems && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {p.exercises.map(ex => (
+                                <button
+                                  key={ex.exerciseId}
+                                  onClick={() => handleSelectFromSearch('exercises', ex.exerciseId)}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {ex.exerciseName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -566,6 +593,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onCreateNewClose={() => setIsCreatingNew(false)}
                 onCreateMuscleGroup={handleCreateMuscleGroup}
                 onCreateMovementPattern={handleCreateMovementPattern}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
             {activeTab === 'sessions' && (
@@ -577,6 +606,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onExercisesRefresh={refreshExercises}
                 isCreatingNew={isCreatingNew}
                 onCreateNewClose={() => setIsCreatingNew(false)}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
             {activeTab === 'programs' && (
@@ -589,6 +620,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onRefresh={refreshPrograms}
                 isCreatingNew={isCreatingNew}
                 onCreateNewClose={() => setIsCreatingNew(false)}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
           </>
