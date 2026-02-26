@@ -334,30 +334,32 @@ export function LibraryView({ coachId }: LibraryViewProps) {
       </div>
 
       {/* Tabs (partie du header fixe) */}
-      <div className="flex-shrink-0 flex items-center border-b border-theme">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)] bg-theme-tertiary'
-                : 'text-theme-muted hover:text-theme hover:bg-theme-secondary/30'
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-            <span className={`px-2 py-0.5 rounded-full text-xs ${
-              activeTab === tab.id
-                ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                : 'bg-theme-tertiary text-theme-muted'
-            }`}>
-              {tab.count}
-            </span>
-          </button>
-        ))}
+      <div className="flex-shrink-0 flex items-center justify-between border-b border-theme px-4">
+        <div className="flex items-center">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)] bg-theme-tertiary'
+                  : 'text-theme-muted hover:text-theme hover:bg-theme-secondary/30'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+              <span className={`px-2 py-0.5 rounded-full text-xs ${
+                activeTab === tab.id
+                  ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
+                  : 'bg-theme-tertiary text-theme-muted'
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
 
-        <div className="ml-auto pr-4 relative flex items-center gap-4">
+        <div className="relative flex items-center gap-4">
           {/* Barre de recherche */}
           <div className="relative flex items-center">
             <Search className="absolute left-3 w-4 h-4 text-theme-muted pointer-events-none" />
