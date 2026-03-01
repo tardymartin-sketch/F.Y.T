@@ -11,6 +11,8 @@ interface SessionsListProps {
   onExercisesRefresh?: () => Promise<void>;
   isCreatingNew?: boolean;
   onCreateNewClose?: () => void;
+  selectedItemId?: string | null;
+  onItemSelectionHandled?: () => void;
 }
 
 // Normalize string for grouping (remove accents and lowercase)
@@ -1979,6 +1981,8 @@ export function SessionsList({
   onExercisesRefresh,
   isCreatingNew = false,
   onCreateNewClose,
+  selectedItemId,
+  onItemSelectionHandled,
 }: SessionsListProps) {
   const [selectedSessionName, setSelectedSessionName] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -2033,6 +2037,18 @@ export function SessionsList({
       setSelectedSessionName(sortedSessionNames[0]);
     }
   }, [sortedSessionNames, selectedSessionName, isCreatingNew, isDuplicating]);
+
+  // Auto-select based on prop
+  useEffect(() => {
+    if (selectedItemId && onItemSelectionHandled) {
+      const foundSession = sessions.find(s => s.id === selectedItemId);
+      if (foundSession) {
+        const normalizedName = normalizeString(foundSession.seanceType);
+        setSelectedSessionName(normalizedName);
+      }
+      onItemSelectionHandled();
+    }
+  }, [selectedItemId, sessions, onItemSelectionHandled]);
 
   // Get variants for selected session
   const selectedVariants = useMemo(() => {
