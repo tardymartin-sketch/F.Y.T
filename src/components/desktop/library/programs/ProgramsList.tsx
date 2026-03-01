@@ -118,6 +118,8 @@ export function ProgramsList({
   onRefresh,
   isCreatingNew = false,
   onCreateNewClose,
+  selectedItemId,
+  onItemSelectionHandled,
 }: ProgramsListProps) {
   const [selectedProgramGroup, setSelectedProgramGroup] = useState<ProgramGroup | null>(null);
   const [expandedSessionIndexes, setExpandedSessionIndexes] = useState<Set<number>>(new Set());
