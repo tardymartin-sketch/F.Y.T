@@ -103,9 +103,7 @@ export function LibraryView({ coachId }: LibraryViewProps) {
   const handleSelectFromSearch = (tab: LibraryTab, id: string | null) => {
     setActiveTab(tab);
     setItemIdToSelect(id);
-    setSearchTerm('');
-    // Ensure expanded items are cleared
-    if (searchTerm) setExpandedSearchItems(new Set());
+    setSearchTerm(''); // This will trigger the useEffect to clear expanded items
   };
 
   // Load initial data (including sessions and programs for counters)
