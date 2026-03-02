@@ -206,9 +206,16 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     });
 
     // --- Programmes ---
-    const programResultsMap = new Map<string, Program>();
+    // --- Programmes ---
+    const uniqueProgramKeys = new Set<string>();
+    const programResults: Program[] = [];
+    
     programs.forEach(p => {
-      if (programResultsMap.has(p.id)) return;
+      // Clé d'unicité basée sur le contenu visible (Nom + Type)
+      // On ignore la date et l'athlète cible pour ne pas afficher chaque assignation comme un résultat distinct
+      const uniqueKey = `${normalizeString(p.programName || '')}|${normalizeString(p.seanceType)}`;
+      
+      if (uniqueProgramKeys.has(uniqueKey)) return;
 
       const directMatch =
         normalizeString(p.seanceType).includes(normalized) ||
@@ -219,10 +226,10 @@ export function LibraryView({ coachId }: LibraryViewProps) {
         : false;
         
       if (directMatch || containsExercise || fromMatchingSession) {
-        programResultsMap.set(p.id, p);
+        uniqueProgramKeys.add(uniqueKey);
+        programResults.push(p);
       }
     });
-    const programResults = Array.from(programResultsMap.values());
 
     return { exercises: exerciseResults, sessions: sessionResults, programs: programResults };
   }, [searchTerm, exercises, sessions, programs]);
