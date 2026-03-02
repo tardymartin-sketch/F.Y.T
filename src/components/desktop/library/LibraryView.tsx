@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Dumbbell, Calendar, FolderKanban, Search, Plus, Filter, X, Library, ChevronDown } from 'lucide-react';
+import { Dumbbell, Calendar, FolderKanban, Search, Plus, X, Library, ChevronDown } from 'lucide-react';
 import { ExercisesList } from './exercises/ExercisesList';
 import { SessionsList } from './sessions/SessionsList';
 import { ProgramsList } from './programs/ProgramsList';
