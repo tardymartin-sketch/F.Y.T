@@ -205,16 +205,13 @@ export function LibraryView({ coachId }: LibraryViewProps) {
       return false;
     });
 
-    // --- Programmes ---
-    // --- Programmes ---
     const uniqueProgramKeys = new Set<string>();
     const programResults: Program[] = [];
     
     programs.forEach(p => {
       // Clé d'unicité basée sur le contenu visible (Nom + Type)
       // On ignore la date et l'athlète cible pour ne pas afficher chaque assignation comme un résultat distinct
-      const uniqueKey = `${normalizeString(p.programName || '')}|${normalizeString(p.seanceType)}`;
-      
+       const uniqueKey = `${normalizeString((p.programName || '').trim())}|${normalizeString(p.seanceType.trim())}`;
       if (uniqueProgramKeys.has(uniqueKey)) return;
 
       const directMatch =
