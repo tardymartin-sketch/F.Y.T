@@ -58,7 +58,7 @@ import {
   // Nouvelles fonctions de mapping pour session_templates
   mapSessionTemplateRowToSessionTemplate,
   mapSessionTemplateExerciseRowToSessionExercise,
-} from '../../types';
+} from '../types';
 import { syncUserBadgesProgress } from './badgeService';
 import {
   isDemoMode,

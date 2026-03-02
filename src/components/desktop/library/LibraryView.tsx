@@ -11,9 +11,10 @@ import {
   MovementPattern,
   ExerciseCategory,
   User,
+  User,
   AthleteGroupWithCount,
   SessionExercise,
-} from '../../../../types';
+} from '../../../types';
 import {
   fetchExercisesForCoach,
   fetchSessionTemplates,
