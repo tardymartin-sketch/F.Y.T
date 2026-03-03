@@ -1,5 +1,5 @@
 // ============================================================
-// F.Y.T - SESSION PREVIEW MODAL (ATH-NEW-001)
+import { WorkoutRow } from '../../../types.ts';
 // src/components/SessionPreviewModal.tsx
 // Modal affichant tous les exercices de la séance sélectionnée
 // Utilise Popover en mode desktop pour positionnement relatif

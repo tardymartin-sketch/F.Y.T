@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { WorkoutRow, ExecutionMode, EXECUTION_MODES } from '../../../types';
+import { WorkoutRow, ExecutionMode, EXECUTION_MODES } from '../../../types.ts';
 import { Video, AlertCircle, ChevronDown, Link2, Plus } from 'lucide-react';
 
 interface Props {

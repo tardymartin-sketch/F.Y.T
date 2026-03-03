@@ -7,8 +7,10 @@ import {
   User,
   mapProfileToUser,
   SessionLog,
-  mapSessionLogToRow
-} from '../../types';
+  mapSessionLogToRow,
+  SessionLogRow,
+  mapSessionLogRowToSessionLog,
+} from '../../types.ts';
 import { saveExerciseLogs as saveExerciseLogsFromSession } from './supabaseService';
 
 // ===========================================

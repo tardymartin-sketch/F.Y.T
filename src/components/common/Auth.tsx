@@ -7,8 +7,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { Mail, Lock, User, Dumbbell, ArrowRight, Loader2, Eye, EyeOff, Users, Play } from 'lucide-react';
-import { canAccessCoachMode } from '../../../types';
-import type { ProfileRow, User as UserType } from '../../../types';
+import { canAccessCoachMode } from '../../../types.ts';
+import type { ProfileRow, User as UserType } from '../../../types.ts';
 import { createDemoSession } from '../../services/demoService';
 
 // Constante pour le stockage du mode actif

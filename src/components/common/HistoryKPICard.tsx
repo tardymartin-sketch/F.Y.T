@@ -1,5 +1,5 @@
 // ============================================================
-// F.Y.T - HISTORY KPI CARD (ATH-003)
+import { SessionLog, getRpeColor } from '../../../types.ts';
 // src/components/HistoryKPICard.tsx
 // Encart stats agrandissable en haut de l'historique
 // ============================================================

@@ -1,6 +1,6 @@
 // ============================================================
 // F.Y.T - SUPERSET EXERCISE BLOCK
-// src/components/common/SupersetExerciseBlock.tsx
+} from '../../../types.ts';
 // Bloc d'exercice superset pour la session active (mode saisie)
 // Affiche plusieurs exercices avec inputs synchronisés
 // ============================================================

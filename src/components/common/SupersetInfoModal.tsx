@@ -1,6 +1,6 @@
 // ============================================================
 // F.Y.T - SUPERSET INFO MODAL
-// src/components/common/SupersetInfoModal.tsx
+import { ExecutionMode, EXECUTION_MODES } from '../../../types.ts';
 // Modal d'information sur les modes d'exécution (superset, triset, etc.)
 // ============================================================
 
