@@ -11,6 +11,13 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
+    "@lexical/history": "^0.40.0",
+    "@lexical/html": "^0.40.0",
+    "@lexical/list": "^0.40.0",
+    "@lexical/react": "^0.40.0",
+    "@lexical/rich-text": "^0.40.0",
+    "@lexical/selection": "^0.40.0",
+    "@lexical/utils": "^0.40.0",
     "@supabase/supabase-js": "^2.89.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tiptap/extension-color": "^2.10.4",
@@ -18,6 +25,7 @@
     "@tiptap/pm": "^2.10.4",
     "@tiptap/react": "^2.10.4",
     "@tiptap/starter-kit": "^2.10.4",
+    "lexical": "^0.40.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "react-dev-inspector": "^2.0.1",
