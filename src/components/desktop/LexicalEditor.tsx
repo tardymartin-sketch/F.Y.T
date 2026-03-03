@@ -436,89 +436,63 @@ export const LexicalRichTextEditor: React.FC<LexicalEditorProps> = ({
       console.error('[LexicalEditor] Erreur interne :', error);
     },
     theme: {
-      // Classes CSS appliquées sur les éléments du DOM de l'éditeur
+      // Classes Tailwind appliquées directement sur les éléments HTML
       heading: {
-        h1: 'lexical-h1',
-        h2: 'lexical-h2',
+        h1: 'text-2xl font-bold text-white mt-4 mb-2',
+        h2: 'text-xl font-semibold text-white mt-3 mb-2',
       },
       text: {
         bold: 'font-bold',
         italic: 'italic',
       },
       list: {
-        ul: 'lexical-ul',
-        ol: 'lexical-ol',
-        listitem: 'lexical-li',
+        ul: 'list-disc pl-6 mb-2',
+        ol: 'list-decimal pl-6 mb-2',
+        listitem: 'mb-1',
       },
     },
   };
 
   return (
     <>
-      {/* Styles injectés pour les éléments de l'éditeur */}
+      {/* Styles spécifiques pour le comportement de l'éditeur (placeholder, focus) */}
       <style>{`
-        .lexical-editor-container [contenteditable] {
+        .lexical-content-editable {
           outline: none;
           min-height: 150px;
           padding: 1rem;
           color: #e2e8f0;
         }
-        .lexical-editor-container [contenteditable] p {
+        .lexical-content-editable p {
           margin-bottom: 0.5rem;
-          color: #e2e8f0;
-        }
-        .lexical-editor-container .lexical-h1 {
-          font-size: 1.5rem;
-          font-weight: 700;
-          margin-top: 1rem;
-          margin-bottom: 0.5rem;
-          color: white;
-        }
-        .lexical-editor-container .lexical-h2 {
-          font-size: 1.25rem;
-          font-weight: 600;
-          margin-top: 0.75rem;
-          margin-bottom: 0.5rem;
-          color: white;
-        }
-        .lexical-editor-container .lexical-ul {
-          list-style-type: disc;
-          padding-left: 1.5rem;
-          margin-bottom: 0.5rem;
-        }
-        .lexical-editor-container .lexical-ol {
-          list-style-type: decimal;
-          padding-left: 1.5rem;
-          margin-bottom: 0.5rem;
-        }
-        .lexical-editor-container .lexical-li {
-          margin-bottom: 0.25rem;
         }
         /* Placeholder */
-        .lexical-editor-container [contenteditable][data-empty="true"]::before {
-          content: attr(data-placeholder);
+        .lexical-placeholder {
           color: #64748b;
-          pointer-events: none;
+          overflow: hidden;
           position: absolute;
+          text-overflow: ellipsis;
+          top: 1rem;
+          left: 1rem;
+          font-size: 1rem;
+          user-select: none;
+          pointer-events: none;
         }
       `}</style>
 
       <LexicalComposer initialConfig={initialConfig}>
-        <div className="lexical-editor-container bg-theme border border-theme rounded-xl overflow-hidden focus-within:border-blue-500 transition-colors">
+        <div className="lexical-editor-container bg-theme border border-theme rounded-xl overflow-hidden focus-within:border-blue-500 transition-colors relative">
           {/* Toolbar */}
           <ToolbarPlugin />
 
           {/* Zone d'édition */}
-          <div className="relative">
+          <div className="relative bg-theme-secondary/20">
             <RichTextPlugin
               contentEditable={
-                <ContentEditable
-                  className="[&]:outline-none [&]:min-h-[150px] [&]:p-4"
-                  data-placeholder={placeholder}
-                />
+                <ContentEditable className="lexical-content-editable" />
               }
               placeholder={
-                <div className="absolute top-4 left-4 text-slate-500 pointer-events-none select-none">
+                <div className="lexical-placeholder">
                   {placeholder}
                 </div>
               }
