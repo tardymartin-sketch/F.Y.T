@@ -1,6 +1,5 @@
 // ============================================================
 // F.Y.T - SUPERSET EXERCISE BLOCK
-} from '../../../types.ts';
 // Bloc d'exercice superset pour la session active (mode saisie)
 // Affiche plusieurs exercices avec inputs synchronisés
 // ============================================================
@@ -26,7 +25,7 @@ import {
   WorkoutRow,
   EXECUTION_MODES,
   ExecutionMode
-} from '../../../types';
+} from '../../../types.ts';
 import { RpeSelector, RpeBadge } from './RpeSelector';
 
 // ===========================================

@@ -1,12 +1,11 @@
 // ============================================================
-import { WorkoutRow } from '../../../types.ts';
 // src/components/SessionPreviewModal.tsx
 // Modal affichant tous les exercices de la séance sélectionnée
 // Utilise Popover en mode desktop pour positionnement relatif
 // ============================================================
 
 import React, { useEffect, useRef, useCallback } from 'react';
-import { WorkoutRow } from '../../../types';
+import { WorkoutRow } from '../../../types.ts';
 import {
   X,
   Play,

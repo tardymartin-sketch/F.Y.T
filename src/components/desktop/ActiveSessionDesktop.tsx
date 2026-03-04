@@ -1,5 +1,4 @@
 // ============================================================
-// F.Y.T - ACTIVE SESSION DESKTOP (V3 Desktop Adaptation)
 // src/components/desktop/ActiveSessionDesktop.tsx
 // Réutilise ActiveSessionMobile avec layout desktop
 // Comportements critiques mobile préservés:
@@ -12,7 +11,7 @@
 // ============================================================
 
 import React from 'react';
-import { WorkoutRow, SessionLog, AthleteComment } from '../../../types';
+import { WorkoutRow, SessionLog, AthleteComment } from '../../../types.ts';
 import { ActiveSessionMobile } from '../mobile/ActiveSessionMobile';
 
 interface Props {
