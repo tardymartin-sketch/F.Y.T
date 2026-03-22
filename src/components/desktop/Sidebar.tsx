@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Home, Download, Users, MessageSquare, Settings, Menu, X, LogOut, History, BarChart3, User, Library, Palette } from 'lucide-react';
+import { Home, Users, MessageSquare, Settings, Menu, X, LogOut, History, BarChart3, User, Library, Palette } from 'lucide-react';
 import { useUnreadCount } from '../../hooks/useUnreadCount';
 
 // Toutes les vues possibles
@@ -44,7 +44,7 @@ const allMenuItems: MenuItem[] = [
   { id: 'profile', icon: User, label: 'Profil' },
   // Menus coach uniquement
   { id: 'library', icon: Library, label: 'Exercices et Séances', allowedRoles: ['coach', 'admin'] },
-  { id: 'import', icon: Download, label: 'Importer', allowedRoles: ['coach', 'admin'] },
+  // { id: 'import', icon: Download, label: 'Importer', allowedRoles: ['coach', 'admin'] }, // Fonctionnalité désuète, masquée pour l'instant
   { id: 'team', icon: Users, label: 'Mes Athlètes', allowedRoles: ['coach', 'admin'] },
   // Menus admin uniquement
   { id: 'settings', icon: Settings, label: 'Admin', allowedRoles: ['admin'] },

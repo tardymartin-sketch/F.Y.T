@@ -3735,6 +3735,7 @@ export async function fetchPrograms(coachId: string): Promise<Program[]> {
 
     if (!grouped.has(key)) {
       grouped.set(key, {
+        id: key,                   // Identifiant synthétique déterministe basé sur la clé composite
         coachId: row.coach_id,
         programName: row.program_name || undefined,
         seanceType: row.seance_type || '',

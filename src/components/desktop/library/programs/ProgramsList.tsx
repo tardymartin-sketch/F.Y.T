@@ -12,8 +12,9 @@ interface ProgramsListProps {
   onRefresh: () => Promise<void>;
   isCreatingNew?: boolean;
   onCreateNewClose?: () => void;
+  selectedItemId?: string | null;
+  onItemSelectionHandled?: () => void;
 }
-
 // Normalize string for grouping (case insensitive)
 function normalizeString(str: string): string {
   return str.toLowerCase().trim();
@@ -117,6 +118,8 @@ export function ProgramsList({
   onRefresh,
   isCreatingNew = false,
   onCreateNewClose,
+  selectedItemId,
+  onItemSelectionHandled,
 }: ProgramsListProps) {
   const [selectedProgramGroup, setSelectedProgramGroup] = useState<ProgramGroup | null>(null);
   const [expandedSessionIndexes, setExpandedSessionIndexes] = useState<Set<number>>(new Set());
@@ -237,6 +240,21 @@ export function ProgramsList({
       setSelectedProgramGroup(programGroups[0]);
     }
   }, [programGroups, selectedProgramGroup, isCreatingNew, isEditing, isDuplicating]);
+
+  // Auto-select based on prop
+  useEffect(() => {
+    if (selectedItemId && onItemSelectionHandled) {
+      const foundProgram = programs.find(p => p.id === selectedItemId);
+      if (foundProgram) {
+        // Find the group that contains this program
+        const foundGroup = programGroups.find(g => g.sessions.some(s => s.id === selectedItemId));
+        if (foundGroup) {
+          setSelectedProgramGroup(foundGroup);
+        }
+      }
+      onItemSelectionHandled();
+    }
+  }, [selectedItemId, programs, programGroups, onItemSelectionHandled]);
 
   const getPeriodLabel = (program: Program) => {
     if (program.startDate && program.endDate) {

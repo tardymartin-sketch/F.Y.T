@@ -4,7 +4,13 @@
 // Séance en deux phases: Récapitulatif → Mode Focus
 // ============================================================
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import {
   WorkoutRow,
   SessionLog,
@@ -18,8 +24,8 @@ import {
   EXECUTION_MODES,
   groupExerciseLogs,
   isExerciseLogGroup,
-  ExerciseLogGroup
-} from '../../../types';
+  ExerciseLogGroup,
+} from "../../../types";
 import {
   Play,
   Pause,
@@ -41,17 +47,25 @@ import {
   Info,
   Edit2,
   Trash2,
-  Link2
-} from 'lucide-react';
-import { RpeSelector, SessionRpeModal, RpeBadge } from '../common/RpeSelector';
-import { Card, CardContent } from '../shared/Card';
-import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../../utils/localStorageEvents';
-import { fetchGhostSession, GhostSession } from '../../services/supabaseService';
-import { Popover } from '../common/Popover';
-import { VideoModal } from '../common/VideoModal';
-import { SupersetInfoModal } from '../common/SupersetInfoModal';
-import { SupersetExerciseBlock } from '../common/SupersetExerciseBlock';
-import { useDemoTour } from '../../contexts/DemoTourContext';
+  Link2,
+  FileText,
+} from "lucide-react";
+import { RichTextDisplay } from "../common/RichTextDisplay";
+import { RpeSelector, SessionRpeModal, RpeBadge } from "../common/RpeSelector";
+import { Card, CardContent } from "../shared/Card";
+import {
+  setLocalStorageWithEvent,
+  removeLocalStorageWithEvent,
+} from "../../utils/localStorageEvents";
+import {
+  fetchGhostSession,
+  GhostSession,
+} from "../../services/supabaseService";
+import { Popover } from "../common/Popover";
+import { VideoModal } from "../common/VideoModal";
+import { SupersetInfoModal } from "../common/SupersetInfoModal";
+import { SupersetExerciseBlock } from "../common/SupersetExerciseBlock";
+import { useDemoTour } from "../../contexts/DemoTourContext";
 
 // ===========================================
 // TYPES
@@ -64,15 +78,19 @@ interface Props {
   onCancel: () => void;
   initialLog?: SessionLog | null;
   userId?: string;
-  onSaveComment?: (exerciseName: string, comment: string, sessionId: string) => Promise<void>;
+  onSaveComment?: (
+    exerciseName: string,
+    comment: string,
+    sessionId: string,
+  ) => Promise<void>;
   // Desktop adaptation - default preserves mobile behavior
-  layout?: 'mobile' | 'desktop';
+  layout?: "mobile" | "desktop";
 }
 
 function parseKgLikeToNumber(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const m = trimmed.replace(',', '.').match(/\d+(?:\.\d+)?/);
+  const m = trimmed.replace(",", ".").match(/\d+(?:\.\d+)?/);
   if (!m) return null;
   const n = parseFloat(m[0]);
   return Number.isFinite(n) ? n : null;
@@ -80,23 +98,23 @@ function parseKgLikeToNumber(value: string): number | null {
 
 function getLoadTotalKg(load: SetLoad | undefined): number | null {
   if (!load) return null;
-  if (load.type === 'single' || load.type === 'machine') {
-    return typeof load.weightKg === 'number' ? load.weightKg : null;
+  if (load.type === "single" || load.type === "machine") {
+    return typeof load.weightKg === "number" ? load.weightKg : null;
   }
-  if (load.type === 'double') {
-    return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
+  if (load.type === "double") {
+    return typeof load.weightKg === "number" ? load.weightKg * 2 : null;
   }
-  if (load.type === 'barbell') {
-    const added = typeof load.addedKg === 'number' ? load.addedKg : null;
-    if (typeof load.barKg !== 'number') return null;
+  if (load.type === "barbell") {
+    const added = typeof load.addedKg === "number" ? load.addedKg : null;
+    if (typeof load.barKg !== "number") return null;
     if (added === null) return null;
     return load.barKg + added;
   }
-  if (load.type === 'assisted') {
+  if (load.type === "assisted") {
     // Pour assisted, on retourne la valeur négative (assistance)
-    return typeof load.assistanceKg === 'number' ? -load.assistanceKg : null;
+    return typeof load.assistanceKg === "number" ? -load.assistanceKg : null;
   }
-  if (load.type === 'distance') {
+  if (load.type === "distance") {
     // Distance n'a pas de poids
     return null;
   }
@@ -104,60 +122,65 @@ function getLoadTotalKg(load: SetLoad | undefined): number | null {
 }
 
 function getLoadLabel(load: SetLoad | undefined): string {
-  if (!load) return 'Charge';
-  if (load.type === 'single') return 'Haltère / KB';
-  if (load.type === 'double') return '2x Haltères / KB';
-  if (load.type === 'barbell') return 'Barre + poids';
-  if (load.type === 'machine') return 'Machine';
-  if (load.type === 'assisted') return 'Assisté';
-  if (load.type === 'distance') return 'Distance';
-  return 'Charge';
+  if (!load) return "Charge";
+  if (load.type === "single") return "Haltère / KB";
+  if (load.type === "double") return "2x Haltères / KB";
+  if (load.type === "barbell") return "Barre + poids";
+  if (load.type === "machine") return "Machine";
+  if (load.type === "assisted") return "Assisté";
+  if (load.type === "distance") return "Distance";
+  return "Charge";
 }
 
-function createDefaultLoad(type: SetLoad['type'] = 'single', fromTotalKg: number | null = null): SetLoad {
-  if (type === 'barbell') {
+function createDefaultLoad(
+  type: SetLoad["type"] = "single",
+  fromTotalKg: number | null = null,
+): SetLoad {
+  if (type === "barbell") {
     const barKg = 20;
-    const addedKg = typeof fromTotalKg === 'number' ? Math.max(fromTotalKg - barKg, 0) : null;
-    return { type: 'barbell', unit: 'kg', barKg, addedKg };
+    const addedKg =
+      typeof fromTotalKg === "number" ? Math.max(fromTotalKg - barKg, 0) : null;
+    return { type: "barbell", unit: "kg", barKg, addedKg };
   }
-  if (type === 'double') {
-    const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg / 2 : null;
-    return { type: 'double', unit: 'kg', weightKg };
+  if (type === "double") {
+    const weightKg = typeof fromTotalKg === "number" ? fromTotalKg / 2 : null;
+    return { type: "double", unit: "kg", weightKg };
   }
-  if (type === 'machine') {
-    const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
-    return { type: 'machine', unit: 'kg', weightKg };
+  if (type === "machine") {
+    const weightKg = typeof fromTotalKg === "number" ? fromTotalKg : null;
+    return { type: "machine", unit: "kg", weightKg };
   }
-  if (type === 'assisted') {
+  if (type === "assisted") {
     // Assisted: valeur positive = assistance
-    const assistanceKg = typeof fromTotalKg === 'number' ? Math.abs(fromTotalKg) : null;
-    return { type: 'assisted', unit: 'kg', assistanceKg };
+    const assistanceKg =
+      typeof fromTotalKg === "number" ? Math.abs(fromTotalKg) : null;
+    return { type: "assisted", unit: "kg", assistanceKg };
   }
-  if (type === 'distance') {
-    return { type: 'distance', unit: 'cm', distanceValue: null };
+  if (type === "distance") {
+    return { type: "distance", unit: "cm", distanceValue: null };
   }
-  const weightKg = typeof fromTotalKg === 'number' ? fromTotalKg : null;
-  return { type: 'single', unit: 'kg', weightKg };
+  const weightKg = typeof fromTotalKg === "number" ? fromTotalKg : null;
+  return { type: "single", unit: "kg", weightKg };
 }
 
 function normalizeExerciseLogs(exercises: ExerciseLog[]): ExerciseLog[] {
-  return exercises.map(ex => ({
+  return exercises.map((ex) => ({
     ...ex,
     sets: (Array.isArray(ex.sets) ? ex.sets : []).map((s) => {
       const anySet = s as any;
-      const weightStr = typeof anySet.weight === 'string' ? anySet.weight : '';
+      const weightStr = typeof anySet.weight === "string" ? anySet.weight : "";
       const existingLoad = anySet.load as SetLoad | undefined;
       if (existingLoad) return s;
       const inferredKg = weightStr ? parseKgLikeToNumber(weightStr) : null;
       return {
         ...s,
-        load: createDefaultLoad('single', inferredKg),
+        load: createDefaultLoad("single", inferredKg),
       };
-    })
+    }),
   }));
 }
 
-type SessionPhase = 'recap' | 'focus';
+type SessionPhase = "recap" | "focus";
 
 // ===========================================
 // UTILITY FUNCTIONS
@@ -165,7 +188,7 @@ type SessionPhase = 'recap' | 'focus';
 
 /** Extrait le nom principal d'un exercice (sans la variante ":: xxx") */
 function getExerciseDisplayName(fullName: string): string {
-  const idx = fullName.indexOf(' :: ');
+  const idx = fullName.indexOf(" :: ");
   return idx >= 0 ? fullName.substring(0, idx) : fullName;
 }
 
@@ -174,13 +197,13 @@ function formatTime(seconds: number): string {
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
   return hrs > 0
-    ? `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-    : `${mins}:${secs.toString().padStart(2, '0')}`;
+    ? `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    : `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 function estimateSessionDuration(exercises: WorkoutRow[]): number {
   let totalMinutes = 0;
-  exercises.forEach(exercise => {
+  exercises.forEach((exercise) => {
     const sets = parseInt(exercise.series) || 3;
     const effortTime = sets * 0.75;
     const restSeconds = parseInt(exercise.repos) || 90;
@@ -196,16 +219,21 @@ function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   if (mins === 0) return `~${hours}h`;
-  return `~${hours}h${mins.toString().padStart(2, '0')}`;
+  return `~${hours}h${mins.toString().padStart(2, "0")}`;
 }
 
-function getSuggestedWeight(exerciseName: string, history: SessionLog[]): string | null {
+function getSuggestedWeight(
+  exerciseName: string,
+  history: SessionLog[],
+): string | null {
   for (const session of history) {
     const exercise = session.exercises.find(
-      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+      (ex) => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase(),
     );
     if (exercise && exercise.sets.length > 0) {
-      const completedSets = exercise.sets.filter(s => s.completed && s.weight);
+      const completedSets = exercise.sets.filter(
+        (s) => s.completed && s.weight,
+      );
       if (completedSets.length > 0) {
         return completedSets[completedSets.length - 1].weight;
       }
@@ -214,19 +242,22 @@ function getSuggestedWeight(exerciseName: string, history: SessionLog[]): string
   return null;
 }
 
-function getLastPerformance(exerciseName: string, history: SessionLog[]): { reps: string; weight: string; rpe?: number } | null {
+function getLastPerformance(
+  exerciseName: string,
+  history: SessionLog[],
+): { reps: string; weight: string; rpe?: number } | null {
   for (const session of history) {
     const exercise = session.exercises.find(
-      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+      (ex) => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase(),
     );
     if (exercise && exercise.sets.length > 0) {
-      const completedSets = exercise.sets.filter(s => s.completed);
+      const completedSets = exercise.sets.filter((s) => s.completed);
       if (completedSets.length > 0) {
         const lastSet = completedSets[completedSets.length - 1];
         return {
           reps: lastSet.reps,
           weight: lastSet.weight,
-          rpe: exercise.rpe
+          rpe: exercise.rpe,
         };
       }
     }
@@ -237,18 +268,19 @@ function getLastPerformance(exerciseName: string, history: SessionLog[]): { reps
 function formatSetWeight(set: SetLog): React.ReactNode {
   // Si pas de données JSONB (load), afficher simplement le poids
   if (!set.load) {
-    const weight = set.weight || '-';
-    return weight === '-' ? '-' : `${weight} kg.`;
+    const weight = set.weight || "-";
+    return weight === "-" ? "-" : `${weight} kg.`;
   }
 
   const load = set.load;
-  const smallTextClass = "text-xs text-theme-muted font-normal block mt-0.5 leading-tight";
-  
-  if (load.type === 'single') {
-    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+  const smallTextClass =
+    "text-xs text-theme-muted font-normal block mt-0.5 leading-tight";
+
+  if (load.type === "single") {
+    const weight = typeof load.weightKg === "number" ? load.weightKg : null;
     if (weight === null) {
-      const weightText = set.weight || '-';
-      return weightText === '-' ? '-' : `${weightText} kg.`;
+      const weightText = set.weight || "-";
+      return weightText === "-" ? "-" : `${weightText} kg.`;
     }
     return (
       <div className="flex flex-col items-center justify-center w-full">
@@ -257,12 +289,12 @@ function formatSetWeight(set: SetLog): React.ReactNode {
       </div>
     );
   }
-  
-  if (load.type === 'double') {
-    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+
+  if (load.type === "double") {
+    const weight = typeof load.weightKg === "number" ? load.weightKg : null;
     if (weight === null) {
-      const weightText = set.weight || '-';
-      return weightText === '-' ? '-' : `${weightText} kg.`;
+      const weightText = set.weight || "-";
+      return weightText === "-" ? "-" : `${weightText} kg.`;
     }
     return (
       <div className="flex flex-col items-center justify-center w-full">
@@ -271,10 +303,10 @@ function formatSetWeight(set: SetLog): React.ReactNode {
       </div>
     );
   }
-  
-  if (load.type === 'barbell') {
-    const barKg = typeof load.barKg === 'number' ? load.barKg : 20;
-    const addedKg = typeof load.addedKg === 'number' ? load.addedKg : null;
+
+  if (load.type === "barbell") {
+    const barKg = typeof load.barKg === "number" ? load.barKg : 20;
+    const addedKg = typeof load.addedKg === "number" ? load.addedKg : null;
     const total = addedKg !== null ? barKg + addedKg : barKg;
     if (addedKg === null) {
       return (
@@ -287,16 +319,18 @@ function formatSetWeight(set: SetLog): React.ReactNode {
     return (
       <div className="flex flex-col items-center justify-center w-full">
         <span>{total} kg.</span>
-        <span className={smallTextClass}>(Barre: {barKg} + Poids: {addedKg})</span>
+        <span className={smallTextClass}>
+          (Barre: {barKg} + Poids: {addedKg})
+        </span>
       </div>
     );
   }
-  
-  if (load.type === 'machine') {
-    const weight = typeof load.weightKg === 'number' ? load.weightKg : null;
+
+  if (load.type === "machine") {
+    const weight = typeof load.weightKg === "number" ? load.weightKg : null;
     if (weight === null) {
-      const weightText = set.weight || '-';
-      return weightText === '-' ? '-' : `${weightText} kg.`;
+      const weightText = set.weight || "-";
+      return weightText === "-" ? "-" : `${weightText} kg.`;
     }
     return (
       <div className="flex flex-col items-center justify-center w-full">
@@ -306,10 +340,11 @@ function formatSetWeight(set: SetLog): React.ReactNode {
     );
   }
 
-  if (load.type === 'assisted') {
-    const assistance = typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+  if (load.type === "assisted") {
+    const assistance =
+      typeof load.assistanceKg === "number" ? load.assistanceKg : null;
     if (assistance === null) {
-      return '-';
+      return "-";
     }
     return (
       <div className="flex flex-col items-center justify-center w-full">
@@ -319,59 +354,62 @@ function formatSetWeight(set: SetLog): React.ReactNode {
     );
   }
 
-  if (load.type === 'distance') {
-    const distance = typeof load.distanceValue === 'number' ? load.distanceValue : null;
+  if (load.type === "distance") {
+    const distance =
+      typeof load.distanceValue === "number" ? load.distanceValue : null;
     if (distance === null) {
-      return '-';
+      return "-";
     }
     return (
       <div className="flex flex-col items-center justify-center w-full">
-        <span>{distance} {load.unit}</span>
+        <span>
+          {distance} {load.unit}
+        </span>
         <span className={smallTextClass}>(Distance)</span>
       </div>
     );
   }
 
-  const weightText = set.weight || '-';
-  return weightText === '-' ? '-' : `${weightText} kg.`;
+  const weightText = set.weight || "-";
+  return weightText === "-" ? "-" : `${weightText} kg.`;
 }
 
 function getLastExerciseHistory(
   exerciseName: string,
-  history: SessionLog[]
+  history: SessionLog[],
 ): { date: string; sets: SetLog[]; rpe?: number } | null {
   // Chercher la dernière exécution complétée (toutes les séries complétées)
   for (const session of history) {
     const exercise = session.exercises.find(
-      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+      (ex) => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase(),
     );
     if (exercise && exercise.sets.length > 0) {
       // Vérifier si toutes les séries sont complétées
-      const allCompleted = exercise.sets.every(s => s.completed);
+      const allCompleted = exercise.sets.every((s) => s.completed);
       if (allCompleted) {
         return {
           date: session.date,
           sets: exercise.sets,
-          rpe: exercise.rpe
+          rpe: exercise.rpe,
         };
       }
     }
   }
-  
+
   // Si aucune exécution complétée, prendre la dernière (même incomplète)
   for (const session of history) {
     const exercise = session.exercises.find(
-      ex => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase()
+      (ex) => ex.exerciseName.toLowerCase() === exerciseName.toLowerCase(),
     );
     if (exercise && exercise.sets.length > 0) {
       return {
         date: session.date,
         sets: exercise.sets,
-        rpe: exercise.rpe
+        rpe: exercise.rpe,
       };
     }
   }
-  
+
   return null;
 }
 
@@ -386,7 +424,7 @@ function getLastExerciseHistory(
  *   - Sinon : affiche le record
  */
 interface GhostModeResult {
-  type: 'record' | 'beating' | 'increase' | 'none';
+  type: "record" | "beating" | "increase" | "none";
   message: string;
   tonnageRecord?: number; // Tonnage max en kg
   increaseAmount?: number; // kg à ajouter
@@ -396,21 +434,22 @@ interface GhostModeResult {
 function getGhostModeData(
   ghost: GhostSession | undefined,
   sets: SetLog[],
-  totalSets: number
+  totalSets: number,
 ): GhostModeResult {
   if (!ghost || ghost.totalVolume <= 0) {
-    return { type: 'none', message: '' };
+    return { type: "none", message: "" };
   }
 
   // Compter les séries validées et calculer le tonnage actuel
-  const validatedSets = sets.filter(s => s.completed);
+  const validatedSets = sets.filter((s) => s.completed);
   const validatedCount = validatedSets.length;
 
   // Calculer le tonnage des séries validées
   let validatedTonnage = 0;
   for (const set of validatedSets) {
-    const weight = getLoadTotalKg(set.load) || parseKgLikeToNumber(set.weight || '0') || 0;
-    const reps = parseInt(String(set.reps || '0').replace(/[^0-9]/g, '')) || 0;
+    const weight =
+      getLoadTotalKg(set.load) || parseKgLikeToNumber(set.weight || "0") || 0;
+    const reps = parseInt(String(set.reps || "0").replace(/[^0-9]/g, "")) || 0;
     validatedTonnage += weight * reps;
   }
 
@@ -420,25 +459,34 @@ function getGhostModeData(
   // Cas 1: Moins de séries validées que totalSets - 1
   if (validatedCount < totalSets - 1) {
     return {
-      type: 'record',
-      message: '',
+      type: "record",
+      message: "",
       tonnageRecord,
-      ghostSession: ghost
+      ghostSession: ghost,
     };
   }
 
   // Cas 2: Dernière série (X = totalSets - 1)
   if (validatedCount === totalSets - 1) {
     // Récupérer les valeurs de la dernière série (non validée)
-    const lastSetIndex = sets.findIndex(s => !s.completed);
+    const lastSetIndex = sets.findIndex((s) => !s.completed);
     if (lastSetIndex === -1) {
       // Toutes les séries sont validées, ne devrait pas arriver dans ce cas
-      return { type: 'record', message: '', tonnageRecord, ghostSession: ghost };
+      return {
+        type: "record",
+        message: "",
+        tonnageRecord,
+        ghostSession: ghost,
+      };
     }
 
     const lastSet = sets[lastSetIndex];
-    const lastWeight = getLoadTotalKg(lastSet.load) || parseKgLikeToNumber(lastSet.weight || '0') || 0;
-    const lastReps = parseInt(String(lastSet.reps || '0').replace(/[^0-9]/g, '')) || 0;
+    const lastWeight =
+      getLoadTotalKg(lastSet.load) ||
+      parseKgLikeToNumber(lastSet.weight || "0") ||
+      0;
+    const lastReps =
+      parseInt(String(lastSet.reps || "0").replace(/[^0-9]/g, "")) || 0;
     const lastSetTonnage = lastWeight * lastReps;
 
     // Tonnage théorique = tonnage validé + tonnage de la dernière série
@@ -448,10 +496,10 @@ function getGhostModeData(
     // Vérifier si on bat le record
     if (theoreticalTonnage > ghostTonnage) {
       return {
-        type: 'beating',
-        message: 'Complète cette série et tu battras ton record!',
+        type: "beating",
+        message: "Complète cette série et tu battras ton record!",
         tonnageRecord,
-        ghostSession: ghost
+        ghostSession: ghost,
       };
     }
 
@@ -465,37 +513,37 @@ function getGhostModeData(
       const weightIncrease = neededWeight - lastWeight;
 
       // Vérifier si l'augmentation est <= 10% de la charge actuelle
-      const maxAllowedIncrease = lastWeight * 0.10;
+      const maxAllowedIncrease = lastWeight * 0.1;
 
       if (weightIncrease > 0 && weightIncrease <= maxAllowedIncrease) {
         // Arrondir par tranche de 2.5 kg au supérieur
         const roundedIncrease = Math.ceil(weightIncrease / 2.5) * 2.5;
 
         return {
-          type: 'increase',
+          type: "increase",
           message: `Augmente de ${roundedIncrease} kg pour battre ton record`,
           tonnageRecord,
           increaseAmount: roundedIncrease,
-          ghostSession: ghost
+          ghostSession: ghost,
         };
       }
     }
 
     // Si aucune des conditions n'est remplie, afficher le record
     return {
-      type: 'record',
-      message: '',
+      type: "record",
+      message: "",
       tonnageRecord,
-      ghostSession: ghost
+      ghostSession: ghost,
     };
   }
 
   // Cas par défaut (toutes les séries validées ou autre)
   return {
-    type: 'record',
-    message: '',
+    type: "record",
+    message: "",
     tonnageRecord,
-    ghostSession: ghost
+    ghostSession: ghost,
   };
 }
 
@@ -511,48 +559,84 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   initialLog,
   userId,
   onSaveComment,
-  layout = 'mobile' // Desktop adaptation - default preserves mobile behavior
+  layout = "mobile", // Desktop adaptation - default preserves mobile behavior
 }) => {
   // Layout helpers
-  const isDesktop = layout === 'desktop';
+  const isDesktop = layout === "desktop";
   // ===========================================
   // STATE
   // ===========================================
-  const [phase, setPhase] = useState<SessionPhase>('focus');
+  const [phase, setPhase] = useState<SessionPhase>("focus");
   const [logs, setLogs] = useState<ExerciseLog[]>([]);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [saving, setSaving] = useState(false);
-  
+
   // Mode focus state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
-  const [currentSetIndexes, setCurrentSetIndexes] = useState<Record<number, number>>({});
-  const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
-  
+  const [currentSetIndexes, setCurrentSetIndexes] = useState<
+    Record<number, number>
+  >({});
+  const [expandedExercises, setExpandedExercises] = useState<
+    Record<number, boolean>
+  >({});
+
   // Modals
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showSessionRpeModal, setShowSessionRpeModal] = useState(false);
-  const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(null);
-  
+  const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(
+    null,
+  );
+
   // Comments
-  const [exerciseComments, setExerciseComments] = useState<Record<string, string>>({});
+  const [exerciseComments, setExerciseComments] = useState<
+    Record<string, string>
+  >({});
   const [commentSending, setCommentSending] = useState<string | null>(null);
   const [sentComments, setSentComments] = useState<Set<string>>(new Set());
-  const [messageSentConfirm, setMessageSentConfirm] = useState<Set<string>>(new Set());
+  const [messageSentConfirm, setMessageSentConfirm] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Ghost Mode
-  const [ghostSessions, setGhostSessions] = useState<Record<string, GhostSession>>({});
-  const [recapOpenConsignes, setRecapOpenConsignes] = useState<Record<number, boolean>>({});
-  const [recapOpenHistory, setRecapOpenHistory] = useState<Record<number, boolean>>({});
-  const [focusOpenConsignes, setFocusOpenConsignes] = useState<Record<number, boolean>>({});
-  const [focusOpenHistory, setFocusOpenHistory] = useState<Record<number, boolean>>({});
+  const [ghostSessions, setGhostSessions] = useState<
+    Record<string, GhostSession>
+  >({});
+  const [recapOpenConsignes, setRecapOpenConsignes] = useState<
+    Record<number, boolean>
+  >({});
+  const [recapOpenHistory, setRecapOpenHistory] = useState<
+    Record<number, boolean>
+  >({});
+  const [focusOpenConsignes, setFocusOpenConsignes] = useState<
+    Record<number, boolean>
+  >({});
+  const [focusOpenHistory, setFocusOpenHistory] = useState<
+    Record<number, boolean>
+  >({});
   const [showForceFinishModal, setShowForceFinishModal] = useState(false);
-  const [showHistoryModal, setShowHistoryModal] = useState<{ index: number; anchorEl: HTMLElement | null } | null>(null);
-  const [showConsignesModal, setShowConsignesModal] = useState<{ index: number; anchorEl: HTMLElement | null } | null>(null);
-  const [showVideoModal, setShowVideoModal] = useState<{ url: string; exerciseName: string; anchorEl: HTMLElement | null } | null>(null);
-  const [showGhostRecordModal, setShowGhostRecordModal] = useState<{ exerciseName: string; ghost: GhostSession } | null>(null);
-  const [showSupersetInfoModal, setShowSupersetInfoModal] = useState<{ executionMode: ExecutionMode; anchorEl: HTMLElement | null } | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState<{
+    index: number;
+    anchorEl: HTMLElement | null;
+  } | null>(null);
+  const [showConsignesModal, setShowConsignesModal] = useState<{
+    index: number;
+    anchorEl: HTMLElement | null;
+  } | null>(null);
+  const [showVideoModal, setShowVideoModal] = useState<{
+    url: string;
+    exerciseName: string;
+    anchorEl: HTMLElement | null;
+  } | null>(null);
+  const [showGhostRecordModal, setShowGhostRecordModal] = useState<{
+    exerciseName: string;
+    ghost: GhostSession;
+  } | null>(null);
+  const [showSupersetInfoModal, setShowSupersetInfoModal] = useState<{
+    executionMode: ExecutionMode;
+    anchorEl: HTMLElement | null;
+  } | null>(null);
 
   // Refs for Popover anchors (used on desktop)
   const historyAnchorRef = useRef<HTMLElement | null>(null);
@@ -561,25 +645,33 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
   const isEditMode = !!initialLog;
   const [editingDateEnabled, setEditingDateEnabled] = useState(false);
-  const [editDateInput, setEditDateInput] = useState('');
-  const [validatedEditDate, setValidatedEditDate] = useState<string | null>(null);
+  const [editDateInput, setEditDateInput] = useState("");
+  const [validatedEditDate, setValidatedEditDate] = useState<string | null>(
+    null,
+  );
 
   // Animation changement de série
   const [setAnimating, setSetAnimating] = useState<Record<number, boolean>>({});
   const [prevSetIndex, setPrevSetIndex] = useState<Record<number, number>>({});
   // Animation surlignage RPE après "Finir l'exercice"
-  const [highlightedRpeIndex, setHighlightedRpeIndex] = useState<number | null>(null);
+  const [highlightedRpeIndex, setHighlightedRpeIndex] = useState<number | null>(
+    null,
+  );
 
   // ========== SUPERSET GROUP STATES ==========
   // Index de série partagé par groupe superset (tous les exercices du groupe avancent ensemble)
-  const [supersetSetIndex, setSupersetSetIndex] = useState<Record<string, number>>({});
+  const [supersetSetIndex, setSupersetSetIndex] = useState<
+    Record<string, number>
+  >({});
   // État expand/collapse par groupe superset (un seul état pour tout le groupe)
-  const [expandedSupersets, setExpandedSupersets] = useState<Record<string, boolean>>({});
+  const [expandedSupersets, setExpandedSupersets] = useState<
+    Record<string, boolean>
+  >({});
   const toInputDateValue = (iso: string): string => {
     const d = new Date(iso);
     const y = d.getFullYear();
-    const m = `${d.getMonth() + 1}`.padStart(2, '0');
-    const day = `${d.getDate()}`.padStart(2, '0');
+    const m = `${d.getMonth() + 1}`.padStart(2, "0");
+    const day = `${d.getDate()}`.padStart(2, "0");
     return `${y}-${m}-${day}`;
   };
   useEffect(() => {
@@ -589,7 +681,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     }
   }, [initialLog]);
   const handleStartEditDate = useCallback(() => {
-    setEditDateInput(validatedEditDate ?? (initialLog ? toInputDateValue(initialLog.date) : ''));
+    setEditDateInput(
+      validatedEditDate ??
+        (initialLog ? toInputDateValue(initialLog.date) : ""),
+    );
     setEditingDateEnabled(true);
   }, [validatedEditDate, initialLog]);
   const handleValidateEditDate = useCallback(() => {
@@ -608,24 +703,26 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   // INITIALIZATION
   // ===========================================
-  
+
   useEffect(() => {
     // Vérifier s'il y a une session en cours dans localStorage
-    const savedSession = localStorage.getItem('F.Y.T_active_session');
+    const savedSession = localStorage.getItem("F.Y.T_active_session");
     if (savedSession && !initialLog) {
       try {
         const parsed = JSON.parse(savedSession);
         if (parsed.logs && parsed.sessionData) {
-          const savedSessionIds = parsed.sessionData.map((s: any) => 
-            `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`
-          ).sort().join(',');
-          const currentSessionIds = sessionData.map(s => 
-            `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`
-          ).sort().join(',');
-          
+          const savedSessionIds = parsed.sessionData
+            .map((s: any) => `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`)
+            .sort()
+            .join(",");
+          const currentSessionIds = sessionData
+            .map((s) => `${s.seance}-${s.annee}-${s.moisNum}-${s.semaine}`)
+            .sort()
+            .join(",");
+
           if (savedSessionIds === currentSessionIds) {
             setLogs(normalizeExerciseLogs(parsed.logs));
-            setPhase('focus'); // Toujours démarrer directement en mode saisie
+            setPhase("focus"); // Toujours démarrer directement en mode saisie
             setStartTime(parsed.startTime || null);
             setCurrentExerciseIndex(parsed.currentExerciseIndex || 0);
             setCurrentSetIndex(parsed.currentSetIndex || 0);
@@ -635,43 +732,48 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           }
         }
       } catch (e) {
-        console.error('Erreur parsing session sauvegardée:', e);
+        console.error("Erreur parsing session sauvegardée:", e);
       }
     }
 
     // Initialiser les logs depuis sessionData
     if (initialLog) {
       setLogs(normalizeExerciseLogs(initialLog.exercises));
-      setPhase('focus');
+      setPhase("focus");
       setStartTime(Date.now());
     } else {
       // Créer les logs depuis sessionData, en préservant l'ordre original
       // pour les supersets (ne pas grouper par nom d'exercice)
-      const initialLogs: ExerciseLog[] = sessionData.map((row) => {
-        const numSets = parseInt(row.series) || 3;
-        const suggestedWeight = getSuggestedWeight(row.exercice, history);
-        const suggestedKg = suggestedWeight ? parseKgLikeToNumber(suggestedWeight) : null;
-        const defaultReps = row.repsDuree
-          ? row.repsDuree.replace(/[^0-9]/g, '')
-          : '';
+      // Filtrer les blocs texte : ils ne génèrent pas de logs d'exercice
+      const initialLogs: ExerciseLog[] = sessionData
+        .filter((row) => !row.isTextBlock)
+        .map((row) => {
+          const numSets = parseInt(row.series) || 3;
+          const suggestedWeight = getSuggestedWeight(row.exercice, history);
+          const suggestedKg = suggestedWeight
+            ? parseKgLikeToNumber(suggestedWeight)
+            : null;
+          const defaultReps = row.repsDuree
+            ? row.repsDuree.replace(/[^0-9]/g, "")
+            : "";
 
-        return {
-          exerciseId: row.exerciseId,  // Transférer l'ID de l'exercice
-          exerciseName: row.exercice,
-          originalSession: row.seance,
-          sets: Array.from({ length: numSets }, (_, i) => ({
-            setNumber: i + 1,
-            reps: defaultReps,
-            weight: suggestedWeight || '',
-            load: createDefaultLoad('single', suggestedKg),
-            completed: false,
-          })),
-          notes: row.notes || '',
-          // Champs mode d'exécution (superset, triset, etc.)
-          executionMode: row.executionMode ?? 'straight',
-          executionGroupId: row.executionGroupId,
-        };
-      });
+          return {
+            exerciseId: row.exerciseId, // Transférer l'ID de l'exercice
+            exerciseName: row.exercice,
+            originalSession: row.seance,
+            sets: Array.from({ length: numSets }, (_, i) => ({
+              setNumber: i + 1,
+              reps: defaultReps,
+              weight: suggestedWeight || "",
+              load: createDefaultLoad("single", suggestedKg),
+              completed: false,
+            })),
+            notes: row.notes || "",
+            // Champs mode d'exécution (superset, triset, etc.)
+            executionMode: row.executionMode ?? "straight",
+            executionGroupId: row.executionGroupId,
+          };
+        });
 
       setLogs(initialLogs);
     }
@@ -694,7 +796,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             ghosts[exercise.exerciseName] = ghost;
           }
         } catch (error) {
-          console.error(`Error loading ghost for ${exercise.exerciseName}:`, error);
+          console.error(
+            `Error loading ghost for ${exercise.exerciseName}:`,
+            error,
+          );
         }
       }
 
@@ -708,38 +813,41 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (!scrollToRpeOnNextCompletedRef.current) return;
     const ex = logs[currentExerciseIndex];
     if (!ex) return;
-    const allCompleted = ex.sets.every(s => s.completed);
+    const allCompleted = ex.sets.every((s) => s.completed);
     if (!allCompleted) return;
     scrollToRpeOnNextCompletedRef.current = false;
-    rpeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    rpeSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }, [logs, currentExerciseIndex]);
 
   // ===========================================
   // TIMER
   // ===========================================
-  
+
   useEffect(() => {
-    if (phase !== 'focus' || !startTime) return;
-    
+    if (phase !== "focus" || !startTime) return;
+
     const interval = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [phase, startTime]);
 
   // ===========================================
   // PERSISTENCE
   // ===========================================
-  
+
   const saveToLocalStorage = useCallback(() => {
     const value = JSON.stringify({
       logs,
-      sessionData: sessionData.map(s => ({
+      sessionData: sessionData.map((s) => ({
         seance: s.seance,
         annee: s.annee,
         moisNum: s.moisNum,
-        semaine: s.semaine
+        semaine: s.semaine,
       })),
       phase,
       startTime,
@@ -748,46 +856,73 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       currentSetIndexes,
       expandedExercises,
       isEditMode,
-      editingSessionId: isEditMode && initialLog ? initialLog.id : null
+      editingSessionId: isEditMode && initialLog ? initialLog.id : null,
     });
-    setLocalStorageWithEvent('F.Y.T_active_session', value);
-  }, [logs, sessionData, phase, startTime, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises, isEditMode, initialLog]);
+    setLocalStorageWithEvent("F.Y.T_active_session", value);
+  }, [
+    logs,
+    sessionData,
+    phase,
+    startTime,
+    currentExerciseIndex,
+    currentSetIndex,
+    currentSetIndexes,
+    expandedExercises,
+    isEditMode,
+    initialLog,
+  ]);
 
   useEffect(() => {
     if (logs.length > 0) {
       saveToLocalStorage();
     }
-  }, [logs, phase, currentExerciseIndex, currentSetIndex, currentSetIndexes, expandedExercises, saveToLocalStorage]);
+  }, [
+    logs,
+    phase,
+    currentExerciseIndex,
+    currentSetIndex,
+    currentSetIndexes,
+    expandedExercises,
+    saveToLocalStorage,
+  ]);
 
   useEffect(() => {
     const idx = pendingScrollToRpeExerciseIndexRef.current;
     if (idx === null) return;
     const el = focusRpeRefs.current[idx];
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
       pendingScrollToRpeExerciseIndexRef.current = null;
     }
   }, [logs]);
 
   const clearLocalStorage = useCallback(() => {
-    removeLocalStorageWithEvent('F.Y.T_active_session');
+    removeLocalStorageWithEvent("F.Y.T_active_session");
   }, []);
 
-  const getSetIndexForExercise = useCallback((exerciseIndex: number): number => {
-    return typeof currentSetIndexes[exerciseIndex] === 'number' ? currentSetIndexes[exerciseIndex] : 0;
-  }, [currentSetIndexes]);
+  const getSetIndexForExercise = useCallback(
+    (exerciseIndex: number): number => {
+      return typeof currentSetIndexes[exerciseIndex] === "number"
+        ? currentSetIndexes[exerciseIndex]
+        : 0;
+    },
+    [currentSetIndexes],
+  );
 
-  const setSetIndexForExercise = useCallback((exerciseIndex: number, nextIndex: number) => {
-    setCurrentSetIndexes(prev => ({
-      ...prev,
-      [exerciseIndex]: nextIndex
-    }));
-  }, []);
+  const setSetIndexForExercise = useCallback(
+    (exerciseIndex: number, nextIndex: number) => {
+      setCurrentSetIndexes((prev) => ({
+        ...prev,
+        [exerciseIndex]: nextIndex,
+      }));
+    },
+    [],
+  );
 
   const toggleExerciseExpanded = useCallback((exerciseIndex: number) => {
-    setExpandedExercises(prev => ({
+    setExpandedExercises((prev) => ({
       ...prev,
-      [exerciseIndex]: !prev[exerciseIndex]
+      [exerciseIndex]: !prev[exerciseIndex],
     }));
   }, []);
 
@@ -796,176 +931,213 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
 
   // Récupérer l'index de série actuel pour un groupe superset
-  const getSupersetSetIndex = useCallback((groupId: string): number => {
-    return supersetSetIndex[groupId] ?? 0;
-  }, [supersetSetIndex]);
+  const getSupersetSetIndex = useCallback(
+    (groupId: string): number => {
+      return supersetSetIndex[groupId] ?? 0;
+    },
+    [supersetSetIndex],
+  );
 
   // Définir l'index de série pour un groupe superset (synchronise tous les exercices)
-  const setSupersetSetIndexForGroup = useCallback((groupId: string, idx: number) => {
-    setSupersetSetIndex(prev => ({ ...prev, [groupId]: idx }));
-  }, []);
+  const setSupersetSetIndexForGroup = useCallback(
+    (groupId: string, idx: number) => {
+      setSupersetSetIndex((prev) => ({ ...prev, [groupId]: idx }));
+    },
+    [],
+  );
 
   // Toggle expand/collapse pour un groupe superset entier
   const toggleSupersetExpanded = useCallback((groupId: string) => {
-    setExpandedSupersets(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+    setExpandedSupersets((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   }, []);
 
   // Vérifier si un groupe superset est expanded
-  const isSupersetExpanded = useCallback((groupId: string): boolean => {
-    return !!expandedSupersets[groupId];
-  }, [expandedSupersets]);
+  const isSupersetExpanded = useCallback(
+    (groupId: string): boolean => {
+      return !!expandedSupersets[groupId];
+    },
+    [expandedSupersets],
+  );
 
   // Valider la série actuelle pour tous les exercices d'un groupe superset
-  const validateSupersetSet = useCallback((groupId: string, exerciseIndices: number[]) => {
-    const setIdx = getSupersetSetIndex(groupId);
-    const newLogs = [...logs];
-    let allValid = true;
+  const validateSupersetSet = useCallback(
+    (groupId: string, exerciseIndices: number[]) => {
+      const setIdx = getSupersetSetIndex(groupId);
+      const newLogs = [...logs];
+      let allValid = true;
 
-    // Valider la série pour chaque exercice du groupe
-    exerciseIndices.forEach(exIdx => {
-      const ex = newLogs[exIdx];
-      const set = ex?.sets?.[setIdx];
-      if (!ex || !set) {
-        allValid = false;
-        return;
-      }
-      set.completed = true;
+      // Valider la série pour chaque exercice du groupe
+      exerciseIndices.forEach((exIdx) => {
+        const ex = newLogs[exIdx];
+        const set = ex?.sets?.[setIdx];
+        if (!ex || !set) {
+          allValid = false;
+          return;
+        }
+        set.completed = true;
 
-      // Pré-remplir la prochaine série avec les valeurs actuelles
-      const hasNextSet = setIdx < ex.sets.length - 1;
-      if (hasNextSet) {
-        const nextSet = ex.sets[setIdx + 1];
-        nextSet.reps = set.reps;
-        (nextSet as any).weight = (set as any).weight;
-        if ((set as any).load) {
-          (nextSet as any).load = { ...(set as any).load };
+        // Pré-remplir la prochaine série avec les valeurs actuelles
+        const hasNextSet = setIdx < ex.sets.length - 1;
+        if (hasNextSet) {
+          const nextSet = ex.sets[setIdx + 1];
+          nextSet.reps = set.reps;
+          (nextSet as any).weight = (set as any).weight;
+          if ((set as any).load) {
+            (nextSet as any).load = { ...(set as any).load };
+          }
+        }
+      });
+
+      if (!allValid) return;
+
+      setLogs(newLogs);
+
+      // Vérifier si c'était la dernière série (basé sur le premier exercice du groupe)
+      const firstExIdx = exerciseIndices[0];
+      const firstEx = newLogs[firstExIdx];
+      const isLastSet = setIdx === firstEx.sets.length - 1;
+
+      if (!isLastSet) {
+        // Passer à la série suivante pour le groupe
+        setSupersetSetIndexForGroup(groupId, setIdx + 1);
+      } else {
+        // Dernière série: vérifier si RPE déjà rempli -> auto-collapse
+        const hasRpe = typeof firstEx.rpe === "number";
+        const allSetsComplete = exerciseIndices.every((exIdx) =>
+          newLogs[exIdx]?.sets.every((s) => s.completed),
+        );
+        if (hasRpe && allSetsComplete) {
+          setExpandedSupersets((prev) => ({ ...prev, [groupId]: false }));
         }
       }
-    });
-
-    if (!allValid) return;
-
-    setLogs(newLogs);
-
-    // Vérifier si c'était la dernière série (basé sur le premier exercice du groupe)
-    const firstExIdx = exerciseIndices[0];
-    const firstEx = newLogs[firstExIdx];
-    const isLastSet = setIdx === firstEx.sets.length - 1;
-
-    if (!isLastSet) {
-      // Passer à la série suivante pour le groupe
-      setSupersetSetIndexForGroup(groupId, setIdx + 1);
-    } else {
-      // Dernière série: vérifier si RPE déjà rempli -> auto-collapse
-      const hasRpe = typeof firstEx.rpe === 'number';
-      const allSetsComplete = exerciseIndices.every(exIdx =>
-        newLogs[exIdx]?.sets.every(s => s.completed)
-      );
-      if (hasRpe && allSetsComplete) {
-        setExpandedSupersets(prev => ({ ...prev, [groupId]: false }));
-      }
-    }
-  }, [logs, getSupersetSetIndex, setSupersetSetIndexForGroup]);
+    },
+    [logs, getSupersetSetIndex, setSupersetSetIndexForGroup],
+  );
 
   // Toggle validation d'une série pour un groupe superset
-  const toggleSupersetSetValidation = useCallback((groupId: string, exerciseIndices: number[]) => {
-    const setIdx = getSupersetSetIndex(groupId);
-    const newLogs = [...logs];
+  const toggleSupersetSetValidation = useCallback(
+    (groupId: string, exerciseIndices: number[]) => {
+      const setIdx = getSupersetSetIndex(groupId);
+      const newLogs = [...logs];
 
-    // Toggle pour tous les exercices du groupe
-    exerciseIndices.forEach(exIdx => {
-      const ex = newLogs[exIdx];
-      const set = ex?.sets?.[setIdx];
-      if (ex && set) {
-        set.completed = !set.completed;
-      }
-    });
+      // Toggle pour tous les exercices du groupe
+      exerciseIndices.forEach((exIdx) => {
+        const ex = newLogs[exIdx];
+        const set = ex?.sets?.[setIdx];
+        if (ex && set) {
+          set.completed = !set.completed;
+        }
+      });
 
-    setLogs(newLogs);
-  }, [logs, getSupersetSetIndex]);
+      setLogs(newLogs);
+    },
+    [logs, getSupersetSetIndex],
+  );
 
   // Mettre à jour le RPE pour tous les exercices d'un groupe superset
-  const updateSupersetRpe = useCallback((groupId: string, exerciseIndices: number[], rpe: number | undefined) => {
-    const newLogs = [...logs];
+  const updateSupersetRpe = useCallback(
+    (groupId: string, exerciseIndices: number[], rpe: number | undefined) => {
+      const newLogs = [...logs];
 
-    // Appliquer le RPE à tous les exercices du groupe
-    exerciseIndices.forEach(exIdx => {
-      if (newLogs[exIdx]) {
-        newLogs[exIdx].rpe = rpe;
+      // Appliquer le RPE à tous les exercices du groupe
+      exerciseIndices.forEach((exIdx) => {
+        if (newLogs[exIdx]) {
+          newLogs[exIdx].rpe = rpe;
+        }
+      });
+
+      setLogs(newLogs);
+
+      // Si RPE saisi et toutes séries complétées, collapse le groupe
+      if (typeof rpe === "number") {
+        const allSetsComplete = exerciseIndices.every((exIdx) =>
+          newLogs[exIdx]?.sets.every((s) => s.completed),
+        );
+        if (allSetsComplete) {
+          setExpandedSupersets((prev) => ({ ...prev, [groupId]: false }));
+        }
       }
-    });
-
-    setLogs(newLogs);
-
-    // Si RPE saisi et toutes séries complétées, collapse le groupe
-    if (typeof rpe === 'number') {
-      const allSetsComplete = exerciseIndices.every(exIdx =>
-        newLogs[exIdx]?.sets.every(s => s.completed)
-      );
-      if (allSetsComplete) {
-        setExpandedSupersets(prev => ({ ...prev, [groupId]: false }));
-      }
-    }
-  }, [logs]);
+    },
+    [logs],
+  );
 
   // Ajouter une série à tous les exercices d'un groupe superset
-  const addSetForSuperset = useCallback((exerciseIndices: number[]) => {
-    const newLogs = [...logs];
+  const addSetForSuperset = useCallback(
+    (exerciseIndices: number[]) => {
+      const newLogs = [...logs];
 
-    exerciseIndices.forEach(exIdx => {
-      const sets = newLogs[exIdx]?.sets;
-      if (!sets) return;
-      const prev = sets[sets.length - 1];
-      const prevTotalKg = prev?.load ? getLoadTotalKg(prev.load) : (prev?.weight ? parseKgLikeToNumber(prev.weight) : null);
-      const nextLoad = prev?.load ? ({ ...prev.load } as SetLoad) : createDefaultLoad('single', prevTotalKg);
-      sets.push({
-        setNumber: sets.length + 1,
-        reps: '',
-        weight: prev?.weight || '',
-        load: nextLoad,
-        completed: false
+      exerciseIndices.forEach((exIdx) => {
+        const sets = newLogs[exIdx]?.sets;
+        if (!sets) return;
+        const prev = sets[sets.length - 1];
+        const prevTotalKg = prev?.load
+          ? getLoadTotalKg(prev.load)
+          : prev?.weight
+            ? parseKgLikeToNumber(prev.weight)
+            : null;
+        const nextLoad = prev?.load
+          ? ({ ...prev.load } as SetLoad)
+          : createDefaultLoad("single", prevTotalKg);
+        sets.push({
+          setNumber: sets.length + 1,
+          reps: "",
+          weight: prev?.weight || "",
+          load: nextLoad,
+          completed: false,
+        });
       });
-    });
 
-    setLogs(newLogs);
-  }, [logs]);
+      setLogs(newLogs);
+    },
+    [logs],
+  );
 
   // Supprimer une série de tous les exercices d'un groupe superset
-  const removeSetForSuperset = useCallback((groupId: string, exerciseIndices: number[]) => {
-    const setIdx = getSupersetSetIndex(groupId);
-    const firstEx = logs[exerciseIndices[0]];
-    if (!firstEx || firstEx.sets.length <= 1) return;
+  const removeSetForSuperset = useCallback(
+    (groupId: string, exerciseIndices: number[]) => {
+      const setIdx = getSupersetSetIndex(groupId);
+      const firstEx = logs[exerciseIndices[0]];
+      if (!firstEx || firstEx.sets.length <= 1) return;
 
-    const newLogs = [...logs];
+      const newLogs = [...logs];
 
-    exerciseIndices.forEach(exIdx => {
-      const ex = newLogs[exIdx];
-      if (ex && ex.sets.length > 1) {
-        ex.sets.splice(setIdx, 1);
-        ex.sets.forEach((s, i) => s.setNumber = i + 1);
+      exerciseIndices.forEach((exIdx) => {
+        const ex = newLogs[exIdx];
+        if (ex && ex.sets.length > 1) {
+          ex.sets.splice(setIdx, 1);
+          ex.sets.forEach((s, i) => (s.setNumber = i + 1));
+        }
+      });
+
+      setLogs(newLogs);
+
+      // Ajuster l'index de série si nécessaire
+      const newMaxIndex = newLogs[exerciseIndices[0]]?.sets.length - 1 || 0;
+      if (setIdx > newMaxIndex) {
+        setSupersetSetIndexForGroup(groupId, newMaxIndex);
       }
-    });
-
-    setLogs(newLogs);
-
-    // Ajuster l'index de série si nécessaire
-    const newMaxIndex = newLogs[exerciseIndices[0]]?.sets.length - 1 || 0;
-    if (setIdx > newMaxIndex) {
-      setSupersetSetIndexForGroup(groupId, newMaxIndex);
-    }
-  }, [logs, getSupersetSetIndex, setSupersetSetIndexForGroup]);
+    },
+    [logs, getSupersetSetIndex, setSupersetSetIndexForGroup],
+  );
 
   // ===========================================
   // DEMO TOUR: Expand first exercise when requested
   // ===========================================
-  const { shouldFlipCard, setShouldFlipCard, currentStep, currentStepIndex, isActive: isTourActive, nextStep: demoNextStep } = useDemoTour();
+  const {
+    shouldFlipCard,
+    setShouldFlipCard,
+    currentStep,
+    currentStepIndex,
+    isActive: isTourActive,
+    nextStep: demoNextStep,
+  } = useDemoTour();
 
   useEffect(() => {
     if (shouldFlipCard && logs.length > 0) {
       // Expand la première tuile exercice pour le demo tour
-      setExpandedExercises(prev => ({
+      setExpandedExercises((prev) => ({
         ...prev,
-        [0]: true
+        [0]: true,
       }));
       // Reset le flag
       setShouldFlipCard(false);
@@ -976,43 +1148,43 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   useEffect(() => {
     const handleDemoCollapse = () => {
       // Replier le premier exercice
-      setExpandedExercises(prev => ({
+      setExpandedExercises((prev) => ({
         ...prev,
-        [0]: false
+        [0]: false,
       }));
     };
 
-    window.addEventListener('demo-collapse-exercise', handleDemoCollapse);
+    window.addEventListener("demo-collapse-exercise", handleDemoCollapse);
     return () => {
-      window.removeEventListener('demo-collapse-exercise', handleDemoCollapse);
+      window.removeEventListener("demo-collapse-exercise", handleDemoCollapse);
     };
   }, []);
 
   const scrollToExerciseCard = useCallback((exerciseIndex: number) => {
     const el = focusCardRefs.current[exerciseIndex];
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
   // ===========================================
   // COMPUTED VALUES
   // ===========================================
-  
+
   const progress = useMemo(() => {
     const totalSets = logs.reduce((acc, ex) => acc + ex.sets.length, 0);
     const completedSets = logs.reduce(
-      (acc, ex) => acc + ex.sets.filter(s => s.completed).length,
-      0
+      (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
+      0,
     );
     return totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
   }, [logs]);
 
   const currentExercise = logs[currentExerciseIndex];
   const currentSet = currentExercise?.sets[currentSetIndex];
-  
+
   const originalExerciseData = useMemo(() => {
     if (!currentExercise) return null;
-    return sessionData.find(d => d.exercice === currentExercise.exerciseName);
+    return sessionData.find((d) => d.exercice === currentExercise.exerciseName);
   }, [currentExercise, sessionData]);
 
   const lastPerformance = useMemo(() => {
@@ -1021,15 +1193,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [currentExercise, history]);
 
   const sessionTitle = useMemo(() => {
-    const seances = [...new Set(sessionData.map(d => d.seance))];
-    return seances.join(' + ');
+    const seances = [...new Set(sessionData.map((d) => d.seance))];
+    return seances.join(" + ");
   }, [sessionData]);
 
   const allExercisesCompleted = useMemo(() => {
     if (logs.length === 0) return false;
-    return logs.every(ex => {
-      const allSetsDone = ex.sets.length > 0 && ex.sets.every(s => s.completed);
-      const hasRpe = typeof ex.rpe === 'number';
+    return logs.every((ex) => {
+      const allSetsDone =
+        ex.sets.length > 0 && ex.sets.every((s) => s.completed);
+      const hasRpe = typeof ex.rpe === "number";
       return allSetsDone && hasRpe;
     });
   }, [logs]);
@@ -1040,85 +1213,138 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [logs]);
 
   // Map pour retrouver l'index original d'un exercice depuis le groupement
-  const getOriginalExerciseIndex = useCallback((exerciseName: string, executionGroupId?: string): number => {
-    return logs.findIndex(ex =>
-      ex.exerciseName === exerciseName &&
-      ex.executionGroupId === executionGroupId
-    );
-  }, [logs]);
+  const getOriginalExerciseIndex = useCallback(
+    (exerciseName: string, executionGroupId?: string): number => {
+      return logs.findIndex(
+        (ex) =>
+          ex.exerciseName === exerciseName &&
+          ex.executionGroupId === executionGroupId,
+      );
+    },
+    [logs],
+  );
 
   // ===========================================
   // HANDLERS
   // ===========================================
-  
+
   const handleStartSession = useCallback(() => {
-    setPhase('focus');
+    setPhase("focus");
     setStartTime(Date.now());
     setCurrentExerciseIndex(0);
     setCurrentSetIndex(0);
     setTimeout(() => {
       if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
       }
     }, 100);
   }, []);
 
-  const updateSet = useCallback((field: keyof SetLog, value: any) => {
-    const newLogs = [...logs];
-    (newLogs[currentExerciseIndex].sets[currentSetIndex] as any)[field] = value;
-    setLogs(newLogs);
-  }, [logs, currentExerciseIndex, currentSetIndex]);
+  const updateSet = useCallback(
+    (field: keyof SetLog, value: any) => {
+      const newLogs = [...logs];
+      (newLogs[currentExerciseIndex].sets[currentSetIndex] as any)[field] =
+        value;
+      setLogs(newLogs);
+    },
+    [logs, currentExerciseIndex, currentSetIndex],
+  );
 
-  const updateCurrentSetLoad = useCallback((load: SetLoad) => {
-    const totalKg = getLoadTotalKg(load);
-    const newLogs = [...logs];
-    const set = newLogs[currentExerciseIndex].sets[currentSetIndex];
-    (set as any).load = load;
-    (set as any).weight = typeof totalKg === 'number' ? String(Math.round(totalKg * 100) / 100) : '';
-    setLogs(newLogs);
-  }, [logs, currentExerciseIndex, currentSetIndex]);
+  const updateCurrentSetLoad = useCallback(
+    (load: SetLoad) => {
+      const totalKg = getLoadTotalKg(load);
+      const newLogs = [...logs];
+      const set = newLogs[currentExerciseIndex].sets[currentSetIndex];
+      (set as any).load = load;
+      (set as any).weight =
+        typeof totalKg === "number"
+          ? String(Math.round(totalKg * 100) / 100)
+          : "";
+      setLogs(newLogs);
+    },
+    [logs, currentExerciseIndex, currentSetIndex],
+  );
 
-  const updateSetForExercise = useCallback((exerciseIndex: number, setIndex: number, field: keyof SetLog, value: any) => {
-    const newLogs = [...logs];
-    const set = newLogs[exerciseIndex]?.sets?.[setIndex];
-    if (!set) return;
-    (set as any)[field] = value;
-    // Invalider la série quand les inputs changent
-    (set as any).completed = false;
-    setLogs(newLogs);
-  }, [logs]);
+  const updateSetForExercise = useCallback(
+    (
+      exerciseIndex: number,
+      setIndex: number,
+      field: keyof SetLog,
+      value: any,
+    ) => {
+      const newLogs = [...logs];
+      const set = newLogs[exerciseIndex]?.sets?.[setIndex];
+      if (!set) return;
+      (set as any)[field] = value;
+      // Invalider la série quand les inputs changent
+      (set as any).completed = false;
+      setLogs(newLogs);
+    },
+    [logs],
+  );
 
-  const updateSetLoadForExercise = useCallback((exerciseIndex: number, setIndex: number, load: SetLoad) => {
-    const totalKg = getLoadTotalKg(load);
-    const newLogs = [...logs];
-    const set = newLogs[exerciseIndex]?.sets?.[setIndex];
-    if (!set) return;
-    (set as any).load = load;
-    (set as any).weight = typeof totalKg === 'number' ? String(Math.round(totalKg * 100) / 100) : '';
-    // Invalider la série quand les inputs changent
-    (set as any).completed = false;
-    setLogs(newLogs);
-  }, [logs]);
+  const updateSetLoadForExercise = useCallback(
+    (exerciseIndex: number, setIndex: number, load: SetLoad) => {
+      const totalKg = getLoadTotalKg(load);
+      const newLogs = [...logs];
+      const set = newLogs[exerciseIndex]?.sets?.[setIndex];
+      if (!set) return;
+      (set as any).load = load;
+      (set as any).weight =
+        typeof totalKg === "number"
+          ? String(Math.round(totalKg * 100) / 100)
+          : "";
+      // Invalider la série quand les inputs changent
+      (set as any).completed = false;
+      setLogs(newLogs);
+    },
+    [logs],
+  );
 
-  const cycleSetLoadTypeForExercise = useCallback((exerciseIndex: number, setIndex: number) => {
-    const set = logs[exerciseIndex]?.sets?.[setIndex];
-    if (!set) return;
-    const currentLoad = set.load;
-    const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
-    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine', 'assisted', 'distance'];
-    const currentType = currentLoad?.type ?? 'single';
-    const idx = typeOrder.indexOf(currentType);
-    const nextType = typeOrder[(idx + 1) % typeOrder.length];
-    updateSetLoadForExercise(exerciseIndex, setIndex, createDefaultLoad(nextType, totalKg));
-  }, [logs, updateSetLoadForExercise]);
+  const cycleSetLoadTypeForExercise = useCallback(
+    (exerciseIndex: number, setIndex: number) => {
+      const set = logs[exerciseIndex]?.sets?.[setIndex];
+      if (!set) return;
+      const currentLoad = set.load;
+      const totalKg =
+        getLoadTotalKg(currentLoad) ??
+        (set.weight ? parseKgLikeToNumber(set.weight) : null);
+      const typeOrder: SetLoad["type"][] = [
+        "single",
+        "double",
+        "barbell",
+        "machine",
+        "assisted",
+        "distance",
+      ];
+      const currentType = currentLoad?.type ?? "single";
+      const idx = typeOrder.indexOf(currentType);
+      const nextType = typeOrder[(idx + 1) % typeOrder.length];
+      updateSetLoadForExercise(
+        exerciseIndex,
+        setIndex,
+        createDefaultLoad(nextType, totalKg),
+      );
+    },
+    [logs, updateSetLoadForExercise],
+  );
 
   const cycleCurrentSetLoadType = useCallback(() => {
     const set = logs[currentExerciseIndex]?.sets[currentSetIndex];
     if (!set) return;
     const currentLoad = set.load;
-    const totalKg = getLoadTotalKg(currentLoad) ?? (set.weight ? parseKgLikeToNumber(set.weight) : null);
-    const typeOrder: SetLoad['type'][] = ['single', 'double', 'barbell', 'machine', 'assisted', 'distance'];
-    const currentType = currentLoad?.type ?? 'single';
+    const totalKg =
+      getLoadTotalKg(currentLoad) ??
+      (set.weight ? parseKgLikeToNumber(set.weight) : null);
+    const typeOrder: SetLoad["type"][] = [
+      "single",
+      "double",
+      "barbell",
+      "machine",
+      "assisted",
+      "distance",
+    ];
+    const currentType = currentLoad?.type ?? "single";
     const idx = typeOrder.indexOf(currentType);
     const nextType = typeOrder[(idx + 1) % typeOrder.length];
     updateCurrentSetLoad(createDefaultLoad(nextType, totalKg));
@@ -1138,33 +1364,45 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   // COMMENT AUTO-SAVE ON EXERCISE CHANGE
   // ===========================================
-  
+
   const saveCurrentExerciseCommentIfNeeded = useCallback(async () => {
     if (!onSaveComment) return;
-    
+
     const currentExerciseName = logs[currentExerciseIndex]?.exerciseName;
     const comment = exerciseComments[currentExerciseName]?.trim();
-    
+
     if (!comment || sentComments.has(currentExerciseName)) return;
-    
-    console.log('[saveCurrentExerciseCommentIfNeeded] Sauvegarde auto du commentaire pour:', currentExerciseName);
-    
+
+    console.log(
+      "[saveCurrentExerciseCommentIfNeeded] Sauvegarde auto du commentaire pour:",
+      currentExerciseName,
+    );
+
     try {
-      const sessionId = pendingSessionLog?.id || 'active';
+      const sessionId = pendingSessionLog?.id || "active";
       await onSaveComment(currentExerciseName, comment, sessionId);
-      setSentComments(prev => new Set([...prev, currentExerciseName]));
+      setSentComments((prev) => new Set([...prev, currentExerciseName]));
       // On ne vide pas le champ pour que l'utilisateur puisse voir ce qu'il a écrit
-      console.log('[saveCurrentExerciseCommentIfNeeded] Commentaire sauvegardé avec succès');
+      console.log(
+        "[saveCurrentExerciseCommentIfNeeded] Commentaire sauvegardé avec succès",
+      );
     } catch (error) {
-      console.error('[saveCurrentExerciseCommentIfNeeded] Erreur:', error);
+      console.error("[saveCurrentExerciseCommentIfNeeded] Erreur:", error);
     }
-  }, [onSaveComment, logs, currentExerciseIndex, exerciseComments, sentComments, pendingSessionLog]);
+  }, [
+    onSaveComment,
+    logs,
+    currentExerciseIndex,
+    exerciseComments,
+    sentComments,
+    pendingSessionLog,
+  ]);
 
   const validateCurrentSet = useCallback(async () => {
     const newLogs = [...logs];
     newLogs[currentExerciseIndex].sets[currentSetIndex].completed = true;
     setLogs(newLogs);
-    
+
     // Navigation automatique
     if (currentSetIndex < currentExercise.sets.length - 1) {
       // Prochaine série du même exercice
@@ -1173,87 +1411,110 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       scrollToRpeOnNextCompletedRef.current = true;
     }
     // Sinon on reste sur la dernière série (l'utilisateur peut terminer)
-  }, [logs, currentExerciseIndex, currentSetIndex, currentExercise, saveCurrentExerciseCommentIfNeeded]);
+  }, [
+    logs,
+    currentExerciseIndex,
+    currentSetIndex,
+    currentExercise,
+    saveCurrentExerciseCommentIfNeeded,
+  ]);
 
-  const validateSetForExercise = useCallback((exerciseIndex: number) => {
-    const setIndex = getSetIndexForExercise(exerciseIndex);
-    const ex = logs[exerciseIndex];
-    const set = ex?.sets?.[setIndex];
-    if (!ex || !set) return;
+  const validateSetForExercise = useCallback(
+    (exerciseIndex: number) => {
+      const setIndex = getSetIndexForExercise(exerciseIndex);
+      const ex = logs[exerciseIndex];
+      const set = ex?.sets?.[setIndex];
+      if (!ex || !set) return;
 
-    const newLogs = [...logs];
-    newLogs[exerciseIndex].sets[setIndex].completed = true;
+      const newLogs = [...logs];
+      newLogs[exerciseIndex].sets[setIndex].completed = true;
 
-    // Pré-remplir la prochaine série avec les valeurs de la série actuelle
-    const hasNextSet = setIndex < newLogs[exerciseIndex].sets.length - 1;
-    if (hasNextSet) {
-      const nextSet = newLogs[exerciseIndex].sets[setIndex + 1];
-      nextSet.reps = set.reps;
-      (nextSet as any).weight = (set as any).weight;
-      if ((set as any).load) {
-        (nextSet as any).load = { ...(set as any).load };
+      // Pré-remplir la prochaine série avec les valeurs de la série actuelle
+      const hasNextSet = setIndex < newLogs[exerciseIndex].sets.length - 1;
+      if (hasNextSet) {
+        const nextSet = newLogs[exerciseIndex].sets[setIndex + 1];
+        nextSet.reps = set.reps;
+        (nextSet as any).weight = (set as any).weight;
+        if ((set as any).load) {
+          (nextSet as any).load = { ...(set as any).load };
+        }
       }
-    }
 
-    setLogs(newLogs);
+      setLogs(newLogs);
 
-    const isLastSet = setIndex === newLogs[exerciseIndex].sets.length - 1;
-    if (!isLastSet) {
-      // Sauvegarder l'ancien index pour l'animation
-      setPrevSetIndex(prev => ({ ...prev, [exerciseIndex]: setIndex }));
+      const isLastSet = setIndex === newLogs[exerciseIndex].sets.length - 1;
+      if (!isLastSet) {
+        // Sauvegarder l'ancien index pour l'animation
+        setPrevSetIndex((prev) => ({ ...prev, [exerciseIndex]: setIndex }));
 
-      // Déclencher l'animation de changement de série
-      setSetAnimating(prev => ({ ...prev, [exerciseIndex]: true }));
+        // Déclencher l'animation de changement de série
+        setSetAnimating((prev) => ({ ...prev, [exerciseIndex]: true }));
 
-      // Changer l'index immédiatement
-      setSetIndexForExercise(exerciseIndex, setIndex + 1);
+        // Changer l'index immédiatement
+        setSetIndexForExercise(exerciseIndex, setIndex + 1);
 
-      // Arrêter l'animation après sa durée
+        // Arrêter l'animation après sa durée
+        setTimeout(() => {
+          setSetAnimating((prev) => ({ ...prev, [exerciseIndex]: false }));
+        }, 300); // Durée de l'animation (0.3s)
+
+        return;
+      }
+
+      // Dernière série: scroll vers le RPE et animation de surlignage
+      // Dernière série: scroll vers le RPE et surlignage (reste actif jusqu'à saisie du RPE)
       setTimeout(() => {
-        setSetAnimating(prev => ({ ...prev, [exerciseIndex]: false }));
-      }, 300); // Durée de l'animation (0.3s)
+        const rpeRef = focusRpeRefs.current[exerciseIndex];
+        if (rpeRef) {
+          rpeRef.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        setHighlightedRpeIndex(exerciseIndex);
+      }, 100);
 
-      return;
-    }
-
-    // Dernière série: scroll vers le RPE et animation de surlignage
-    // Dernière série: scroll vers le RPE et surlignage (reste actif jusqu'à saisie du RPE)
-    setTimeout(() => {
-      const rpeRef = focusRpeRefs.current[exerciseIndex];
-      if (rpeRef) {
-        rpeRef.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (typeof newLogs[exerciseIndex].rpe !== "number") {
+        pendingScrollToRpeExerciseIndexRef.current = exerciseIndex;
+        return;
       }
-      setHighlightedRpeIndex(exerciseIndex);
-    }, 100);
 
-    if (typeof newLogs[exerciseIndex].rpe !== 'number') {
-      pendingScrollToRpeExerciseIndexRef.current = exerciseIndex;
-      return;
-    }
+      setExpandedExercises((prev) => ({ ...prev, [exerciseIndex]: false }));
+      const nextExerciseIndex = Math.min(exerciseIndex + 1, newLogs.length - 1);
+      if (nextExerciseIndex !== exerciseIndex) {
+        setExpandedExercises((prev) => ({
+          ...prev,
+          [nextExerciseIndex]: false,
+        }));
+        setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
+      }
+    },
+    [
+      logs,
+      getSetIndexForExercise,
+      setSetIndexForExercise,
+      scrollToExerciseCard,
+    ],
+  );
 
-    setExpandedExercises(prev => ({ ...prev, [exerciseIndex]: false }));
-    const nextExerciseIndex = Math.min(exerciseIndex + 1, newLogs.length - 1);
-    if (nextExerciseIndex !== exerciseIndex) {
-      setExpandedExercises(prev => ({ ...prev, [nextExerciseIndex]: false }));
-      setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
-    }
-  }, [logs, getSetIndexForExercise, setSetIndexForExercise, scrollToExerciseCard]);
+  const toggleSetValidationForExercise = useCallback(
+    (exerciseIndex: number) => {
+      const setIndex = getSetIndexForExercise(exerciseIndex);
+      const ex = logs[exerciseIndex];
+      const set = ex?.sets?.[setIndex];
+      if (!ex || !set) return;
 
-  const toggleSetValidationForExercise = useCallback((exerciseIndex: number) => {
-    const setIndex = getSetIndexForExercise(exerciseIndex);
-    const ex = logs[exerciseIndex];
-    const set = ex?.sets?.[setIndex];
-    if (!ex || !set) return;
-
-    const newLogs = [...logs];
-    newLogs[exerciseIndex].sets[setIndex].completed = !newLogs[exerciseIndex].sets[setIndex].completed;
-    setLogs(newLogs);
-  }, [logs, getSetIndexForExercise]);
+      const newLogs = [...logs];
+      newLogs[exerciseIndex].sets[setIndex].completed =
+        !newLogs[exerciseIndex].sets[setIndex].completed;
+      setLogs(newLogs);
+    },
+    [logs, getSetIndexForExercise],
+  );
 
   const toggleSetValidation = useCallback(() => {
     const newLogs = [...logs];
-    const isCurrentlyCompleted = newLogs[currentExerciseIndex].sets[currentSetIndex].completed;
-    newLogs[currentExerciseIndex].sets[currentSetIndex].completed = !isCurrentlyCompleted;
+    const isCurrentlyCompleted =
+      newLogs[currentExerciseIndex].sets[currentSetIndex].completed;
+    newLogs[currentExerciseIndex].sets[currentSetIndex].completed =
+      !isCurrentlyCompleted;
     setLogs(newLogs);
   }, [logs, currentExerciseIndex, currentSetIndex]);
 
@@ -1279,111 +1540,161 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     const newLogs = [...logs];
     const currentSets = newLogs[currentExerciseIndex].sets;
     const prev = currentSets[currentSets.length - 1];
-    const prevTotalKg = prev?.load ? getLoadTotalKg(prev.load) : (prev?.weight ? parseKgLikeToNumber(prev.weight) : null);
-    const nextLoad = prev?.load ? ({ ...prev.load } as SetLoad) : createDefaultLoad('single', prevTotalKg);
+    const prevTotalKg = prev?.load
+      ? getLoadTotalKg(prev.load)
+      : prev?.weight
+        ? parseKgLikeToNumber(prev.weight)
+        : null;
+    const nextLoad = prev?.load
+      ? ({ ...prev.load } as SetLoad)
+      : createDefaultLoad("single", prevTotalKg);
     currentSets.push({
       setNumber: currentSets.length + 1,
-      reps: '',
-      weight: prev?.weight || '',
+      reps: "",
+      weight: prev?.weight || "",
       load: nextLoad,
-      completed: false
+      completed: false,
     });
     setLogs(newLogs);
   }, [logs, currentExerciseIndex]);
 
-  const addSetForExercise = useCallback((exerciseIndex: number) => {
-    const newLogs = [...logs];
-    const sets = newLogs[exerciseIndex]?.sets;
-    if (!sets) return;
-    const prev = sets[sets.length - 1];
-    const prevTotalKg = prev?.load ? getLoadTotalKg(prev.load) : (prev?.weight ? parseKgLikeToNumber(prev.weight) : null);
-    const nextLoad = prev?.load ? ({ ...prev.load } as SetLoad) : createDefaultLoad('single', prevTotalKg);
-    sets.push({
-      setNumber: sets.length + 1,
-      reps: '',
-      weight: prev?.weight || '',
-      load: nextLoad,
-      completed: false
-    });
-    setLogs(newLogs);
-  }, [logs]);
+  const addSetForExercise = useCallback(
+    (exerciseIndex: number) => {
+      const newLogs = [...logs];
+      const sets = newLogs[exerciseIndex]?.sets;
+      if (!sets) return;
+      const prev = sets[sets.length - 1];
+      const prevTotalKg = prev?.load
+        ? getLoadTotalKg(prev.load)
+        : prev?.weight
+          ? parseKgLikeToNumber(prev.weight)
+          : null;
+      const nextLoad = prev?.load
+        ? ({ ...prev.load } as SetLoad)
+        : createDefaultLoad("single", prevTotalKg);
+      sets.push({
+        setNumber: sets.length + 1,
+        reps: "",
+        weight: prev?.weight || "",
+        load: nextLoad,
+        completed: false,
+      });
+      setLogs(newLogs);
+    },
+    [logs],
+  );
 
   const removeCurrentSet = useCallback(() => {
     if (currentExercise.sets.length <= 1) return;
-    
+
     const newLogs = [...logs];
     newLogs[currentExerciseIndex].sets.splice(currentSetIndex, 1);
-    newLogs[currentExerciseIndex].sets.forEach((s, i) => s.setNumber = i + 1);
+    newLogs[currentExerciseIndex].sets.forEach((s, i) => (s.setNumber = i + 1));
     setLogs(newLogs);
-    
+
     if (currentSetIndex >= newLogs[currentExerciseIndex].sets.length) {
       setCurrentSetIndex(newLogs[currentExerciseIndex].sets.length - 1);
     }
   }, [logs, currentExerciseIndex, currentSetIndex, currentExercise]);
 
-  const removeSetForExercise = useCallback((exerciseIndex: number) => {
-    const setIndex = getSetIndexForExercise(exerciseIndex);
-    const ex = logs[exerciseIndex];
-    if (!ex || ex.sets.length <= 1) return;
+  const removeSetForExercise = useCallback(
+    (exerciseIndex: number) => {
+      const setIndex = getSetIndexForExercise(exerciseIndex);
+      const ex = logs[exerciseIndex];
+      if (!ex || ex.sets.length <= 1) return;
 
-    const newLogs = [...logs];
-    newLogs[exerciseIndex].sets.splice(setIndex, 1);
-    newLogs[exerciseIndex].sets.forEach((s, i) => s.setNumber = i + 1);
-    setLogs(newLogs);
+      const newLogs = [...logs];
+      newLogs[exerciseIndex].sets.splice(setIndex, 1);
+      newLogs[exerciseIndex].sets.forEach((s, i) => (s.setNumber = i + 1));
+      setLogs(newLogs);
 
-    const nextSetIndex = Math.min(setIndex, newLogs[exerciseIndex].sets.length - 1);
-    setSetIndexForExercise(exerciseIndex, nextSetIndex);
-  }, [logs, getSetIndexForExercise, setSetIndexForExercise]);
+      const nextSetIndex = Math.min(
+        setIndex,
+        newLogs[exerciseIndex].sets.length - 1,
+      );
+      setSetIndexForExercise(exerciseIndex, nextSetIndex);
+    },
+    [logs, getSetIndexForExercise, setSetIndexForExercise],
+  );
 
-  const updateExerciseRpe = useCallback((rpe: number | undefined) => {
-    const newLogs = [...logs];
-    newLogs[currentExerciseIndex].rpe = rpe;
-    setLogs(newLogs);
-  }, [logs, currentExerciseIndex]);
+  const updateExerciseRpe = useCallback(
+    (rpe: number | undefined) => {
+      const newLogs = [...logs];
+      newLogs[currentExerciseIndex].rpe = rpe;
+      setLogs(newLogs);
+    },
+    [logs, currentExerciseIndex],
+  );
 
-  const updateExerciseRpeForExercise = useCallback((exerciseIndex: number, rpe: number | undefined) => {
-    const newLogs = [...logs];
-    if (!newLogs[exerciseIndex]) return;
-    newLogs[exerciseIndex].rpe = rpe;
-    setLogs(newLogs);
+  const updateExerciseRpeForExercise = useCallback(
+    (exerciseIndex: number, rpe: number | undefined) => {
+      const newLogs = [...logs];
+      if (!newLogs[exerciseIndex]) return;
+      newLogs[exerciseIndex].rpe = rpe;
+      setLogs(newLogs);
 
-    // Retirer le surlignage RPE quand le RPE est saisi
-    if (typeof rpe === 'number' && highlightedRpeIndex === exerciseIndex) {
-      setHighlightedRpeIndex(null);
-    }
-
-    // Demo tour: Si on est à l'étape 13 (RPE) et exercice 0, passer à l'étape suivante
-    if (isTourActive && currentStepIndex === 13 && exerciseIndex === 0 && typeof rpe === 'number') {
-      setTimeout(() => {
-        demoNextStep();
-      }, 300);
-    }
-
-    if (typeof rpe === 'number' && newLogs[exerciseIndex].sets.every(s => s.completed)) {
-      setExpandedExercises(prev => ({ ...prev, [exerciseIndex]: false }));
-      const nextExerciseIndex = Math.min(exerciseIndex + 1, newLogs.length - 1);
-      if (nextExerciseIndex !== exerciseIndex) {
-        setExpandedExercises(prev => ({ ...prev, [nextExerciseIndex]: false }));
-        setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
+      // Retirer le surlignage RPE quand le RPE est saisi
+      if (typeof rpe === "number" && highlightedRpeIndex === exerciseIndex) {
+        setHighlightedRpeIndex(null);
       }
-    }
-  }, [logs, scrollToExerciseCard, highlightedRpeIndex, isTourActive, currentStepIndex, demoNextStep]);
+
+      // Demo tour: Si on est à l'étape 13 (RPE) et exercice 0, passer à l'étape suivante
+      if (
+        isTourActive &&
+        currentStepIndex === 13 &&
+        exerciseIndex === 0 &&
+        typeof rpe === "number"
+      ) {
+        setTimeout(() => {
+          demoNextStep();
+        }, 300);
+      }
+
+      if (
+        typeof rpe === "number" &&
+        newLogs[exerciseIndex].sets.every((s) => s.completed)
+      ) {
+        setExpandedExercises((prev) => ({ ...prev, [exerciseIndex]: false }));
+        const nextExerciseIndex = Math.min(
+          exerciseIndex + 1,
+          newLogs.length - 1,
+        );
+        if (nextExerciseIndex !== exerciseIndex) {
+          setExpandedExercises((prev) => ({
+            ...prev,
+            [nextExerciseIndex]: false,
+          }));
+          setTimeout(() => scrollToExerciseCard(nextExerciseIndex), 50);
+        }
+      }
+    },
+    [
+      logs,
+      scrollToExerciseCard,
+      highlightedRpeIndex,
+      isTourActive,
+      currentStepIndex,
+      demoNextStep,
+    ],
+  );
 
   const handleFinish = useCallback(async () => {
     // Sauvegarder le commentaire du dernier exercice avant de terminer
     await saveCurrentExerciseCommentIfNeeded();
-    
+
     const sessionKey: SessionKey = {
-      annee: sessionData[0]?.annee || '',
-      moisNum: sessionData[0]?.moisNum || '',
-      semaine: sessionData[0]?.semaine || '',
-      seance: Array.from(new Set(sessionData.map(d => d.seance))).join('+')
+      annee: sessionData[0]?.annee || "",
+      moisNum: sessionData[0]?.moisNum || "",
+      semaine: sessionData[0]?.semaine || "",
+      seance: Array.from(new Set(sessionData.map((d) => d.seance))).join("+"),
     };
 
     let finalDate = new Date().toISOString();
     if (isEditMode && initialLog) {
       if (validatedEditDate) {
-        const [yy, mm, dd] = validatedEditDate.split('-').map(v => parseInt(v, 10));
+        const [yy, mm, dd] = validatedEditDate
+          .split("-")
+          .map((v) => parseInt(v, 10));
         finalDate = new Date(yy, mm - 1, dd, 12, 0, 0).toISOString();
       } else {
         finalDate = initialLog.date;
@@ -1394,56 +1705,67 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       id: isEditMode && initialLog ? initialLog.id : crypto.randomUUID(),
       date: finalDate,
       sessionKey,
-      exercises: logs.map(ex => ({
+      exercises: logs.map((ex) => ({
         ...ex,
-        sets: ex.sets.map(s => {
+        sets: ex.sets.map((s) => {
           if (s.completed) return s;
           return {
             ...s,
-            reps: '-',
-            weight: '-',
-            load: undefined
+            reps: "-",
+            weight: "-",
+            load: undefined,
           };
-        })
+        }),
       })),
       durationMinutes: Math.round(elapsedTime / 60),
-      sessionRpe: undefined
+      sessionRpe: undefined,
     };
 
     setPendingSessionLog(finalLog);
     setShowSessionRpeModal(true);
-  }, [sessionData, logs, elapsedTime, isEditMode, initialLog, saveCurrentExerciseCommentIfNeeded]);
+  }, [
+    sessionData,
+    logs,
+    elapsedTime,
+    isEditMode,
+    initialLog,
+    saveCurrentExerciseCommentIfNeeded,
+  ]);
 
-  const handleSessionRpeSubmit = useCallback(async (sessionRpe: number) => {
-    if (!pendingSessionLog) return;
-    
-    setSaving(true);
-    const finalLog = { ...pendingSessionLog, sessionRpe };
+  const handleSessionRpeSubmit = useCallback(
+    async (sessionRpe: number) => {
+      if (!pendingSessionLog) return;
 
-    try {
-      await onSave(finalLog);
-      clearLocalStorage();
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-    } finally {
-      setSaving(false);
-      setShowSessionRpeModal(false);
-    }
-  }, [pendingSessionLog, onSave, clearLocalStorage]);
+      setSaving(true);
+      const finalLog = { ...pendingSessionLog, sessionRpe };
+
+      try {
+        await onSave(finalLog);
+        clearLocalStorage();
+      } catch (error) {
+        console.error("Erreur sauvegarde:", error);
+      } finally {
+        setSaving(false);
+        setShowSessionRpeModal(false);
+      }
+    },
+    [pendingSessionLog, onSave, clearLocalStorage],
+  );
 
   const handleSkipSessionRpe = useCallback(async () => {
     if (!pendingSessionLog) return;
-    
+
     setSaving(true);
     try {
       // Conserver le RPE existant si présent (mode édition)
-      const finalLog = initialLog?.sessionRpe !== undefined 
-        ? { ...pendingSessionLog, sessionRpe: initialLog.sessionRpe }
-        : pendingSessionLog;
+      const finalLog =
+        initialLog?.sessionRpe !== undefined
+          ? { ...pendingSessionLog, sessionRpe: initialLog.sessionRpe }
+          : pendingSessionLog;
       await onSave(finalLog);
       clearLocalStorage();
     } catch (error) {
-      console.error('Erreur sauvegarde:', error);
+      console.error("Erreur sauvegarde:", error);
     } finally {
       setSaving(false);
       setShowSessionRpeModal(false);
@@ -1455,31 +1777,40 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     onCancel();
   }, [clearLocalStorage, onCancel]);
 
-  const handleSendComment = useCallback(async (exerciseName: string) => {
-    if (!onSaveComment || !exerciseComments[exerciseName]?.trim()) return;
+  const handleSendComment = useCallback(
+    async (exerciseName: string) => {
+      if (!onSaveComment || !exerciseComments[exerciseName]?.trim()) return;
 
-    setCommentSending(exerciseName);
-    try {
-      const sessionId = pendingSessionLog?.id || 'active';
-      await onSaveComment(exerciseName, exerciseComments[exerciseName], sessionId);
-      setSentComments(prev => new Set([...prev, exerciseName]));
-      setMessageSentConfirm(prev => new Set([...prev, exerciseName]));
-      setExerciseComments(prev => ({ ...prev, [exerciseName]: '' }));
-    } catch (error) {
-      console.error('Erreur envoi commentaire:', error);
-    } finally {
-      setCommentSending(null);
-    }
-  }, [exerciseComments, onSaveComment, pendingSessionLog]);
+      setCommentSending(exerciseName);
+      try {
+        const sessionId = pendingSessionLog?.id || "active";
+        await onSaveComment(
+          exerciseName,
+          exerciseComments[exerciseName],
+          sessionId,
+        );
+        setSentComments((prev) => new Set([...prev, exerciseName]));
+        setMessageSentConfirm((prev) => new Set([...prev, exerciseName]));
+        setExerciseComments((prev) => ({ ...prev, [exerciseName]: "" }));
+      } catch (error) {
+        console.error("Erreur envoi commentaire:", error);
+      } finally {
+        setCommentSending(null);
+      }
+    },
+    [exerciseComments, onSaveComment, pendingSessionLog],
+  );
 
   // ===========================================
   // RENDER: RECAP PHASE
   // ===========================================
-  
+
   const renderRecapPhase = () => (
     <div className="min-h-screen bg-theme pb-32">
       {/* Header */}
-      <div className={`sticky top-0 z-10 bg-theme/95 backdrop-blur-sm border-b border-theme px-4 py-3 ${isDesktop ? 'pl-16' : ''}`}>
+      <div
+        className={`sticky top-0 z-10 bg-theme/95 backdrop-blur-sm border-b border-theme px-4 py-3 ${isDesktop ? "pl-16" : ""}`}
+      >
         <div className="flex items-center justify-between">
           <button
             onClick={() => setShowCancelModal(true)}
@@ -1503,10 +1834,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 ) : (
                   <span className="text-sm text-theme-muted">
                     {validatedEditDate
-                      ? new Date(validatedEditDate).toLocaleDateString('fr-FR')
+                      ? new Date(validatedEditDate).toLocaleDateString("fr-FR")
                       : initialLog
-                        ? new Date(initialLog.date).toLocaleDateString('fr-FR')
-                        : ''}
+                        ? new Date(initialLog.date).toLocaleDateString("fr-FR")
+                        : ""}
                   </span>
                 )}
                 {editingDateEnabled ? (
@@ -1545,20 +1876,40 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           </h2>
 
           {/* Desktop: grille 4 colonnes avec tuiles carrées */}
-          <div className={isDesktop ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3' : 'space-y-2'}>
+          <div
+            className={
+              isDesktop
+                ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
+                : "space-y-2"
+            }
+          >
             {groupedLogs.map((item, groupIndex) => {
               // Cas Superset
               if (isExerciseLogGroup(item)) {
                 const group = item;
                 const modeInfo = EXECUTION_MODES[group.executionMode];
-                const firstExerciseData = sessionData.find(d => d.exercice === group.exercises[0]?.exerciseName);
+                const firstExerciseData = sessionData.find(
+                  (d) => d.exercice === group.exercises[0]?.exerciseName,
+                );
 
                 if (isDesktop) {
-                  // Desktop: Bloc superset avec tous les exercices
+                  // Desktop: Bloc superset — col-span dynamique selon le nombre d'exercices
+                  // Mapping statique pour garantir la détection par le scanner Tailwind
+                  const exCount = group.exercises.length;
+                  // col-span-1 col-span-2 col-span-3 col-span-4 lg:col-span-2 lg:col-span-3 xl:col-span-3 xl:col-span-4
+                  const COL_SPAN_MAP: Record<number, string> = {
+                    1: "col-span-1",
+                    2: "col-span-2",
+                    3: "col-span-2 lg:col-span-3",
+                    4: "col-span-2 lg:col-span-3 xl:col-span-4",
+                  };
+                  const colSpanClass =
+                    COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
+
                   return (
                     <div
                       key={`group-${group.groupId}`}
-                      className="col-span-2 bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden"
+                      className={`${colSpanClass} bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden`}
                     >
                       {/* Header Superset */}
                       <div className="bg-[var(--color-primary)]/10 px-4 py-2 flex items-center gap-2">
@@ -1567,27 +1918,39 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           {modeInfo.label}
                         </span>
                         <span className="text-xs text-theme-muted ml-auto">
-                          {group.exercises[0]?.sets.length || '?'} séries
+                          {group.exercises[0]?.sets.length || "?"} séries
                         </span>
                       </div>
 
                       {/* Exercices du superset */}
                       <div className="p-4 space-y-3">
                         {group.exercises.map((exercise, exIdx) => {
-                          const originalIndex = getOriginalExerciseIndex(exercise.exerciseName, exercise.executionGroupId);
-                          const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+                          const originalIndex = getOriginalExerciseIndex(
+                            exercise.exerciseName,
+                            exercise.executionGroupId,
+                          );
+                          const exerciseData = sessionData.find(
+                            (d) => d.exercice === exercise.exerciseName,
+                          );
 
                           return (
-                            <div key={`${group.groupId}-${exIdx}`} className="flex items-start gap-3">
+                            <div
+                              key={`${group.groupId}-${exIdx}`}
+                              className="flex items-start gap-3"
+                            >
                               <span className="w-6 h-6 rounded-full bg-[var(--color-primary)]/20 text-[var(--color-primary)] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-1">
                                 {String.fromCharCode(65 + exIdx)}
                               </span>
                               <div className="flex-1 min-w-0">
                                 <h3 className="font-bold text-theme text-base leading-tight">
-                                  {getExerciseDisplayName(exercise.exerciseName)}
+                                  {getExerciseDisplayName(
+                                    exercise.exerciseName,
+                                  )}
                                 </h3>
                                 <div className="mt-1 flex items-center gap-2 text-sm text-theme-muted">
-                                  <span>{exerciseData?.repsDuree || '?'} reps</span>
+                                  <span>
+                                    {exerciseData?.repsDuree || "?"} reps
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -1598,14 +1961,30 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       {/* Actions groupées */}
                       <div className="px-4 pb-4 flex items-center gap-2">
                         <button
-                          onClick={(e) => setShowHistoryModal({ index: getOriginalExerciseIndex(group.exercises[0]?.exerciseName, group.exercises[0]?.executionGroupId), anchorEl: e.currentTarget })}
+                          onClick={(e) =>
+                            setShowHistoryModal({
+                              index: getOriginalExerciseIndex(
+                                group.exercises[0]?.exerciseName,
+                                group.exercises[0]?.executionGroupId,
+                              ),
+                              anchorEl: e.currentTarget,
+                            })
+                          }
                           className="px-2.5 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
                           type="button"
                         >
                           Historique
                         </button>
                         <button
-                          onClick={(e) => setShowConsignesModal({ index: getOriginalExerciseIndex(group.exercises[0]?.exerciseName, group.exercises[0]?.executionGroupId), anchorEl: e.currentTarget })}
+                          onClick={(e) =>
+                            setShowConsignesModal({
+                              index: getOriginalExerciseIndex(
+                                group.exercises[0]?.exerciseName,
+                                group.exercises[0]?.executionGroupId,
+                              ),
+                              anchorEl: e.currentTarget,
+                            })
+                          }
                           className="px-2.5 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
                           type="button"
                         >
@@ -1629,22 +2008,31 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                         {modeInfo.label}
                       </span>
                       <span className="text-xs text-theme-muted ml-auto">
-                        {group.exercises[0]?.sets.length || '?'} séries
+                        {group.exercises[0]?.sets.length || "?"} séries
                       </span>
                     </div>
 
                     {/* Exercices */}
                     <div className="p-3 space-y-2">
                       {group.exercises.map((exercise, exIdx) => {
-                        const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+                        const exerciseData = sessionData.find(
+                          (d) => d.exercice === exercise.exerciseName,
+                        );
 
                         return (
-                          <div key={`${group.groupId}-${exIdx}`} className="flex items-center gap-2">
+                          <div
+                            key={`${group.groupId}-${exIdx}`}
+                            className="flex items-center gap-2"
+                          >
                             <span className="w-5 h-5 rounded-full bg-[var(--color-primary)]/20 text-[var(--color-primary)] text-xs font-bold flex items-center justify-center flex-shrink-0">
                               {String.fromCharCode(65 + exIdx)}
                             </span>
-                            <span className="text-theme font-medium flex-1 truncate">{getExerciseDisplayName(exercise.exerciseName)}</span>
-                            <span className="text-theme-muted text-sm">{exerciseData?.repsDuree || '?'}</span>
+                            <span className="text-theme font-medium flex-1 truncate">
+                              {getExerciseDisplayName(exercise.exerciseName)}
+                            </span>
+                            <span className="text-theme-muted text-sm">
+                              {exerciseData?.repsDuree || "?"}
+                            </span>
                           </div>
                         );
                       })}
@@ -1653,14 +2041,30 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     {/* Actions */}
                     <div className="px-3 pb-3 flex items-center gap-2 justify-center">
                       <button
-                        onClick={(e) => setShowHistoryModal({ index: getOriginalExerciseIndex(group.exercises[0]?.exerciseName, group.exercises[0]?.executionGroupId), anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowHistoryModal({
+                            index: getOriginalExerciseIndex(
+                              group.exercises[0]?.exerciseName,
+                              group.exercises[0]?.executionGroupId,
+                            ),
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
                         Historique
                       </button>
                       <button
-                        onClick={(e) => setShowConsignesModal({ index: getOriginalExerciseIndex(group.exercises[0]?.exerciseName, group.exercises[0]?.executionGroupId), anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowConsignesModal({
+                            index: getOriginalExerciseIndex(
+                              group.exercises[0]?.exerciseName,
+                              group.exercises[0]?.executionGroupId,
+                            ),
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
@@ -1673,8 +2077,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
               // Cas exercice individuel
               const exercise = item as ExerciseLog;
-              const index = logs.findIndex(ex => ex.exerciseName === exercise.exerciseName && ex.executionGroupId === exercise.executionGroupId);
-              const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+              const index = logs.findIndex(
+                (ex) =>
+                  ex.exerciseName === exercise.exerciseName &&
+                  ex.executionGroupId === exercise.executionGroupId,
+              );
+              const exerciseData = sessionData.find(
+                (d) => d.exercice === exercise.exerciseName,
+              );
 
               if (isDesktop) {
                 return (
@@ -1690,21 +2100,32 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     {/* Badge séries x reps */}
                     <div className="mt-3">
                       <span className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-sm font-semibold">
-                        {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
+                        {exerciseData?.series || exercise.sets.length} ×{" "}
+                        {exerciseData?.repsDuree || "?"}
                       </span>
                     </div>
 
                     {/* Boutons action */}
                     <div className="mt-3 flex items-center gap-2">
                       <button
-                        onClick={(e) => setShowHistoryModal({ index, anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowHistoryModal({
+                            index,
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-2.5 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
                         Historique
                       </button>
                       <button
-                        onClick={(e) => setShowConsignesModal({ index, anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowConsignesModal({
+                            index,
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-2.5 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
@@ -1712,7 +2133,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       </button>
                       {exerciseData?.video && (
                         <button
-                          onClick={(e) => setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget })}
+                          onClick={(e) =>
+                            setShowVideoModal({
+                              url: exerciseData.video!,
+                              exerciseName: exercise.exerciseName,
+                              anchorEl: e.currentTarget,
+                            })
+                          }
                           className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-lg text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
                           type="button"
                         >
@@ -1732,20 +2159,31 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     </h3>
                     <div className="mt-3 text-center">
                       <div className="text-xl font-semibold text-theme">
-                        {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
+                        {exerciseData?.series || exercise.sets.length} ×{" "}
+                        {exerciseData?.repsDuree || "?"}
                       </div>
                     </div>
 
                     <div className="mt-3 flex items-center gap-2 justify-center">
                       <button
-                        onClick={(e) => setShowHistoryModal({ index, anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowHistoryModal({
+                            index,
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
                         Historique
                       </button>
                       <button
-                        onClick={(e) => setShowConsignesModal({ index, anchorEl: e.currentTarget })}
+                        onClick={(e) =>
+                          setShowConsignesModal({
+                            index,
+                            anchorEl: e.currentTarget,
+                          })
+                        }
                         className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
                         type="button"
                       >
@@ -1753,7 +2191,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       </button>
                       {exerciseData?.video && (
                         <button
-                          onClick={(e) => setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget })}
+                          onClick={(e) =>
+                            setShowVideoModal({
+                              url: exerciseData.video!,
+                              exerciseName: exercise.exerciseName,
+                              anchorEl: e.currentTarget,
+                            })
+                          }
                           className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-full text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
                           type="button"
                         >
@@ -1772,7 +2216,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       {/* Fixed Bottom CTA */}
       <div
         className="fixed right-4 z-20"
-        style={{ bottom: 'calc(16px + env(safe-area-inset-bottom) + 64px)' }}
+        style={{ bottom: "calc(16px + env(safe-area-inset-bottom) + 64px)" }}
       >
         <button
           onClick={handleStartSession}
@@ -1788,7 +2232,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   // RENDER: FOCUS PHASE
   // ===========================================
-  
+
   const renderFocusPhase = () => {
     if (logs.length === 0) {
       return <div className="p-4 text-theme">Chargement...</div>;
@@ -1797,7 +2241,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     return (
       <div className="min-h-screen bg-theme flex flex-col">
         {/* Header */}
-        <div className={`sticky top-0 z-10 bg-theme/95 backdrop-blur-sm border-b border-theme pt-4 pb-3 ${isDesktop ? 'pl-16' : ''}`}>
+        <div
+          className={`sticky top-0 z-10 bg-theme/95 backdrop-blur-sm border-b border-theme pt-4 pb-3 ${isDesktop ? "pl-16" : ""}`}
+        >
           {/* Progress Bar - Mobile only (desktop shows at bottom) */}
           {!isDesktop && (
             <div className="px-4 mb-3">
@@ -1808,14 +2254,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="text-sm text-theme-muted w-12 text-right">{progress}%</span>
+                <span className="text-sm text-theme-muted w-12 text-right">
+                  {progress}%
+                </span>
               </div>
             </div>
           )}
 
           <div className="px-4 flex items-center justify-between">
-             <div className="flex-1 min-w-0">
-             <h1 className="text-lg font-semibold text-theme truncate">{sessionTitle}</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-semibold text-theme truncate">
+                {sessionTitle}
+              </h1>
               {isEditMode && (
                 <div className="mt-1 flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-theme-muted" />
@@ -1829,10 +2279,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                   ) : (
                     <span className="text-sm text-theme-muted">
                       {validatedEditDate
-                        ? new Date(validatedEditDate).toLocaleDateString('fr-FR')
+                        ? new Date(validatedEditDate).toLocaleDateString(
+                            "fr-FR",
+                          )
                         : initialLog
-                          ? new Date(initialLog.date).toLocaleDateString('fr-FR')
-                          : ''}
+                          ? new Date(initialLog.date).toLocaleDateString(
+                              "fr-FR",
+                            )
+                          : ""}
                     </span>
                   )}
                   {editingDateEnabled ? (
@@ -1856,8 +2310,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                   )}
                 </div>
               )}
-             </div>
-             <button
+            </div>
+            <button
               onClick={() => setShowCancelModal(true)}
               className="p-2 -mr-2 text-theme-muted hover:text-theme transition-colors"
             >
@@ -1869,7 +2323,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         {/* Main Content */}
         <div className="flex-1 p-4 overflow-y-auto" ref={scrollContainerRef}>
           {/* Desktop: grille de tuiles carrées (max 4 colonnes) / Mobile: liste verticale */}
-          <div className={isDesktop ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3' : 'space-y-3'}>
+          <div
+            className={
+              isDesktop
+                ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
+                : "space-y-3"
+            }
+          >
             {(() => {
               // Utiliser groupedLogs pour regrouper les supersets
               const groupedItems = groupedLogs;
@@ -1879,19 +2339,35 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               const renderDesktopExerciseBlock = (
                 exercise: ExerciseLog,
                 exerciseIndex: number,
-                supersetInfo?: { label: string; groupId: string }
+                supersetInfo?: { label: string; groupId: string },
               ) => {
-                const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+                const exerciseData = sessionData.find(
+                  (d) => d.exercice === exercise.exerciseName,
+                );
                 const setIndex = getSetIndexForExercise(exerciseIndex);
                 const set = exercise.sets[setIndex];
                 const isExpanded = !!expandedExercises[exerciseIndex];
-                const allSetsCompletedForExercise = exercise.sets.every(s => s.completed);
-                const isExerciseDone = allSetsCompletedForExercise && typeof exercise.rpe === 'number';
+                const allSetsCompletedForExercise = exercise.sets.every(
+                  (s) => s.completed,
+                );
+                const isExerciseDone =
+                  allSetsCompletedForExercise &&
+                  typeof exercise.rpe === "number";
 
                 if (!set) return null;
 
                 return (
-                  <div key={supersetInfo ? `${supersetInfo.groupId}-${exerciseIndex}` : exerciseIndex} className="relative" ref={(el) => { focusCardRefs.current[exerciseIndex] = el; }}>
+                  <div
+                    key={
+                      supersetInfo
+                        ? `${supersetInfo.groupId}-${exerciseIndex}`
+                        : exerciseIndex
+                    }
+                    className="relative"
+                    ref={(el) => {
+                      focusCardRefs.current[exerciseIndex] = el;
+                    }}
+                  >
                     {/* Badge Superset en haut à gauche */}
                     {supersetInfo && (
                       <div className="absolute top-2 left-2 z-20 pointer-events-none">
@@ -1906,8 +2382,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                         <div className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
                           <Check className="w-4 h-4" />
                         </div>
-                        {typeof exercise.rpe === 'number' && (
-                          <div className={`w-6 h-6 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find(r => r.value === exercise.rpe)?.color || 'bg-theme-tertiary'}`}>
+                        {typeof exercise.rpe === "number" && (
+                          <div
+                            className={`w-6 h-6 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find((r) => r.value === exercise.rpe)?.color || "bg-theme-tertiary"}`}
+                          >
                             {exercise.rpe}
                           </div>
                         )}
@@ -1917,8 +2395,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     <div
                       className={`
                         w-full aspect-square bg-theme-tertiary border rounded-xl overflow-hidden flex flex-col transition-all
-                        ${isExerciseDone ? 'border-[var(--color-success)]/50 bg-[var(--color-success)]/10' : 'border-theme'}
-                        ${isExpanded ? 'ring-2 ring-[var(--color-primary)]' : 'hover:bg-theme-tertiary/70'}
+                        ${isExerciseDone ? "border-[var(--color-success)]/50 bg-[var(--color-success)]/10" : "border-theme"}
+                        ${isExpanded ? "ring-2 ring-[var(--color-primary)]" : "hover:bg-theme-tertiary/70"}
                       `}
                     >
                       {!isExpanded ? (
@@ -1936,7 +2414,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           {/* Badges très agrandis */}
                           <div className="flex flex-wrap gap-2 mt-4">
                             <span className="px-4 py-2 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-xl text-base font-bold">
-                              {exerciseData?.series || exercise.sets.length}×{exerciseData?.repsDuree?.replace(/[^0-9-]/g, '') || '?'}
+                              {exerciseData?.series || exercise.sets.length}×
+                              {exerciseData?.repsDuree?.replace(
+                                /[^0-9-]/g,
+                                "",
+                              ) || "?"}
                             </span>
                             {exerciseData?.repos && (
                               <span className="px-4 py-2 border border-theme text-theme-muted rounded-xl text-base font-medium">
@@ -1948,14 +2430,26 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           {/* Boutons action très agrandis */}
                           <div className="flex items-center gap-2 mt-3">
                             <button
-                              onClick={(e) => { e.stopPropagation(); setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowHistoryModal({
+                                  index: exerciseIndex,
+                                  anchorEl: e.currentTarget,
+                                });
+                              }}
                               className="px-3 py-2 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
                               type="button"
                             >
                               Historique
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowConsignesModal({
+                                  index: exerciseIndex,
+                                  anchorEl: e.currentTarget,
+                                });
+                              }}
                               className="px-3 py-2 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
                               type="button"
                             >
@@ -1963,7 +2457,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             </button>
                             {exerciseData?.video && (
                               <button
-                                onClick={(e) => { e.stopPropagation(); setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget }); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowVideoModal({
+                                    url: exerciseData.video!,
+                                    exerciseName: exercise.exerciseName,
+                                    anchorEl: e.currentTarget,
+                                  });
+                                }}
                                 className="p-2.5 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-xl text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
                                 type="button"
                               >
@@ -1978,12 +2479,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                               {exercise.sets.map((s, i) => (
                                 <div
                                   key={i}
-                                  className={`flex-1 h-3 rounded-full ${s.completed ? 'bg-[var(--color-success)]' : 'bg-theme-tertiary'}`}
+                                  className={`flex-1 h-3 rounded-full ${s.completed ? "bg-[var(--color-success)]" : "bg-theme-tertiary"}`}
                                 />
                               ))}
                             </div>
                             <div className="text-base text-theme-muted mt-2 text-center font-semibold">
-                              {exercise.sets.filter(s => s.completed).length}/{exercise.sets.length} séries
+                              {exercise.sets.filter((s) => s.completed).length}/
+                              {exercise.sets.length} séries
                             </div>
                           </div>
                         </button>
@@ -2006,9 +2508,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           </div>
 
                           {/* Badges infos exercice + boutons action */}
-                          <div className="flex flex-wrap gap-1 mb-2" onClick={(e) => e.stopPropagation()}>
+                          <div
+                            className="flex flex-wrap gap-1 mb-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <span className="px-1.5 py-0.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded text-[10px] font-semibold">
-                              {exerciseData?.series || exercise.sets.length}×{exerciseData?.repsDuree?.replace(/[^0-9-]/g, '') || '?'}
+                              {exerciseData?.series || exercise.sets.length}×
+                              {exerciseData?.repsDuree?.replace(
+                                /[^0-9-]/g,
+                                "",
+                              ) || "?"}
                             </span>
                             {exerciseData?.repos && (
                               <span className="px-1.5 py-0.5 border border-theme text-theme-muted rounded text-[10px]">
@@ -2017,14 +2526,24 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             )}
                             {/* Boutons Historique, Consignes, Vidéo */}
                             <button
-                              onClick={(e) => setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget })}
+                              onClick={(e) =>
+                                setShowHistoryModal({
+                                  index: exerciseIndex,
+                                  anchorEl: e.currentTarget,
+                                })
+                              }
                               className="px-1.5 py-0.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded text-[10px] transition-colors whitespace-nowrap"
                               type="button"
                             >
                               Historique
                             </button>
                             <button
-                              onClick={(e) => setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget })}
+                              onClick={(e) =>
+                                setShowConsignesModal({
+                                  index: exerciseIndex,
+                                  anchorEl: e.currentTarget,
+                                })
+                              }
                               className="px-1.5 py-0.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded text-[10px] transition-colors whitespace-nowrap"
                               type="button"
                             >
@@ -2032,7 +2551,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             </button>
                             {exerciseData?.video && (
                               <button
-                                onClick={(e) => setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget })}
+                                onClick={(e) =>
+                                  setShowVideoModal({
+                                    url: exerciseData.video!,
+                                    exerciseName: exercise.exerciseName,
+                                    anchorEl: e.currentTarget,
+                                  })
+                                }
                                 className="px-1.5 py-0.5 border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:text-theme hover:border-[var(--color-primary)] rounded text-[10px] transition-colors whitespace-nowrap"
                                 type="button"
                               >
@@ -2042,11 +2567,19 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           </div>
 
                           {/* Zone inputs - empêche le clic de retourner la tuile */}
-                          <div className="flex-1 flex flex-col" onClick={(e) => e.stopPropagation()}>
+                          <div
+                            className="flex-1 flex flex-col"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             {/* Navigation séries compacte */}
                             <div className="flex items-center justify-center gap-1 mb-1">
                               <button
-                                onClick={() => setSetIndexForExercise(exerciseIndex, Math.max(setIndex - 1, 0))}
+                                onClick={() =>
+                                  setSetIndexForExercise(
+                                    exerciseIndex,
+                                    Math.max(setIndex - 1, 0),
+                                  )
+                                }
                                 disabled={setIndex === 0}
                                 className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                                 type="button"
@@ -2057,7 +2590,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 {setIndex + 1}/{exercise.sets.length}
                               </span>
                               <button
-                                onClick={() => setSetIndexForExercise(exerciseIndex, Math.min(setIndex + 1, exercise.sets.length - 1))}
+                                onClick={() =>
+                                  setSetIndexForExercise(
+                                    exerciseIndex,
+                                    Math.min(
+                                      setIndex + 1,
+                                      exercise.sets.length - 1,
+                                    ),
+                                  )
+                                }
                                 disabled={setIndex === exercise.sets.length - 1}
                                 className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                                 type="button"
@@ -2069,25 +2610,48 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             {/* Inputs Reps + Charge côte à côte */}
                             <div className="grid grid-cols-2 gap-2 flex-1">
                               <div className="flex flex-col">
-                                <label className="text-[9px] text-theme-muted mb-0.5 block">Reps</label>
+                                <label className="text-[9px] text-theme-muted mb-0.5 block">
+                                  Reps
+                                </label>
                                 <div className="flex-1 flex flex-col">
                                   <input
                                     type="text"
                                     inputMode="numeric"
-                                    placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
+                                    placeholder={
+                                      exerciseData?.repsDuree?.replace(
+                                        /[^0-9]/g,
+                                        "",
+                                      ) || "8"
+                                    }
                                     value={set.reps}
-                                    onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
+                                    onChange={(e) =>
+                                      updateSetForExercise(
+                                        exerciseIndex,
+                                        setIndex,
+                                        "reps",
+                                        e.target.value,
+                                      )
+                                    }
                                     className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                   />
-                                  <span className="text-[10px] text-transparent mt-0.5 block text-center">&nbsp;</span>
+                                  <span className="text-[10px] text-transparent mt-0.5 block text-center">
+                                    &nbsp;
+                                  </span>
                                 </div>
                               </div>
 
                               <div className="flex flex-col">
                                 <div className="flex items-center justify-between mb-0.5">
-                                  <label className="text-[9px] text-theme-muted">Charge</label>
+                                  <label className="text-[9px] text-theme-muted">
+                                    Charge
+                                  </label>
                                   <button
-                                    onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, setIndex)}
+                                    onClick={() =>
+                                      cycleSetLoadTypeForExercise(
+                                        exerciseIndex,
+                                        setIndex,
+                                      )
+                                    }
                                     className="p-0.5 text-theme-muted hover:text-theme-secondary transition-colors"
                                     type="button"
                                   >
@@ -2095,18 +2659,42 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                   </button>
                                 </div>
                                 <div className="flex-1 flex flex-col">
-                                  {set.load?.type === 'barbell' ? (
+                                  {set.load?.type === "barbell" ? (
                                     <div className="flex gap-1.5 flex-1">
                                       <input
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="20"
-                                        value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
+                                        value={
+                                          Number.isFinite(set.load.barKg)
+                                            ? String(set.load.barKg)
+                                            : ""
+                                        }
                                         onChange={(e) => {
                                           const raw = e.target.value;
-                                          const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
-                                          const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: Number.isFinite(n) ? n : 20, addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null });
+                                          const n =
+                                            raw === ""
+                                              ? 20
+                                              : Number(raw.replace(",", "."));
+                                          const prev = set.load as Extract<
+                                            SetLoad,
+                                            { type: "barbell" }
+                                          >;
+                                          updateSetLoadForExercise(
+                                            exerciseIndex,
+                                            setIndex,
+                                            {
+                                              type: "barbell",
+                                              unit: "kg",
+                                              barKg: Number.isFinite(n)
+                                                ? n
+                                                : 20,
+                                              addedKg:
+                                                typeof prev.addedKg === "number"
+                                                  ? prev.addedKg
+                                                  : null,
+                                            },
+                                          );
                                         }}
                                         className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                       />
@@ -2114,40 +2702,109 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="+0"
-                                        value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
+                                        value={
+                                          typeof set.load.addedKg === "number"
+                                            ? String(set.load.addedKg)
+                                            : ""
+                                        }
                                         onChange={(e) => {
                                           const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: prev.barKg, addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                          const n =
+                                            v === ""
+                                              ? null
+                                              : Number(v.replace(",", "."));
+                                          const prev = set.load as Extract<
+                                            SetLoad,
+                                            { type: "barbell" }
+                                          >;
+                                          updateSetLoadForExercise(
+                                            exerciseIndex,
+                                            setIndex,
+                                            {
+                                              type: "barbell",
+                                              unit: "kg",
+                                              barKg: prev.barKg,
+                                              addedKg:
+                                                v === ""
+                                                  ? null
+                                                  : Number.isFinite(n as number)
+                                                    ? (n as number)
+                                                    : null,
+                                            },
+                                          );
                                         }}
                                         className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                       />
                                     </div>
-                                  ) : set.load?.type === 'assisted' ? (
+                                  ) : set.load?.type === "assisted" ? (
                                     <input
                                       type="text"
                                       inputMode="decimal"
                                       placeholder="0"
-                                      value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
+                                      value={
+                                        typeof set.load.assistanceKg ===
+                                        "number"
+                                          ? String(set.load.assistanceKg)
+                                          : ""
+                                      }
                                       onChange={(e) => {
                                         const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'assisted', unit: 'kg', assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                        const n =
+                                          v === ""
+                                            ? null
+                                            : Number(v.replace(",", "."));
+                                        updateSetLoadForExercise(
+                                          exerciseIndex,
+                                          setIndex,
+                                          {
+                                            type: "assisted",
+                                            unit: "kg",
+                                            assistanceKg:
+                                              v === ""
+                                                ? null
+                                                : Number.isFinite(n as number)
+                                                  ? (n as number)
+                                                  : null,
+                                          },
+                                        );
                                       }}
                                       className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                     />
-                                  ) : set.load?.type === 'distance' ? (
+                                  ) : set.load?.type === "distance" ? (
                                     <input
                                       type="text"
                                       inputMode="decimal"
                                       placeholder="0"
-                                      value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
+                                      value={
+                                        typeof set.load.distanceValue ===
+                                        "number"
+                                          ? String(set.load.distanceValue)
+                                          : ""
+                                      }
                                       onChange={(e) => {
                                         const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'distance', unit: prev.unit, distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                        const n =
+                                          v === ""
+                                            ? null
+                                            : Number(v.replace(",", "."));
+                                        const prev = set.load as Extract<
+                                          SetLoad,
+                                          { type: "distance" }
+                                        >;
+                                        updateSetLoadForExercise(
+                                          exerciseIndex,
+                                          setIndex,
+                                          {
+                                            type: "distance",
+                                            unit: prev.unit,
+                                            distanceValue:
+                                              v === ""
+                                                ? null
+                                                : Number.isFinite(n as number)
+                                                  ? (n as number)
+                                                  : null,
+                                          },
+                                        );
                                       }}
                                       className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                     />
@@ -2158,32 +2815,94 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                       placeholder="0"
                                       value={(() => {
                                         const load = set.load;
-                                        if (!load) return '';
-                                        if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-                                          return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
+                                        if (!load) return "";
+                                        if (
+                                          load.type === "single" ||
+                                          load.type === "double" ||
+                                          load.type === "machine"
+                                        ) {
+                                          return typeof load.weightKg ===
+                                            "number"
+                                            ? String(load.weightKg)
+                                            : "";
                                         }
-                                        return '';
+                                        return "";
                                       })()}
                                       onChange={(e) => {
                                         const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        const t: 'single' | 'double' | 'machine' = set.load?.type === 'double' ? 'double' : (set.load?.type === 'machine' ? 'machine' : 'single');
-                                        const next: SetLoad = t === 'double'
-                                          ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                          : t === 'machine'
-                                            ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                            : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                        const n =
+                                          v === ""
+                                            ? null
+                                            : Number(v.replace(",", "."));
+                                        const t:
+                                          | "single"
+                                          | "double"
+                                          | "machine" =
+                                          set.load?.type === "double"
+                                            ? "double"
+                                            : set.load?.type === "machine"
+                                              ? "machine"
+                                              : "single";
+                                        const next: SetLoad =
+                                          t === "double"
+                                            ? {
+                                                type: "double",
+                                                unit: "kg",
+                                                weightKg:
+                                                  v === ""
+                                                    ? null
+                                                    : Number.isFinite(
+                                                          n as number,
+                                                        )
+                                                      ? (n as number)
+                                                      : null,
+                                              }
+                                            : t === "machine"
+                                              ? {
+                                                  type: "machine",
+                                                  unit: "kg",
+                                                  weightKg:
+                                                    v === ""
+                                                      ? null
+                                                      : Number.isFinite(
+                                                            n as number,
+                                                          )
+                                                        ? (n as number)
+                                                        : null,
+                                                }
+                                              : {
+                                                  type: "single",
+                                                  unit: "kg",
+                                                  weightKg:
+                                                    v === ""
+                                                      ? null
+                                                      : Number.isFinite(
+                                                            n as number,
+                                                          )
+                                                        ? (n as number)
+                                                        : null,
+                                                };
+                                        updateSetLoadForExercise(
+                                          exerciseIndex,
+                                          setIndex,
+                                          next,
+                                        );
                                       }}
                                       className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                     />
                                   )}
                                   <span className="text-[10px] text-theme-muted mt-0.5 block text-center">
-                                    {set.load?.type === 'barbell' ? 'Barre' :
-                                     set.load?.type === 'assisted' ? 'Assisté' :
-                                     set.load?.type === 'distance' ? 'Distance' :
-                                     set.load?.type === 'double' ? 'Haltères/KB x2' :
-                                     set.load?.type === 'machine' ? 'Machine' : 'Haltère/KB'}
+                                    {set.load?.type === "barbell"
+                                      ? "Barre"
+                                      : set.load?.type === "assisted"
+                                        ? "Assisté"
+                                        : set.load?.type === "distance"
+                                          ? "Distance"
+                                          : set.load?.type === "double"
+                                            ? "Haltères/KB x2"
+                                            : set.load?.type === "machine"
+                                              ? "Machine"
+                                              : "Haltère/KB"}
                                   </span>
                                 </div>
                               </div>
@@ -2193,24 +2912,38 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             <div className="grid grid-cols-[1fr_auto] gap-2 mt-auto pt-2 border-t border-theme/50">
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[8px] text-theme-muted">RPE</span>
+                                  <span className="text-[8px] text-theme-muted">
+                                    RPE
+                                  </span>
                                   <div className="flex gap-px flex-1">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rpe) => (
-                                      <button
-                                        key={rpe}
-                                        onClick={() => updateExerciseRpeForExercise(exerciseIndex, exercise.rpe === rpe ? undefined : rpe)}
-                                        className={`
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+                                      (rpe) => (
+                                        <button
+                                          key={rpe}
+                                          onClick={() =>
+                                            updateExerciseRpeForExercise(
+                                              exerciseIndex,
+                                              exercise.rpe === rpe
+                                                ? undefined
+                                                : rpe,
+                                            )
+                                          }
+                                          className={`
                                           flex-1 h-5 text-[9px] font-bold rounded transition-colors flex items-center justify-center
-                                          ${exercise.rpe === rpe
-                                            ? RPE_SCALE.find(r => r.value === rpe)?.color + ' text-theme'
-                                            : 'bg-theme-tertiary text-theme-muted hover:bg-theme-secondary'
+                                          ${
+                                            exercise.rpe === rpe
+                                              ? RPE_SCALE.find(
+                                                  (r) => r.value === rpe,
+                                                )?.color + " text-theme"
+                                              : "bg-theme-tertiary text-theme-muted hover:bg-theme-secondary"
                                           }
                                         `}
-                                        type="button"
-                                      >
-                                        {rpe}
-                                      </button>
-                                    ))}
+                                          type="button"
+                                        >
+                                          {rpe}
+                                        </button>
+                                      ),
+                                    )}
                                   </div>
                                 </div>
 
@@ -2219,37 +2952,77 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                     <input
                                       type="text"
                                       placeholder="Message..."
-                                      value={exerciseComments[exercise.exerciseName] || ''}
-                                      onChange={(e) => setExerciseComments(prev => ({ ...prev, [exercise.exerciseName]: e.target.value }))}
+                                      value={
+                                        exerciseComments[
+                                          exercise.exerciseName
+                                        ] || ""
+                                      }
+                                      onChange={(e) =>
+                                        setExerciseComments((prev) => ({
+                                          ...prev,
+                                          [exercise.exerciseName]:
+                                            e.target.value,
+                                        }))
+                                      }
                                       onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && exerciseComments[exercise.exerciseName]?.trim()) {
-                                          handleSendComment(exercise.exerciseName);
+                                        if (
+                                          e.key === "Enter" &&
+                                          exerciseComments[
+                                            exercise.exerciseName
+                                          ]?.trim()
+                                        ) {
+                                          handleSendComment(
+                                            exercise.exerciseName,
+                                          );
                                         }
                                       }}
-                                      onFocus={() => setMessageSentConfirm(prev => {
-                                        const next = new Set(prev);
-                                        next.delete(exercise.exerciseName);
-                                        return next;
-                                      })}
+                                      onFocus={() =>
+                                        setMessageSentConfirm((prev) => {
+                                          const next = new Set(prev);
+                                          next.delete(exercise.exerciseName);
+                                          return next;
+                                        })
+                                      }
                                       className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-2 py-1.5 text-theme text-[10px] placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                     />
                                     <button
-                                      onClick={() => handleSendComment(exercise.exerciseName)}
-                                      disabled={!exerciseComments[exercise.exerciseName]?.trim() && !messageSentConfirm.has(exercise.exerciseName)}
-                                      className={`px-2 ${messageSentConfirm.has(exercise.exerciseName) ? 'bg-[var(--color-success)]' : 'bg-[var(--color-primary)] hover:opacity-90'} disabled:bg-theme-tertiary disabled:text-theme-muted text-theme rounded transition-colors`}
+                                      onClick={() =>
+                                        handleSendComment(exercise.exerciseName)
+                                      }
+                                      disabled={
+                                        !exerciseComments[
+                                          exercise.exerciseName
+                                        ]?.trim() &&
+                                        !messageSentConfirm.has(
+                                          exercise.exerciseName,
+                                        )
+                                      }
+                                      className={`px-2 ${messageSentConfirm.has(exercise.exerciseName) ? "bg-[var(--color-success)]" : "bg-[var(--color-primary)] hover:opacity-90"} disabled:bg-theme-tertiary disabled:text-theme-muted text-theme rounded transition-colors`}
                                       type="button"
                                     >
-                                      {messageSentConfirm.has(exercise.exerciseName) ? <Check className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                      {messageSentConfirm.has(
+                                        exercise.exerciseName,
+                                      ) ? (
+                                        <Check className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <ChevronRight className="w-3.5 h-3.5" />
+                                      )}
                                     </button>
                                   </div>
                                 )}
                               </div>
 
                               <button
-                                onClick={() => (set.completed ? toggleSetValidationForExercise(exerciseIndex) : validateSetForExercise(exerciseIndex))}
+                                onClick={() =>
+                                  set.completed
+                                    ? toggleSetValidationForExercise(
+                                        exerciseIndex,
+                                      )
+                                    : validateSetForExercise(exerciseIndex)
+                                }
                                 className={`
                                   self-stretch px-4 rounded-lg font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center
-                                  ${set.completed ? 'bg-[var(--color-success)] text-theme' : 'bg-[var(--color-primary)] hover:opacity-90 text-theme'}
+                                  ${set.completed ? "bg-[var(--color-success)] text-theme" : "bg-[var(--color-primary)] hover:opacity-90 text-theme"}
                                 `}
                                 type="button"
                               >
@@ -2271,22 +3044,49 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                   const modeInfo = EXECUTION_MODES[group.executionMode];
 
                   // Récupérer les indices originaux des exercices du groupe
-                  const exerciseIndices = group.exercises.map(ex =>
-                    logs.findIndex(l => l.exerciseName === ex.exerciseName && l.executionGroupId === ex.executionGroupId)
+                  const exerciseIndices = group.exercises.map((ex) =>
+                    logs.findIndex(
+                      (l) =>
+                        l.exerciseName === ex.exerciseName &&
+                        l.executionGroupId === ex.executionGroupId,
+                    ),
                   );
 
                   // Vérifier si tous les exercices du groupe sont terminés
-                  const allGroupDone = group.exercises.every(ex => {
-                    const allSetsDone = ex.sets.every(s => s.completed);
-                    return allSetsDone && typeof ex.rpe === 'number';
+                  const allGroupDone = group.exercises.every((ex) => {
+                    const allSetsDone = ex.sets.every((s) => s.completed);
+                    return allSetsDone && typeof ex.rpe === "number";
                   });
 
                   if (isDesktop) {
-                    // Desktop: Conteneur superset transparent avec blocs exercices alignés sur la grille
+                    // Desktop: Conteneur superset transparent, col-span dynamique selon le nombre d'exercices.
+                    // Le col-span s'adapte pour que le layer superset entoure uniquement les blocs exercices.
+                    // Mapping statique de classes Tailwind (évite les template literals dynamiques non détectés par le scanner).
+                    // Borné aux limites responsive de la grille parente : base=2 / lg=3 / xl=4.
+                    const exCount = group.exercises.length;
+                    // col-span-1 col-span-2 col-span-3 col-span-4 lg:col-span-2 lg:col-span-3 xl:col-span-3 xl:col-span-4
+                    const COL_SPAN_MAP: Record<number, string> = {
+                      1: "col-span-1",
+                      2: "col-span-2",
+                      3: "col-span-2 lg:col-span-3",
+                      4: "col-span-2 lg:col-span-3 xl:col-span-4",
+                    };
+                    // grid-cols-1 grid-cols-2 grid-cols-3 grid-cols-4 lg:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 xl:grid-cols-4
+                    const GRID_COLS_MAP: Record<number, string> = {
+                      1: "grid-cols-1",
+                      2: "grid-cols-2",
+                      3: "grid-cols-2 lg:grid-cols-3",
+                      4: "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+                    };
+                    const colSpanClass =
+                      COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
+                    const gridColsClass =
+                      GRID_COLS_MAP[Math.min(exCount, 4)] || GRID_COLS_MAP[4];
+
                     renderedElements.push(
                       <div
                         key={`superset-${group.groupId}`}
-                        className="col-span-2 relative"
+                        className={`${colSpanClass} relative`}
                       >
                         {/* Bordure superset */}
                         <div className="absolute inset-0 border-2 border-[var(--color-primary)] rounded-xl pointer-events-none z-10" />
@@ -2302,15 +3102,21 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           )}
                         </div>
 
-                        {/* Blocs exercices côte à côte - alignés avec la grille parente */}
-                        <div className="grid grid-cols-2 gap-3 p-1.5">
+                        {/* Blocs exercices côte à côte - grille adaptée au nombre d'exercices */}
+                        <div className={`grid ${gridColsClass} gap-3 p-1.5`}>
                           {group.exercises.map((exercise, exIdx) => {
                             const exerciseIndex = exerciseIndices[exIdx];
-                            const supersetLabel = String.fromCharCode(65 + exIdx);
-                            return renderDesktopExerciseBlock(exercise, exerciseIndex, { label: supersetLabel, groupId: group.groupId });
+                            const supersetLabel = String.fromCharCode(
+                              65 + exIdx,
+                            );
+                            return renderDesktopExerciseBlock(
+                              exercise,
+                              exerciseIndex,
+                              { label: supersetLabel, groupId: group.groupId },
+                            );
                           })}
                         </div>
-                      </div>
+                      </div>,
                     );
                   } else {
                     // =====================================================
@@ -2320,12 +3126,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     const isGroupExpanded = isSupersetExpanded(groupId);
                     const supersetSetIdx = getSupersetSetIndex(groupId);
                     const firstExercise = group.exercises[0];
-                    const firstExerciseData = sessionData.find(d => d.exercice === firstExercise?.exerciseName);
+                    const firstExerciseData = sessionData.find(
+                      (d) => d.exercice === firstExercise?.exerciseName,
+                    );
                     const totalSets = firstExercise?.sets.length || 0;
 
                     // Vérifier si la série actuelle est complétée pour tous les exercices
-                    const isCurrentSetCompleted = group.exercises.every(ex =>
-                      ex.sets[supersetSetIdx]?.completed
+                    const isCurrentSetCompleted = group.exercises.every(
+                      (ex) => ex.sets[supersetSetIdx]?.completed,
                     );
 
                     // RPE du groupe (prendre le premier exercice comme référence)
@@ -2335,7 +3143,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       <div
                         key={`superset-${groupId}`}
                         className="relative"
-                        ref={(el) => { focusCardRefs.current[exerciseIndices[0]] = el; }}
+                        ref={(el) => {
+                          focusCardRefs.current[exerciseIndices[0]] = el;
+                        }}
                       >
                         {/* Bordure superset */}
                         <div className="absolute inset-0 border-2 border-[var(--color-primary)] rounded-xl pointer-events-none z-10" />
@@ -2357,8 +3167,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             <div className="w-7 h-7 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
                               <Check className="w-4 h-4" />
                             </div>
-                            {typeof groupRpe === 'number' && (
-                              <div className={`w-7 h-7 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find(r => r.value === groupRpe)?.color || 'bg-theme-tertiary'}`}>
+                            {typeof groupRpe === "number" && (
+                              <div
+                                className={`w-7 h-7 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find((r) => r.value === groupRpe)?.color || "bg-theme-tertiary"}`}
+                              >
                                 {groupRpe}
                               </div>
                             )}
@@ -2366,8 +3178,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                         )}
 
                         <Card
-                          variant={isGroupExpanded ? 'gradient' : 'default'}
-                          className={`overflow-hidden relative ${allGroupDone ? 'border-2 border-[var(--color-success)]/50 bg-[var(--color-success)]/10' : ''}`}
+                          variant={isGroupExpanded ? "gradient" : "default"}
+                          className={`overflow-hidden relative ${allGroupDone ? "border-2 border-[var(--color-success)]/50 bg-[var(--color-success)]/10" : ""}`}
                         >
                           <CardContent className="p-0">
                             {/* ========== HEADER CLIQUABLE (TOUJOURS VISIBLE) ========== */}
@@ -2376,24 +3188,38 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                               className="w-full text-left"
                               type="button"
                             >
-                              <div className={`${isGroupExpanded ? 'bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20' : ''} px-4 py-3 border-b border-theme/50`}>
+                              <div
+                                className={`${isGroupExpanded ? "bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20" : ""} px-4 py-3 border-b border-theme/50`}
+                              >
                                 {/* Noms des exercices en entier + badges en dessous */}
                                 <div className="space-y-2">
                                   {group.exercises.map((exercise, exIdx) => {
-                                    const exerciseIndex = exerciseIndices[exIdx];
-                                    const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+                                    const exerciseIndex =
+                                      exerciseIndices[exIdx];
+                                    const exerciseData = sessionData.find(
+                                      (d) =>
+                                        d.exercice === exercise.exerciseName,
+                                    );
 
                                     return (
                                       <div key={exIdx}>
                                         {/* Ligne nom exercice avec bullet CSS dans la marge (texte aligné avec les autres blocs) */}
                                         <h3 className="font-bold text-theme text-base leading-tight relative before:content-[''] before:absolute before:-left-3 before:top-[0.45em] before:w-1.5 before:h-1.5 before:rounded-full before:bg-[var(--color-primary)]">
-                                          {getExerciseDisplayName(exercise.exerciseName)}
+                                          {getExerciseDisplayName(
+                                            exercise.exerciseName,
+                                          )}
                                         </h3>
                                         {/* Badges individuels en dessous (masqués si expanded) */}
                                         {!isGroupExpanded && (
                                           <div className="flex items-center gap-1 mt-1">
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowHistoryModal({
+                                                  index: exerciseIndex,
+                                                  anchorEl: e.currentTarget,
+                                                });
+                                              }}
                                               className="px-2 py-1 border border-[var(--color-danger)]/40 text-[var(--color-danger)] rounded text-xs font-medium"
                                               type="button"
                                             >
@@ -2401,7 +3227,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                             </button>
                                             {exerciseData?.notes && (
                                               <button
-                                                onClick={(e) => { e.stopPropagation(); setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setShowConsignesModal({
+                                                    index: exerciseIndex,
+                                                    anchorEl: e.currentTarget,
+                                                  });
+                                                }}
                                                 className="px-2 py-1 border border-[var(--color-warning)]/40 text-[var(--color-warning)] rounded text-xs font-medium"
                                                 type="button"
                                               >
@@ -2410,7 +3242,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                             )}
                                             {exerciseData?.video && (
                                               <button
-                                                onClick={(e) => { e.stopPropagation(); setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget }); }}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setShowVideoModal({
+                                                    url: exerciseData.video!,
+                                                    exerciseName:
+                                                      exercise.exerciseName,
+                                                    anchorEl: e.currentTarget,
+                                                  });
+                                                }}
                                                 className="p-1 border border-[var(--color-primary)]/40 text-[var(--color-primary)] rounded"
                                                 type="button"
                                               >
@@ -2428,7 +3268,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 {isGroupExpanded && (
                                   <div className="flex items-center gap-2 mt-2">
                                     <span className="px-2 py-1 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
-                                      {firstExerciseData?.series || totalSets} × {firstExerciseData?.repsDuree || '?'}
+                                      {firstExerciseData?.series || totalSets} ×{" "}
+                                      {firstExerciseData?.repsDuree || "?"}
                                     </span>
                                     {firstExerciseData?.repos && (
                                       <span className="px-2 py-1 border border-theme text-theme-muted rounded-lg text-xs">
@@ -2448,7 +3289,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                   <div className="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-theme/30">
                                     <div className="flex items-center gap-2">
                                       <span className="px-2 py-1 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
-                                        {firstExerciseData?.series || totalSets} × {firstExerciseData?.repsDuree || '?'}
+                                        {firstExerciseData?.series || totalSets}{" "}
+                                        × {firstExerciseData?.repsDuree || "?"}
                                       </span>
                                       {firstExerciseData?.repos && (
                                         <span className="px-2 py-1 border border-theme text-theme-muted rounded-lg text-xs">
@@ -2461,11 +3303,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         <div
                                           key={i}
                                           className={`w-2.5 h-2.5 rounded-full ${
-                                            group.exercises.every(ex => ex.sets[i]?.completed)
-                                              ? 'bg-[var(--color-success)]'
+                                            group.exercises.every(
+                                              (ex) => ex.sets[i]?.completed,
+                                            )
+                                              ? "bg-[var(--color-success)]"
                                               : i === supersetSetIdx
-                                                ? 'bg-[var(--color-primary)]'
-                                                : 'bg-theme-tertiary'
+                                                ? "bg-[var(--color-primary)]"
+                                                : "bg-theme-tertiary"
                                           }`}
                                         />
                                       ))}
@@ -2480,27 +3324,42 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                             {/* ========== ZONE EXPANDED ========== */}
                             {isGroupExpanded && (
-                              <div className="p-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+                              <div
+                                className="p-4 space-y-4"
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 {/* Navigation PARTAGÉE avec +/- boutons */}
                                 <div>
                                   <div className="flex items-center gap-2">
                                     {firstExercise?.sets.map((s, i) => (
                                       <button
                                         key={i}
-                                        onClick={() => setSupersetSetIndexForGroup(groupId, i)}
+                                        onClick={() =>
+                                          setSupersetSetIndexForGroup(
+                                            groupId,
+                                            i,
+                                          )
+                                        }
                                         className={`flex-1 h-3 rounded-full transition-all ${
-                                          group.exercises.every(ex => ex.sets[i]?.completed)
-                                            ? 'bg-[var(--color-success)]'
+                                          group.exercises.every(
+                                            (ex) => ex.sets[i]?.completed,
+                                          )
+                                            ? "bg-[var(--color-success)]"
                                             : i === supersetSetIdx
-                                              ? 'bg-[var(--color-primary)]'
-                                              : 'bg-theme-tertiary'
+                                              ? "bg-[var(--color-primary)]"
+                                              : "bg-theme-tertiary"
                                         }`}
                                       />
                                     ))}
                                   </div>
                                   <div className="flex items-center justify-center gap-3 mt-2">
                                     <button
-                                      onClick={() => removeSetForSuperset(groupId, exerciseIndices)}
+                                      onClick={() =>
+                                        removeSetForSuperset(
+                                          groupId,
+                                          exerciseIndices,
+                                        )
+                                      }
                                       disabled={totalSets <= 1}
                                       className="p-1 text-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                       type="button"
@@ -2512,7 +3371,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                       Série {supersetSetIdx + 1} / {totalSets}
                                     </span>
                                     <button
-                                      onClick={() => addSetForSuperset(exerciseIndices)}
+                                      onClick={() =>
+                                        addSetForSuperset(exerciseIndices)
+                                      }
                                       className="p-1 text-theme-muted hover:text-theme transition-colors"
                                       type="button"
                                       aria-label="Ajouter série"
@@ -2525,21 +3386,34 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 {/* Inputs INDIVIDUELS par exercice */}
                                 {group.exercises.map((exercise, exIdx) => {
                                   const exerciseIndex = exerciseIndices[exIdx];
-                                  const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+                                  const exerciseData = sessionData.find(
+                                    (d) => d.exercice === exercise.exerciseName,
+                                  );
                                   const set = exercise.sets[supersetSetIdx];
                                   if (!set) return null;
 
                                   return (
-                                    <div key={exIdx} className="space-y-3 p-3 bg-theme-tertiary/50 rounded-lg">
+                                    <div
+                                      key={exIdx}
+                                      className="space-y-3 p-3 bg-theme-tertiary/50 rounded-lg"
+                                    >
                                       {/* Titre exercice avec bullet CSS dans la marge + badges en dessous */}
                                       <div>
                                         <h3 className="font-medium text-theme text-sm leading-tight relative before:content-[''] before:absolute before:-left-2 before:top-[0.4em] before:w-1 before:h-1 before:rounded-full before:bg-[var(--color-primary)]">
-                                          {getExerciseDisplayName(exercise.exerciseName)}
+                                          {getExerciseDisplayName(
+                                            exercise.exerciseName,
+                                          )}
                                         </h3>
                                         {/* Badges sous le nom */}
                                         <div className="flex items-center gap-1 mt-1.5">
                                           <button
-                                            onClick={(e) => { e.stopPropagation(); setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setShowHistoryModal({
+                                                index: exerciseIndex,
+                                                anchorEl: e.currentTarget,
+                                              });
+                                            }}
                                             className="px-2 py-1 border border-[var(--color-danger)]/40 text-[var(--color-danger)] rounded text-[10px] font-medium"
                                             type="button"
                                           >
@@ -2547,7 +3421,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           </button>
                                           {exerciseData?.notes && (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowConsignesModal({
+                                                  index: exerciseIndex,
+                                                  anchorEl: e.currentTarget,
+                                                });
+                                              }}
                                               className="px-2 py-1 border border-[var(--color-warning)]/40 text-[var(--color-warning)] rounded text-[10px] font-medium"
                                               type="button"
                                             >
@@ -2556,7 +3436,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           )}
                                           {exerciseData?.video && (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget }); }}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowVideoModal({
+                                                  url: exerciseData.video!,
+                                                  exerciseName:
+                                                    exercise.exerciseName,
+                                                  anchorEl: e.currentTarget,
+                                                });
+                                              }}
                                               className="p-1 border border-[var(--color-primary)]/40 text-[var(--color-primary)] rounded"
                                               type="button"
                                             >
@@ -2570,22 +3458,43 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                       <div className="space-y-3">
                                         {/* Input Reps */}
                                         <div>
-                                          <label className="block text-sm text-theme-muted mb-2">Répétitions</label>
+                                          <label className="block text-sm text-theme-muted mb-2">
+                                            Répétitions
+                                          </label>
                                           <input
                                             type="text"
                                             inputMode="numeric"
-                                            placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
+                                            placeholder={
+                                              exerciseData?.repsDuree?.replace(
+                                                /[^0-9]/g,
+                                                "",
+                                              ) || "8"
+                                            }
                                             value={set.reps}
-                                            onChange={(e) => updateSetForExercise(exerciseIndex, supersetSetIdx, 'reps', e.target.value)}
+                                            onChange={(e) =>
+                                              updateSetForExercise(
+                                                exerciseIndex,
+                                                supersetSetIdx,
+                                                "reps",
+                                                e.target.value,
+                                              )
+                                            }
                                             className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                           />
                                         </div>
                                         {/* Input Charge */}
                                         <div>
                                           <div className="flex items-center justify-between mb-2">
-                                            <label className="block text-sm text-theme-muted">Charge</label>
+                                            <label className="block text-sm text-theme-muted">
+                                              Charge
+                                            </label>
                                             <button
-                                              onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, supersetSetIdx)}
+                                              onClick={() =>
+                                                cycleSetLoadTypeForExercise(
+                                                  exerciseIndex,
+                                                  supersetSetIdx,
+                                                )
+                                              }
                                               className="p-2 bg-theme-tertiary hover:bg-theme-tertiary text-theme rounded-lg transition-colors"
                                               type="button"
                                               aria-label="Changer type de charge"
@@ -2595,84 +3504,220 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           </div>
 
                                           {/* Barbell: 2 inputs avec labels en dessous */}
-                                          {set.load?.type === 'barbell' && (
+                                          {set.load?.type === "barbell" && (
                                             <div className="grid grid-cols-2 gap-3">
                                               <div>
                                                 <input
                                                   type="text"
                                                   inputMode="decimal"
                                                   placeholder="20"
-                                                  value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
+                                                  value={
+                                                    Number.isFinite(
+                                                      set.load.barKg,
+                                                    )
+                                                      ? String(set.load.barKg)
+                                                      : ""
+                                                  }
                                                   onChange={(e) => {
                                                     const raw = e.target.value;
-                                                    const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
-                                                    const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                                    updateSetLoadForExercise(exerciseIndex, supersetSetIdx, { type: 'barbell', unit: 'kg', barKg: Number.isFinite(n) ? n : 20, addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null });
+                                                    const n =
+                                                      raw === ""
+                                                        ? 20
+                                                        : Number(
+                                                            raw.replace(
+                                                              ",",
+                                                              ".",
+                                                            ),
+                                                          );
+                                                    const prev =
+                                                      set.load as Extract<
+                                                        SetLoad,
+                                                        { type: "barbell" }
+                                                      >;
+                                                    updateSetLoadForExercise(
+                                                      exerciseIndex,
+                                                      supersetSetIdx,
+                                                      {
+                                                        type: "barbell",
+                                                        unit: "kg",
+                                                        barKg: Number.isFinite(
+                                                          n,
+                                                        )
+                                                          ? n
+                                                          : 20,
+                                                        addedKg:
+                                                          typeof prev.addedKg ===
+                                                          "number"
+                                                            ? prev.addedKg
+                                                            : null,
+                                                      },
+                                                    );
                                                   }}
                                                   className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                                 />
-                                                <div className="text-sm text-theme-muted text-center mt-1">Barre</div>
+                                                <div className="text-sm text-theme-muted text-center mt-1">
+                                                  Barre
+                                                </div>
                                               </div>
                                               <div>
                                                 <input
                                                   type="text"
                                                   inputMode="decimal"
                                                   placeholder="0"
-                                                  value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
+                                                  value={
+                                                    typeof set.load.addedKg ===
+                                                    "number"
+                                                      ? String(set.load.addedKg)
+                                                      : ""
+                                                  }
                                                   onChange={(e) => {
                                                     const raw = e.target.value;
-                                                    const n = raw === '' ? null : Number(raw.replace(',', '.'));
-                                                    const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                                    updateSetLoadForExercise(exerciseIndex, supersetSetIdx, { type: 'barbell', unit: 'kg', barKg: prev.barKg ?? 20, addedKg: n !== null && Number.isFinite(n) ? n : null });
+                                                    const n =
+                                                      raw === ""
+                                                        ? null
+                                                        : Number(
+                                                            raw.replace(
+                                                              ",",
+                                                              ".",
+                                                            ),
+                                                          );
+                                                    const prev =
+                                                      set.load as Extract<
+                                                        SetLoad,
+                                                        { type: "barbell" }
+                                                      >;
+                                                    updateSetLoadForExercise(
+                                                      exerciseIndex,
+                                                      supersetSetIdx,
+                                                      {
+                                                        type: "barbell",
+                                                        unit: "kg",
+                                                        barKg: prev.barKg ?? 20,
+                                                        addedKg:
+                                                          n !== null &&
+                                                          Number.isFinite(n)
+                                                            ? n
+                                                            : null,
+                                                      },
+                                                    );
                                                   }}
                                                   className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                                 />
-                                                <div className="text-sm text-theme-muted text-center mt-1">Poids ajoutés</div>
+                                                <div className="text-sm text-theme-muted text-center mt-1">
+                                                  Poids ajoutés
+                                                </div>
                                               </div>
                                             </div>
                                           )}
 
                                           {/* Assisted */}
-                                          {set.load?.type === 'assisted' && (
+                                          {set.load?.type === "assisted" && (
                                             <div>
                                               <input
                                                 type="text"
                                                 inputMode="decimal"
                                                 placeholder="0"
-                                                value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
+                                                value={
+                                                  typeof set.load
+                                                    .assistanceKg === "number"
+                                                    ? String(
+                                                        set.load.assistanceKg,
+                                                      )
+                                                    : ""
+                                                }
                                                 onChange={(e) => {
                                                   const v = e.target.value;
-                                                  const n = v === '' ? null : Number(v.replace(',', '.'));
-                                                  updateSetLoadForExercise(exerciseIndex, supersetSetIdx, { type: 'assisted', unit: 'kg', assistanceKg: n !== null && Number.isFinite(n) ? n : null });
+                                                  const n =
+                                                    v === ""
+                                                      ? null
+                                                      : Number(
+                                                          v.replace(",", "."),
+                                                        );
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    supersetSetIdx,
+                                                    {
+                                                      type: "assisted",
+                                                      unit: "kg",
+                                                      assistanceKg:
+                                                        n !== null &&
+                                                        Number.isFinite(n)
+                                                          ? n
+                                                          : null,
+                                                    },
+                                                  );
                                                 }}
                                                 className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                               />
-                                              <div className="text-sm text-theme-muted text-center mt-1">Assistance (kg)</div>
+                                              <div className="text-sm text-theme-muted text-center mt-1">
+                                                Assistance (kg)
+                                              </div>
                                             </div>
                                           )}
 
                                           {/* Distance */}
-                                          {set.load?.type === 'distance' && (
+                                          {set.load?.type === "distance" && (
                                             <div>
                                               <input
                                                 type="text"
                                                 inputMode="decimal"
                                                 placeholder="0"
-                                                value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
+                                                value={
+                                                  typeof set.load
+                                                    .distanceValue === "number"
+                                                    ? String(
+                                                        set.load.distanceValue,
+                                                      )
+                                                    : ""
+                                                }
                                                 onChange={(e) => {
                                                   const v = e.target.value;
-                                                  const n = v === '' ? null : Number(v.replace(',', '.'));
-                                                  updateSetLoadForExercise(exerciseIndex, supersetSetIdx, { type: 'distance', unit: 'cm', distanceValue: n !== null && Number.isFinite(n) ? n : null });
+                                                  const n =
+                                                    v === ""
+                                                      ? null
+                                                      : Number(
+                                                          v.replace(",", "."),
+                                                        );
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    supersetSetIdx,
+                                                    {
+                                                      type: "distance",
+                                                      unit: "cm",
+                                                      distanceValue:
+                                                        n !== null &&
+                                                        Number.isFinite(n)
+                                                          ? n
+                                                          : null,
+                                                    },
+                                                  );
                                                 }}
                                                 className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                               />
                                               <div className="flex items-center justify-center gap-2 mt-1">
-                                                <span className="text-sm text-theme-muted">Distance en</span>
+                                                <span className="text-sm text-theme-muted">
+                                                  Distance en
+                                                </span>
                                                 <select
                                                   value={set.load.unit}
                                                   onChange={(e) => {
-                                                    const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                                    updateSetLoadForExercise(exerciseIndex, supersetSetIdx, { type: 'distance', unit: e.target.value as 'cm' | 'm', distanceValue: prev.distanceValue });
+                                                    const prev =
+                                                      set.load as Extract<
+                                                        SetLoad,
+                                                        { type: "distance" }
+                                                      >;
+                                                    updateSetLoadForExercise(
+                                                      exerciseIndex,
+                                                      supersetSetIdx,
+                                                      {
+                                                        type: "distance",
+                                                        unit: e.target.value as
+                                                          | "cm"
+                                                          | "m",
+                                                        distanceValue:
+                                                          prev.distanceValue,
+                                                      },
+                                                    );
                                                   }}
                                                   className="bg-theme-tertiary border border-theme rounded-lg px-2 py-1 text-theme text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                                 >
@@ -2684,7 +3729,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           )}
 
                                           {/* Single, Double, Machine */}
-                                          {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine' || !set.load?.type) && (
+                                          {(set.load?.type === "single" ||
+                                            set.load?.type === "double" ||
+                                            set.load?.type === "machine" ||
+                                            !set.load?.type) && (
                                             <div>
                                               <input
                                                 type="text"
@@ -2692,27 +3740,90 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                                 placeholder="0"
                                                 value={(() => {
                                                   const load = set.load;
-                                                  if (!load) return '';
-                                                  if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-                                                    return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
+                                                  if (!load) return "";
+                                                  if (
+                                                    load.type === "single" ||
+                                                    load.type === "double" ||
+                                                    load.type === "machine"
+                                                  ) {
+                                                    return typeof load.weightKg ===
+                                                      "number"
+                                                      ? String(load.weightKg)
+                                                      : "";
                                                   }
-                                                  return '';
+                                                  return "";
                                                 })()}
                                                 onChange={(e) => {
                                                   const v = e.target.value;
-                                                  const n = v === '' ? null : Number(v.replace(',', '.'));
-                                                  const t: 'single' | 'double' | 'machine' = set.load?.type === 'double' ? 'double' : (set.load?.type === 'machine' ? 'machine' : 'single');
-                                                  const next: SetLoad = t === 'double'
-                                                    ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                                    : t === 'machine'
-                                                      ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                                      : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
-                                                  updateSetLoadForExercise(exerciseIndex, supersetSetIdx, next);
+                                                  const n =
+                                                    v === ""
+                                                      ? null
+                                                      : Number(
+                                                          v.replace(",", "."),
+                                                        );
+                                                  const t:
+                                                    | "single"
+                                                    | "double"
+                                                    | "machine" =
+                                                    set.load?.type === "double"
+                                                      ? "double"
+                                                      : set.load?.type ===
+                                                          "machine"
+                                                        ? "machine"
+                                                        : "single";
+                                                  const next: SetLoad =
+                                                    t === "double"
+                                                      ? {
+                                                          type: "double",
+                                                          unit: "kg",
+                                                          weightKg:
+                                                            v === ""
+                                                              ? null
+                                                              : Number.isFinite(
+                                                                    n as number,
+                                                                  )
+                                                                ? (n as number)
+                                                                : null,
+                                                        }
+                                                      : t === "machine"
+                                                        ? {
+                                                            type: "machine",
+                                                            unit: "kg",
+                                                            weightKg:
+                                                              v === ""
+                                                                ? null
+                                                                : Number.isFinite(
+                                                                      n as number,
+                                                                    )
+                                                                  ? (n as number)
+                                                                  : null,
+                                                          }
+                                                        : {
+                                                            type: "single",
+                                                            unit: "kg",
+                                                            weightKg:
+                                                              v === ""
+                                                                ? null
+                                                                : Number.isFinite(
+                                                                      n as number,
+                                                                    )
+                                                                  ? (n as number)
+                                                                  : null,
+                                                          };
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    supersetSetIdx,
+                                                    next,
+                                                  );
                                                 }}
                                                 className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                               />
                                               <div className="text-sm text-theme-muted text-center mt-1">
-                                                {set.load?.type === 'double' ? '2x Haltères / Kettlebell' : set.load?.type === 'machine' ? 'Machine' : 'Haltère / Kettlebell'}
+                                                {set.load?.type === "double"
+                                                  ? "2x Haltères / Kettlebell"
+                                                  : set.load?.type === "machine"
+                                                    ? "Machine"
+                                                    : "Haltère / Kettlebell"}
                                               </div>
                                             </div>
                                           )}
@@ -2724,15 +3835,27 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                                 {/* Bouton validation PARTAGÉ (au-dessus du RPE) */}
                                 <button
-                                  onClick={() => (isCurrentSetCompleted ? toggleSupersetSetValidation(groupId, exerciseIndices) : validateSupersetSet(groupId, exerciseIndices))}
+                                  onClick={() =>
+                                    isCurrentSetCompleted
+                                      ? toggleSupersetSetValidation(
+                                          groupId,
+                                          exerciseIndices,
+                                        )
+                                      : validateSupersetSet(
+                                          groupId,
+                                          exerciseIndices,
+                                        )
+                                  }
                                   className={`
                                     w-full py-3 rounded-xl font-semibold text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2
-                                    ${isCurrentSetCompleted ? 'bg-[var(--color-success)] text-theme' : 'bg-[var(--color-primary)] text-theme'}
+                                    ${isCurrentSetCompleted ? "bg-[var(--color-success)] text-theme" : "bg-[var(--color-primary)] text-theme"}
                                   `}
                                   type="button"
                                 >
                                   <Check className="w-5 h-5" />
-                                  {isCurrentSetCompleted ? 'Série validée' : 'Valider la série'}
+                                  {isCurrentSetCompleted
+                                    ? "Série validée"
+                                    : "Valider la série"}
                                 </button>
 
                                 {/* Zone message PARTAGÉE */}
@@ -2741,9 +3864,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="flex items-center gap-2">
                                         <MessageSquare className="w-4 h-4 text-theme-muted" />
-                                        <span className="text-sm text-theme-muted">Message au coach</span>
+                                        <span className="text-sm text-theme-muted">
+                                          Message au coach
+                                        </span>
                                       </div>
-                                      {group.exercises.some(ex => sentComments.has(ex.exerciseName)) && (
+                                      {group.exercises.some((ex) =>
+                                        sentComments.has(ex.exerciseName),
+                                      ) && (
                                         <span className="text-xs text-[var(--color-success)] flex items-center gap-1">
                                           <Check className="w-3 h-3" />
                                           Envoyé
@@ -2753,25 +3880,49 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                     <div className="flex gap-2">
                                       <input
                                         type="text"
-                                        placeholder={`Message pour ${group.exercises.map(e => getExerciseDisplayName(e.exerciseName).split(' ')[0]).join(' + ')}...`}
-                                        value={exerciseComments[group.exercises[0]?.exerciseName] || ''}
+                                        placeholder={`Message pour ${group.exercises.map((e) => getExerciseDisplayName(e.exerciseName).split(" ")[0]).join(" + ")}...`}
+                                        value={
+                                          exerciseComments[
+                                            group.exercises[0]?.exerciseName
+                                          ] || ""
+                                        }
                                         onChange={(e) => {
                                           // Appliquer le même commentaire à tous les exercices du groupe
-                                          const newComments: Record<string, string> = {};
-                                          group.exercises.forEach(ex => {
-                                            newComments[ex.exerciseName] = e.target.value;
+                                          const newComments: Record<
+                                            string,
+                                            string
+                                          > = {};
+                                          group.exercises.forEach((ex) => {
+                                            newComments[ex.exerciseName] =
+                                              e.target.value;
                                           });
-                                          setExerciseComments(prev => ({ ...prev, ...newComments }));
+                                          setExerciseComments((prev) => ({
+                                            ...prev,
+                                            ...newComments,
+                                          }));
                                         }}
-                                        disabled={group.exercises.some(ex => sentComments.has(ex.exerciseName))}
+                                        disabled={group.exercises.some((ex) =>
+                                          sentComments.has(ex.exerciseName),
+                                        )}
                                         className="flex-1 bg-theme-tertiary border border-theme rounded-lg px-3 py-2 text-theme text-sm placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
                                       />
                                       <button
                                         onClick={() => {
                                           // Envoyer le message pour le premier exercice du groupe
-                                          handleSendComment(group.exercises[0]?.exerciseName);
+                                          handleSendComment(
+                                            group.exercises[0]?.exerciseName,
+                                          );
                                         }}
-                                        disabled={!exerciseComments[group.exercises[0]?.exerciseName]?.trim() || commentSending === group.exercises[0]?.exerciseName || group.exercises.some(ex => sentComments.has(ex.exerciseName))}
+                                        disabled={
+                                          !exerciseComments[
+                                            group.exercises[0]?.exerciseName
+                                          ]?.trim() ||
+                                          commentSending ===
+                                            group.exercises[0]?.exerciseName ||
+                                          group.exercises.some((ex) =>
+                                            sentComments.has(ex.exerciseName),
+                                          )
+                                        }
                                         className="p-2 bg-[var(--color-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-theme rounded-lg transition-colors"
                                         title="Envoyer"
                                         type="button"
@@ -2784,31 +3935,46 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                                 {/* RPE PARTAGÉ (en bas) */}
                                 <div>
-                                  <label className="text-xs text-theme-muted mb-1 block">RPE (difficulté ressentie)</label>
+                                  <label className="text-xs text-theme-muted mb-1 block">
+                                    RPE (difficulté ressentie)
+                                  </label>
                                   <div className="flex gap-1">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rpe) => (
-                                      <button
-                                        key={rpe}
-                                        onClick={() => updateSupersetRpe(groupId, exerciseIndices, groupRpe === rpe ? undefined : rpe)}
-                                        className={`
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+                                      (rpe) => (
+                                        <button
+                                          key={rpe}
+                                          onClick={() =>
+                                            updateSupersetRpe(
+                                              groupId,
+                                              exerciseIndices,
+                                              groupRpe === rpe
+                                                ? undefined
+                                                : rpe,
+                                            )
+                                          }
+                                          className={`
                                           flex-1 py-2 text-sm font-bold rounded-lg transition-colors
-                                          ${groupRpe === rpe
-                                            ? RPE_SCALE.find(r => r.value === rpe)?.color + ' text-theme'
-                                            : 'bg-theme-tertiary text-theme-muted'
+                                          ${
+                                            groupRpe === rpe
+                                              ? RPE_SCALE.find(
+                                                  (r) => r.value === rpe,
+                                                )?.color + " text-theme"
+                                              : "bg-theme-tertiary text-theme-muted"
                                           }
                                         `}
-                                        type="button"
-                                      >
-                                        {rpe}
-                                      </button>
-                                    ))}
+                                          type="button"
+                                        >
+                                          {rpe}
+                                        </button>
+                                      ),
+                                    )}
                                   </div>
                                 </div>
                               </div>
                             )}
                           </CardContent>
                         </Card>
-                      </div>
+                      </div>,
                     );
                   }
                   return;
@@ -2816,1269 +3982,2344 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                 // === EXERCICE INDIVIDUEL ===
                 const exercise = item as ExerciseLog;
-                const exerciseIndex = logs.findIndex(l => l.exerciseName === exercise.exerciseName && !l.executionGroupId);
-              const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
-              const setIndex = getSetIndexForExercise(exerciseIndex);
-              const set = exercise.sets[setIndex];
-              const isExpanded = !!expandedExercises[exerciseIndex];
-              const allSetsCompletedForExercise = exercise.sets.every(s => s.completed);
-              const isLastSetIndex = setIndex === exercise.sets.length - 1;
-              const isExerciseDone = allSetsCompletedForExercise && typeof exercise.rpe === 'number';
-              const lastPerf = getLastPerformance(exercise.exerciseName, history);
-              const isConsignesOpen = !!focusOpenConsignes[exerciseIndex];
-              const isHistoryOpen = !!focusOpenHistory[exerciseIndex];
+                const exerciseIndex = logs.findIndex(
+                  (l) =>
+                    l.exerciseName === exercise.exerciseName &&
+                    !l.executionGroupId,
+                );
+                const exerciseData = sessionData.find(
+                  (d) => d.exercice === exercise.exerciseName,
+                );
+                const setIndex = getSetIndexForExercise(exerciseIndex);
+                const set = exercise.sets[setIndex];
+                const isExpanded = !!expandedExercises[exerciseIndex];
+                const allSetsCompletedForExercise = exercise.sets.every(
+                  (s) => s.completed,
+                );
+                const isLastSetIndex = setIndex === exercise.sets.length - 1;
+                const isExerciseDone =
+                  allSetsCompletedForExercise &&
+                  typeof exercise.rpe === "number";
+                const lastPerf = getLastPerformance(
+                  exercise.exerciseName,
+                  history,
+                );
+                const isConsignesOpen = !!focusOpenConsignes[exerciseIndex];
+                const isHistoryOpen = !!focusOpenHistory[exerciseIndex];
 
-              if (!set) return;
+                if (!set) return;
 
-              // Desktop: tuile carrée avec format flip card (recto/verso)
-              if (isDesktop) {
-                renderedElements.push(
-                  <div key={exerciseIndex} className="relative" ref={(el) => { focusCardRefs.current[exerciseIndex] = el; }}>
-                    {/* Indicateurs done/RPE */}
-                    {isExerciseDone && (
-                      <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 pointer-events-none">
-                        <div className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
-                          <Check className="w-4 h-4" />
-                        </div>
-                        {typeof exercise.rpe === 'number' && (
-                          <div className={`w-6 h-6 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find(r => r.value === exercise.rpe)?.color || 'bg-theme-tertiary'}`}>
-                            {exercise.rpe}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
+                // Desktop: tuile carrée avec format flip card (recto/verso)
+                if (isDesktop) {
+                  renderedElements.push(
                     <div
-                      className={`
-                        w-full aspect-square bg-theme-tertiary border rounded-xl overflow-hidden flex flex-col transition-all
-                        ${isExerciseDone ? 'border-[var(--color-success)]/50 bg-[var(--color-success)]/10' : 'border-theme'}
-                        ${isExpanded ? 'ring-2 ring-[var(--color-primary)]' : 'hover:bg-theme-tertiary/70'}
-                      `}
+                      key={exerciseIndex}
+                      className="relative"
+                      ref={(el) => {
+                        focusCardRefs.current[exerciseIndex] = el;
+                      }}
                     >
-                      {!isExpanded ? (
-                        /* RECTO: Format minimisé avec éléments très gros */
-                        <button
-                          onClick={() => toggleExerciseExpanded(exerciseIndex)}
-                          className="w-full h-full p-4 flex flex-col text-left"
-                          type="button"
-                        >
-                          {/* Nom exercice - très gros pour remplir la tuile */}
-                          <h3 className="font-bold text-theme text-2xl leading-tight line-clamp-3 flex-1">
-                            {getExerciseDisplayName(exercise.exerciseName)}
-                          </h3>
-
-                          {/* Badges très agrandis */}
-                          <div className="flex flex-wrap gap-2 mt-4">
-                            <span className="px-4 py-2 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-xl text-base font-bold">
-                              {exerciseData?.series || exercise.sets.length}×{exerciseData?.repsDuree?.replace(/[^0-9-]/g, '') || '?'}
-                            </span>
-                            {exerciseData?.repos && (
-                              <span className="px-4 py-2 border border-theme text-theme-muted rounded-xl text-base font-medium">
-                                {exerciseData.repos}s
-                              </span>
-                            )}
+                      {/* Indicateurs done/RPE */}
+                      {isExerciseDone && (
+                        <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 pointer-events-none">
+                          <div className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
+                            <Check className="w-4 h-4" />
                           </div>
-
-                          {/* Boutons action très agrandis */}
-                          <div className="flex items-center gap-2 mt-3">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
-                              className="px-3 py-2 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
-                              type="button"
+                          {typeof exercise.rpe === "number" && (
+                            <div
+                              className={`w-6 h-6 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-xs ${RPE_SCALE.find((r) => r.value === exercise.rpe)?.color || "bg-theme-tertiary"}`}
                             >
-                              Historique
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget }); }}
-                              className="px-3 py-2 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
-                              type="button"
-                            >
-                              Consignes
-                            </button>
-                            {exerciseData?.video && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget }); }}
-                                className="p-2.5 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-xl text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
-                                type="button"
-                              >
-                                <Video className="w-5 h-5" />
-                              </button>
-                            )}
-                          </div>
+                              {exercise.rpe}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                          {/* Progression séries agrandie */}
-                          <div className="mt-4">
-                            <div className="flex items-center gap-1.5">
-                              {exercise.sets.map((s, i) => (
-                                <div
-                                  key={i}
-                                  className={`flex-1 h-3 rounded-full ${s.completed ? 'bg-[var(--color-success)]' : 'bg-theme-tertiary'}`}
-                                />
-                              ))}
-                            </div>
-                            <div className="text-base text-theme-muted mt-2 text-center font-semibold">
-                              {exercise.sets.filter(s => s.completed).length}/{exercise.sets.length} séries
-                            </div>
-                          </div>
-                        </button>
-                      ) : (
-                        /* VERSO: Inputs compacts - clic n'importe où retourne la tuile */
-                        <div
-                          className="w-full h-full p-3 flex flex-col cursor-pointer"
-                          onClick={() => toggleExerciseExpanded(exerciseIndex)}
-                        >
-                          {/* Header: nom + check */}
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <h3 className="font-semibold text-theme text-sm leading-tight line-clamp-2 flex-1">
+                      <div
+                        className={`
+                        w-full aspect-square bg-theme-tertiary border rounded-xl overflow-hidden flex flex-col transition-all
+                        ${isExerciseDone ? "border-[var(--color-success)]/50 bg-[var(--color-success)]/10" : "border-theme"}
+                        ${isExpanded ? "ring-2 ring-[var(--color-primary)]" : "hover:bg-theme-tertiary/70"}
+                      `}
+                      >
+                        {!isExpanded ? (
+                          /* RECTO: Format minimisé avec éléments très gros */
+                          <button
+                            onClick={() =>
+                              toggleExerciseExpanded(exerciseIndex)
+                            }
+                            className="w-full h-full p-4 flex flex-col text-left"
+                            type="button"
+                          >
+                            {/* Nom exercice - très gros pour remplir la tuile */}
+                            <h3 className="font-bold text-theme text-2xl leading-tight line-clamp-3 flex-1">
                               {getExerciseDisplayName(exercise.exerciseName)}
                             </h3>
-                            {set.completed && (
-                              <div className="w-5 h-5 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme flex-shrink-0">
-                                <Check className="w-3 h-3" />
-                              </div>
-                            )}
-                          </div>
 
-                          {/* Badges infos exercice + boutons action */}
-                          <div className="flex flex-wrap gap-1 mb-2" onClick={(e) => e.stopPropagation()}>
-                            <span className="px-1.5 py-0.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded text-[10px] font-semibold">
-                              {exerciseData?.series || exercise.sets.length}×{exerciseData?.repsDuree?.replace(/[^0-9-]/g, '') || '?'}
-                            </span>
-                            {exerciseData?.repos && (
-                              <span className="px-1.5 py-0.5 border border-theme text-theme-muted rounded text-[10px]">
-                                {exerciseData.repos}s
+                            {/* Badges très agrandis */}
+                            <div className="flex flex-wrap gap-2 mt-4">
+                              <span className="px-4 py-2 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-xl text-base font-bold">
+                                {exerciseData?.series || exercise.sets.length}×
+                                {exerciseData?.repsDuree?.replace(
+                                  /[^0-9-]/g,
+                                  "",
+                                ) || "?"}
                               </span>
-                            )}
-                            {/* Boutons Historique, Consignes, Vidéo */}
-                            <button
-                              onClick={(e) => setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget })}
-                              className="px-1.5 py-0.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded text-[10px] transition-colors whitespace-nowrap"
-                              type="button"
-                            >
-                              Historique
-                            </button>
-                            <button
-                              onClick={(e) => setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget })}
-                              className="px-1.5 py-0.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded text-[10px] transition-colors whitespace-nowrap"
-                              type="button"
-                            >
-                              Consignes
-                            </button>
-                            {exerciseData?.video && (
-                              <button
-                                onClick={(e) => setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget })}
-                                className="px-1.5 py-0.5 border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:text-theme hover:border-[var(--color-primary)] rounded text-[10px] transition-colors whitespace-nowrap"
-                                type="button"
-                              >
-                                Vidéo
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Zone inputs - empêche le clic de retourner la tuile */}
-                          <div className="flex-1 flex flex-col" onClick={(e) => e.stopPropagation()}>
-                            {/* Navigation séries compacte */}
-                            <div className="flex items-center justify-center gap-1 mb-1">
-                              <button
-                                onClick={() => setSetIndexForExercise(exerciseIndex, Math.max(setIndex - 1, 0))}
-                                disabled={setIndex === 0}
-                                className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
-                                type="button"
-                              >
-                                <ChevronLeft className="w-3 h-3 text-theme-secondary" />
-                              </button>
-                              <span className="text-xs text-theme-secondary min-w-[2.5rem] text-center font-medium">
-                                {setIndex + 1}/{exercise.sets.length}
-                              </span>
-                              <button
-                                onClick={() => setSetIndexForExercise(exerciseIndex, Math.min(setIndex + 1, exercise.sets.length - 1))}
-                                disabled={setIndex === exercise.sets.length - 1}
-                                className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
-                                type="button"
-                              >
-                                <ChevronRight className="w-3 h-3 text-theme-secondary" />
-                              </button>
+                              {exerciseData?.repos && (
+                                <span className="px-4 py-2 border border-theme text-theme-muted rounded-xl text-base font-medium">
+                                  {exerciseData.repos}s
+                                </span>
+                              )}
                             </div>
 
-                            {/* Inputs Reps + Charge côte à côte - flex-1 pour combler l'espace */}
-                            <div className="grid grid-cols-2 gap-2 flex-1">
-                              {/* Input Reps - même structure que Charge pour alignement */}
-                              <div className="flex flex-col">
-                                <label className="text-[9px] text-theme-muted mb-0.5 block">Reps</label>
-                                <div className="flex-1 flex flex-col">
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
-                                    value={set.reps}
-                                    onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
-                                    className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                  />
-                                  {/* Espace équivalent au sous-texte de Charge pour alignement */}
-                                  <span className="text-[10px] text-transparent mt-0.5 block text-center">&nbsp;</span>
-                                </div>
-                              </div>
-
-                              {/* Input Charge */}
-                              <div className="flex flex-col">
-                                <div className="flex items-center justify-between mb-0.5">
-                                  <label className="text-[9px] text-theme-muted">Charge</label>
-                                  <button
-                                    onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, setIndex)}
-                                    className="p-0.5 text-theme-muted hover:text-theme-secondary transition-colors"
-                                    type="button"
-                                  >
-                                    <RotateCcw className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-                                {/* Container avec hauteur fixe pour tous les types */}
-                                <div className="flex-1 flex flex-col">
-                                  {set.load?.type === 'barbell' ? (
-                                    <div className="flex gap-1.5 flex-1">
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="20"
-                                        value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
-                                        onChange={(e) => {
-                                          const raw = e.target.value;
-                                          const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
-                                          const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: Number.isFinite(n) ? n : 20, addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null });
-                                        }}
-                                        className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                      />
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="+0"
-                                        value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: prev.barKg, addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
-                                        }}
-                                        className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                      />
-                                    </div>
-                                  ) : set.load?.type === 'assisted' ? (
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder="0"
-                                      value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'assisted', unit: 'kg', assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
-                                      }}
-                                      className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                    />
-                                  ) : set.load?.type === 'distance' ? (
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder="0"
-                                      value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'distance', unit: prev.unit, distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
-                                      }}
-                                      className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                    />
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder="0"
-                                      value={(() => {
-                                        const load = set.load;
-                                        if (!load) return '';
-                                        if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-                                          return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
-                                        }
-                                        return '';
-                                      })()}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        const t: 'single' | 'double' | 'machine' = set.load?.type === 'double' ? 'double' : (set.load?.type === 'machine' ? 'machine' : 'single');
-                                        const next: SetLoad = t === 'double'
-                                          ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                          : t === 'machine'
-                                            ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                            : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                      }}
-                                      className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                    />
-                                  )}
-                                  {/* Sous-texte type de charge */}
-                                  <span className="text-[10px] text-theme-muted mt-0.5 block text-center">
-                                    {set.load?.type === 'barbell' ? 'Barre' :
-                                     set.load?.type === 'assisted' ? 'Assisté' :
-                                     set.load?.type === 'distance' ? 'Distance' :
-                                     set.load?.type === 'double' ? 'Haltères/KB x2' :
-                                     set.load?.type === 'machine' ? 'Machine' : 'Haltère/KB'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Bandeau bas: [RPE + Message] | Valider (row-span-2) */}
-                            <div className="grid grid-cols-[1fr_auto] gap-2 mt-auto pt-2 border-t border-theme/50">
-                              {/* Colonne gauche: RPE (ligne 1) + Message (ligne 2) */}
-                              <div className="flex flex-col gap-1">
-                                {/* RPE complet (1-10) sur une ligne */}
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[8px] text-theme-muted">RPE</span>
-                                  <div className="flex gap-px flex-1">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rpe) => (
-                                      <button
-                                        key={rpe}
-                                        onClick={() => updateExerciseRpeForExercise(exerciseIndex, exercise.rpe === rpe ? undefined : rpe)}
-                                        className={`
-                                          flex-1 h-5 text-[9px] font-bold rounded transition-colors flex items-center justify-center
-                                          ${exercise.rpe === rpe
-                                            ? RPE_SCALE.find(r => r.value === rpe)?.color + ' text-theme'
-                                            : 'bg-theme-tertiary text-theme-muted hover:bg-theme-secondary'
-                                          }
-                                        `}
-                                        type="button"
-                                      >
-                                        {rpe}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Message + bouton envoyer */}
-                                {onSaveComment && (
-                                  <div className="flex gap-1">
-                                    <input
-                                      type="text"
-                                      placeholder="Message..."
-                                      value={exerciseComments[exercise.exerciseName] || ''}
-                                      onChange={(e) => setExerciseComments(prev => ({ ...prev, [exercise.exerciseName]: e.target.value }))}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && exerciseComments[exercise.exerciseName]?.trim()) {
-                                          handleSendComment(exercise.exerciseName);
-                                        }
-                                      }}
-                                      onFocus={() => setMessageSentConfirm(prev => {
-                                        const next = new Set(prev);
-                                        next.delete(exercise.exerciseName);
-                                        return next;
-                                      })}
-                                      className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-2 py-1.5 text-theme text-[10px] placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                                    />
-                                    <button
-                                      onClick={() => handleSendComment(exercise.exerciseName)}
-                                      disabled={!exerciseComments[exercise.exerciseName]?.trim() && !messageSentConfirm.has(exercise.exerciseName)}
-                                      className={`px-2 ${messageSentConfirm.has(exercise.exerciseName) ? 'bg-[var(--color-success)]' : 'bg-[var(--color-primary)] hover:opacity-90'} disabled:bg-theme-tertiary disabled:text-theme-muted text-theme rounded transition-colors`}
-                                      type="button"
-                                    >
-                                      {messageSentConfirm.has(exercise.exerciseName) ? <Check className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Colonne droite: Bouton valider (s'étire sur toute la hauteur) */}
+                            {/* Boutons action très agrandis */}
+                            <div className="flex items-center gap-2 mt-3">
                               <button
-                                onClick={() => (set.completed ? toggleSetValidationForExercise(exerciseIndex) : validateSetForExercise(exerciseIndex))}
-                                className={`
-                                  self-stretch px-4 rounded-lg font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center
-                                  ${set.completed ? 'bg-[var(--color-success)] text-theme' : 'bg-[var(--color-primary)] hover:opacity-90 text-theme'}
-                                `}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowHistoryModal({
+                                    index: exerciseIndex,
+                                    anchorEl: e.currentTarget,
+                                  });
+                                }}
+                                className="px-3 py-2 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
                                 type="button"
                               >
-                                <Check className="w-5 h-5" />
+                                Historique
                               </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              } else {
-                // Mobile: layout complet (desktop géré par flip card ci-dessus)
-                renderedElements.push(
-                <div
-                  key={exerciseIndex}
-                  className="relative"
-                  ref={(el) => { focusCardRefs.current[exerciseIndex] = el; }}
-                  data-tour-id={exerciseIndex === 0 ? 'tour-exercise-tile' : exerciseIndex === 1 ? 'tour-exercise-tile-2' : undefined}
-                >
-                  {isExerciseDone && (
-                    <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-2 pointer-events-none">
-                      <div className="w-8 h-8 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
-                        <Check className="w-5 h-5" />
-                      </div>
-                      {typeof exercise.rpe === 'number' && (
-                        <div className={`w-8 h-8 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-sm ${RPE_SCALE.find(r => r.value === exercise.rpe)?.color || 'bg-theme-tertiary'}`}>
-                          {exercise.rpe}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <Card
-                    variant={isExpanded ? 'gradient' : 'default'}
-                    className={`overflow-hidden relative ${isExerciseDone ? 'border-2 border-[var(--color-success)]/50 bg-[var(--color-success)]/10' : ''}`}
-                  >
-                  <CardContent className="p-0">
-                    <button
-                      onClick={() => toggleExerciseExpanded(exerciseIndex)}
-                      className="w-full text-left"
-                      type="button"
-                    >
-                      <div className={`${isExpanded ? 'bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20' : ''} px-4 py-3 border-b border-theme/50`}>
-                        <div className={`flex items-center justify-between gap-3 ${isDesktop ? 'flex-row' : ''}`}>
-                          <div className={`${isDesktop ? 'flex items-center gap-4 flex-1' : 'min-w-0'}`}>
-                            <h2 className={`font-bold text-theme ${isDesktop ? 'text-base whitespace-nowrap' : 'text-lg line-clamp-3'}`}>
-                              {getExerciseDisplayName(exercise.exerciseName)}
-                            </h2>
-                            {/* Desktop: tous les badges et boutons sur une ligne */}
-                            {isDesktop ? (
-                              <div className="flex items-center gap-2 flex-1">
-                                <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
-                                  {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
-                                </div>
-                                {exerciseData?.repos && (
-                                  <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
-                                    {exerciseData.repos}s
-                                  </div>
-                                )}
-                                {exerciseData?.tempoRpe && (
-                                  <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
-                                    {exerciseData.tempoRpe}
-                                  </div>
-                                )}
-                                <div className="flex-1" />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowConsignesModal({
+                                    index: exerciseIndex,
+                                    anchorEl: e.currentTarget,
+                                  });
+                                }}
+                                className="px-3 py-2 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
+                                type="button"
+                              >
+                                Consignes
+                              </button>
+                              {exerciseData?.video && (
                                 <button
                                   onClick={(e) => {
-                                    e.preventDefault();
                                     e.stopPropagation();
-                                    setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget });
+                                    setShowVideoModal({
+                                      url: exerciseData.video!,
+                                      exerciseName: exercise.exerciseName,
+                                      anchorEl: e.currentTarget,
+                                    });
                                   }}
-                                  className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+                                  className="p-2.5 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-xl text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
                                   type="button"
                                 >
-                                  Historique
+                                  <Video className="w-5 h-5" />
                                 </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget });
-                                  }}
-                                  className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
-                                  type="button"
-                                >
-                                  Consignes
-                                </button>
-                                {exerciseData?.video && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget });
-                                    }}
-                                    className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-full text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
-                                    type="button"
-                                  >
-                                    <Video className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </div>
-                            ) : (
-                              <>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
-                                    {exerciseData?.series || exercise.sets.length} × {exerciseData?.repsDuree || '?'}
-                                  </div>
-                                  {exerciseData?.repos && (
-                                    <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
-                                      {exerciseData.repos}s
-                                    </div>
-                                  )}
-                                  {exerciseData?.tempoRpe && (
-                                    <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
-                                      {exerciseData.tempoRpe}
-                                    </div>
-                                  )}
-                                </div>
-                                <div
-                                  className="mt-2 flex items-center gap-2"
-                                  data-tour-id={exerciseIndex === 0 ? 'tour-exercise-badges' : undefined}
-                                >
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setShowHistoryModal({ index: exerciseIndex, anchorEl: e.currentTarget });
-                                    }}
-                                    className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
-                                    type="button"
-                                  >
-                                    Historique
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setShowConsignesModal({ index: exerciseIndex, anchorEl: e.currentTarget });
-                                    }}
-                                    className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
-                                    type="button"
-                                  >
-                                    Consignes
-                                  </button>
-                                  {exerciseData?.video && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setShowVideoModal({ url: exerciseData.video!, exerciseName: exercise.exerciseName, anchorEl: e.currentTarget });
-                                      }}
-                                      className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-full text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
-                                      type="button"
-                                    >
-                                      <Video className="w-5 h-5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                              )}
+                            </div>
 
-                    {isExpanded && (
-                      <div data-tour-id={exerciseIndex === 0 ? 'tour-exercise-tile-back' : undefined}>
-                        {/* Header avec nom exercice et série - desktop seulement (mobile utilise la barre de progression) */}
-                        {isDesktop && (
-                          <div data-tour-id={exerciseIndex === 0 ? 'tour-set-header' : undefined}>
-                            <div className="px-4 py-3 border-b border-theme/50">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-sm text-theme-secondary">
-                                    Série {setIndex + 1}/{exercise.sets.length}
-                                  </div>
-                                  {set.completed && (
-                                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-white">
-                                      <Check className="w-4 h-4" />
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => removeSetForExercise(exerciseIndex)}
-                                    disabled={exercise.sets.length <= 1}
-                                    className="p-1 text-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                    type="button"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => addSetForExercise(exerciseIndex)}
-                                    className="p-1 text-theme-muted hover:text-theme transition-colors"
-                                    type="button"
-                                  >
-                                    <Plus className="w-4 h-4" />
-                                  </button>
-                                </div>
+                            {/* Progression séries agrandie */}
+                            <div className="mt-4">
+                              <div className="flex items-center gap-1.5">
+                                {exercise.sets.map((s, i) => (
+                                  <div
+                                    key={i}
+                                    className={`flex-1 h-3 rounded-full ${s.completed ? "bg-[var(--color-success)]" : "bg-theme-tertiary"}`}
+                                  />
+                                ))}
+                              </div>
+                              <div className="text-base text-theme-muted mt-2 text-center font-semibold">
+                                {
+                                  exercise.sets.filter((s) => s.completed)
+                                    .length
+                                }
+                                /{exercise.sets.length} séries
                               </div>
                             </div>
-                          </div>
-                        )}
+                          </button>
+                        ) : (
+                          /* VERSO: Inputs compacts - clic n'importe où retourne la tuile */
+                          <div
+                            className="w-full h-full p-3 flex flex-col cursor-pointer"
+                            onClick={() =>
+                              toggleExerciseExpanded(exerciseIndex)
+                            }
+                          >
+                            {/* Header: nom + check */}
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <h3 className="font-semibold text-theme text-sm leading-tight line-clamp-2 flex-1">
+                                {getExerciseDisplayName(exercise.exerciseName)}
+                              </h3>
+                              {set.completed && (
+                                <div className="w-5 h-5 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme flex-shrink-0">
+                                  <Check className="w-3 h-3" />
+                                </div>
+                              )}
+                            </div>
 
-                        <div className={`p-4 ${isDesktop ? '' : 'space-y-4'}`}>
-                          {/* Desktop: Layout 2 colonnes */}
-                          {isDesktop ? (
-                            <div className="space-y-4">
-                              {/* Ligne principale: Séries+Reps à gauche, Charges à droite - alignés */}
-                              <div className="grid grid-cols-2 gap-6">
-                                {/* Colonne gauche: Navigation séries + Répétitions */}
+                            {/* Badges infos exercice + boutons action */}
+                            <div
+                              className="flex flex-wrap gap-1 mb-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="px-1.5 py-0.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded text-[10px] font-semibold">
+                                {exerciseData?.series || exercise.sets.length}×
+                                {exerciseData?.repsDuree?.replace(
+                                  /[^0-9-]/g,
+                                  "",
+                                ) || "?"}
+                              </span>
+                              {exerciseData?.repos && (
+                                <span className="px-1.5 py-0.5 border border-theme text-theme-muted rounded text-[10px]">
+                                  {exerciseData.repos}s
+                                </span>
+                              )}
+                              {/* Boutons Historique, Consignes, Vidéo */}
+                              <button
+                                onClick={(e) =>
+                                  setShowHistoryModal({
+                                    index: exerciseIndex,
+                                    anchorEl: e.currentTarget,
+                                  })
+                                }
+                                className="px-1.5 py-0.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded text-[10px] transition-colors whitespace-nowrap"
+                                type="button"
+                              >
+                                Historique
+                              </button>
+                              <button
+                                onClick={(e) =>
+                                  setShowConsignesModal({
+                                    index: exerciseIndex,
+                                    anchorEl: e.currentTarget,
+                                  })
+                                }
+                                className="px-1.5 py-0.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded text-[10px] transition-colors whitespace-nowrap"
+                                type="button"
+                              >
+                                Consignes
+                              </button>
+                              {exerciseData?.video && (
+                                <button
+                                  onClick={(e) =>
+                                    setShowVideoModal({
+                                      url: exerciseData.video!,
+                                      exerciseName: exercise.exerciseName,
+                                      anchorEl: e.currentTarget,
+                                    })
+                                  }
+                                  className="px-1.5 py-0.5 border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:text-theme hover:border-[var(--color-primary)] rounded text-[10px] transition-colors whitespace-nowrap"
+                                  type="button"
+                                >
+                                  Vidéo
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Zone inputs - empêche le clic de retourner la tuile */}
+                            <div
+                              className="flex-1 flex flex-col"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {/* Navigation séries compacte */}
+                              <div className="flex items-center justify-center gap-1 mb-1">
+                                <button
+                                  onClick={() =>
+                                    setSetIndexForExercise(
+                                      exerciseIndex,
+                                      Math.max(setIndex - 1, 0),
+                                    )
+                                  }
+                                  disabled={setIndex === 0}
+                                  className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+                                  type="button"
+                                >
+                                  <ChevronLeft className="w-3 h-3 text-theme-secondary" />
+                                </button>
+                                <span className="text-xs text-theme-secondary min-w-[2.5rem] text-center font-medium">
+                                  {setIndex + 1}/{exercise.sets.length}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    setSetIndexForExercise(
+                                      exerciseIndex,
+                                      Math.min(
+                                        setIndex + 1,
+                                        exercise.sets.length - 1,
+                                      ),
+                                    )
+                                  }
+                                  disabled={
+                                    setIndex === exercise.sets.length - 1
+                                  }
+                                  className="p-1 bg-theme-tertiary hover:bg-theme-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+                                  type="button"
+                                >
+                                  <ChevronRight className="w-3 h-3 text-theme-secondary" />
+                                </button>
+                              </div>
+
+                              {/* Inputs Reps + Charge côte à côte - flex-1 pour combler l'espace */}
+                              <div className="grid grid-cols-2 gap-2 flex-1">
+                                {/* Input Reps - même structure que Charge pour alignement */}
                                 <div className="flex flex-col">
-                                  {/* Header avec label + navigation (même hauteur que header charge) */}
-                                  <div className="flex items-center justify-between mb-2 h-9">
-                                    <label className="text-sm text-theme-muted">Répétitions</label>
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        onClick={() => setSetIndexForExercise(exerciseIndex, Math.max(setIndex - 1, 0))}
-                                        disabled={setIndex === 0}
-                                        className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary disabled:opacity-30 disabled:cursor-not-allowed text-theme-secondary hover:text-theme rounded-lg transition-colors"
-                                        aria-label="Série précédente"
-                                        type="button"
-                                      >
-                                        <ChevronLeft className="w-4 h-4" />
-                                      </button>
-                                      <span className="text-sm text-theme-muted min-w-[3rem] text-center">{setIndex + 1}/{exercise.sets.length}</span>
-                                      <button
-                                        onClick={() => setSetIndexForExercise(exerciseIndex, Math.min(setIndex + 1, exercise.sets.length - 1))}
-                                        disabled={setIndex === exercise.sets.length - 1}
-                                        className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary disabled:opacity-30 disabled:cursor-not-allowed text-theme-secondary hover:text-theme rounded-lg transition-colors"
-                                        aria-label="Série suivante"
-                                        type="button"
-                                      >
-                                        <ChevronRight className="w-4 h-4" />
-                                      </button>
-                                    </div>
+                                  <label className="text-[9px] text-theme-muted mb-0.5 block">
+                                    Reps
+                                  </label>
+                                  <div className="flex-1 flex flex-col">
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder={
+                                        exerciseData?.repsDuree?.replace(
+                                          /[^0-9]/g,
+                                          "",
+                                        ) || "8"
+                                      }
+                                      value={set.reps}
+                                      onChange={(e) =>
+                                        updateSetForExercise(
+                                          exerciseIndex,
+                                          setIndex,
+                                          "reps",
+                                          e.target.value,
+                                        )
+                                      }
+                                      className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                                    />
+                                    {/* Espace équivalent au sous-texte de Charge pour alignement */}
+                                    <span className="text-[10px] text-transparent mt-0.5 block text-center">
+                                      &nbsp;
+                                    </span>
                                   </div>
-
-                                  {/* Input Répétitions - aligné avec input charge */}
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
-                                    value={set.reps}
-                                    onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
-                                    className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                  />
-
-                                  {/* Ghost Mode (desktop) */}
-                                  {(() => {
-                                    const ghost = ghostSessions[exercise.exerciseName];
-                                    const ghostData = getGhostModeData(ghost, exercise.sets, exercise.sets.length);
-                                    if (ghostData.type === 'none') return null;
-                                    const isBeatingSoon = ghostData.type === 'beating' || ghostData.type === 'increase';
-                                    const formatTonnage = (kg: number) => kg >= 1000 ? `${(kg / 1000).toFixed(2)} T` : `${kg} kg`;
-                                    return (
-                                      <div className={`mt-3 p-3 rounded-xl border ${isBeatingSoon ? 'bg-[var(--color-success)]/10 border-[var(--color-success)]/30' : 'bg-theme-tertiary border-theme/50'}`}>
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-xs font-medium text-theme-muted">👻 Record:</span>
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-sm font-semibold text-theme-secondary">
-                                              {ghostData.tonnageRecord !== undefined ? formatTonnage(ghostData.tonnageRecord) : '-'}
-                                            </span>
-                                            {ghostData.ghostSession && (
-                                              <button
-                                                onClick={(e) => { e.stopPropagation(); setShowGhostRecordModal({ exerciseName: exercise.exerciseName, ghost: ghostData.ghostSession! }); }}
-                                                className="p-1 bg-theme-tertiary hover:bg-theme-secondary rounded-lg transition-colors"
-                                                type="button"
-                                              >
-                                                <Info className="w-3.5 h-3.5 text-theme-muted" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                        {ghostData.message && (
-                                          <div className={`mt-2 text-xs font-medium ${isBeatingSoon ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}`}>
-                                            {ghostData.type === 'beating' && '🔥 '}{ghostData.type === 'increase' && '💪 '}{ghostData.message}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
                                 </div>
 
-                                {/* Colonne droite: Charge */}
+                                {/* Input Charge */}
                                 <div className="flex flex-col">
-                                  {/* Header avec label + bouton cycle (même hauteur) */}
-                                  <div className="flex items-center justify-between mb-2 h-9">
-                                    <label className="text-sm text-theme-muted">Charge</label>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className="text-[9px] text-theme-muted">
+                                      Charge
+                                    </label>
                                     <button
-                                      onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, setIndex)}
-                                      className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary text-theme rounded-lg transition-colors"
+                                      onClick={() =>
+                                        cycleSetLoadTypeForExercise(
+                                          exerciseIndex,
+                                          setIndex,
+                                        )
+                                      }
+                                      className="p-0.5 text-theme-muted hover:text-theme-secondary transition-colors"
                                       type="button"
-                                      aria-label="Changer type de charge"
                                     >
-                                      <RotateCcw className="w-4 h-4" />
+                                      <RotateCcw className="w-2.5 h-2.5" />
                                     </button>
                                   </div>
-
-                                  {/* Barbell desktop */}
-                                  {set.load?.type === 'barbell' && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                      <div>
+                                  {/* Container avec hauteur fixe pour tous les types */}
+                                  <div className="flex-1 flex flex-col">
+                                    {set.load?.type === "barbell" ? (
+                                      <div className="flex gap-1.5 flex-1">
                                         <input
                                           type="text"
                                           inputMode="decimal"
                                           placeholder="20"
-                                          value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
+                                          value={
+                                            Number.isFinite(set.load.barKg)
+                                              ? String(set.load.barKg)
+                                              : ""
+                                          }
                                           onChange={(e) => {
                                             const raw = e.target.value;
-                                            const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
-                                            const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                            updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: Number.isFinite(n) ? n : 20, addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null });
+                                            const n =
+                                              raw === ""
+                                                ? 20
+                                                : Number(raw.replace(",", "."));
+                                            const prev = set.load as Extract<
+                                              SetLoad,
+                                              { type: "barbell" }
+                                            >;
+                                            updateSetLoadForExercise(
+                                              exerciseIndex,
+                                              setIndex,
+                                              {
+                                                type: "barbell",
+                                                unit: "kg",
+                                                barKg: Number.isFinite(n)
+                                                  ? n
+                                                  : 20,
+                                                addedKg:
+                                                  typeof prev.addedKg ===
+                                                  "number"
+                                                    ? prev.addedKg
+                                                    : null,
+                                              },
+                                            );
                                           }}
-                                          className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                          className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                         />
-                                        <div className="text-xs text-theme-muted text-center mt-1">Barre</div>
-                                      </div>
-                                      <div>
                                         <input
                                           type="text"
                                           inputMode="decimal"
-                                          placeholder="0"
-                                          value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
+                                          placeholder="+0"
+                                          value={
+                                            typeof set.load.addedKg === "number"
+                                              ? String(set.load.addedKg)
+                                              : ""
+                                          }
                                           onChange={(e) => {
                                             const v = e.target.value;
-                                            const n = v === '' ? null : Number(v.replace(',', '.'));
-                                            const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                            updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'barbell', unit: 'kg', barKg: prev.barKg, addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                            const n =
+                                              v === ""
+                                                ? null
+                                                : Number(v.replace(",", "."));
+                                            const prev = set.load as Extract<
+                                              SetLoad,
+                                              { type: "barbell" }
+                                            >;
+                                            updateSetLoadForExercise(
+                                              exerciseIndex,
+                                              setIndex,
+                                              {
+                                                type: "barbell",
+                                                unit: "kg",
+                                                barKg: prev.barKg,
+                                                addedKg:
+                                                  v === ""
+                                                    ? null
+                                                    : Number.isFinite(
+                                                          n as number,
+                                                        )
+                                                      ? (n as number)
+                                                      : null,
+                                              },
+                                            );
                                           }}
-                                          className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                          className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                         />
-                                        <div className="text-xs text-theme-muted text-center mt-1">+Poids</div>
                                       </div>
-                                    </div>
-                                  )}
-
-                                  {/* Assisted desktop */}
-                                  {set.load?.type === 'assisted' && (
-                                    <div>
+                                    ) : set.load?.type === "assisted" ? (
                                       <input
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="0"
-                                        value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
+                                        value={
+                                          typeof set.load.assistanceKg ===
+                                          "number"
+                                            ? String(set.load.assistanceKg)
+                                            : ""
+                                        }
                                         onChange={(e) => {
                                           const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'assisted', unit: 'kg', assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                          const n =
+                                            v === ""
+                                              ? null
+                                              : Number(v.replace(",", "."));
+                                          updateSetLoadForExercise(
+                                            exerciseIndex,
+                                            setIndex,
+                                            {
+                                              type: "assisted",
+                                              unit: "kg",
+                                              assistanceKg:
+                                                v === ""
+                                                  ? null
+                                                  : Number.isFinite(n as number)
+                                                    ? (n as number)
+                                                    : null,
+                                            },
+                                          );
                                         }}
-                                        className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                        className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                       />
-                                      <div className="text-xs text-theme-muted text-center mt-1">Assistance (kg)</div>
-                                    </div>
-                                  )}
-
-                                  {/* Distance desktop */}
-                                  {set.load?.type === 'distance' && (
-                                    <div>
+                                    ) : set.load?.type === "distance" ? (
                                       <input
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="0"
-                                        value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
+                                        value={
+                                          typeof set.load.distanceValue ===
+                                          "number"
+                                            ? String(set.load.distanceValue)
+                                            : ""
+                                        }
                                         onChange={(e) => {
                                           const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'distance', unit: prev.unit, distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) });
+                                          const n =
+                                            v === ""
+                                              ? null
+                                              : Number(v.replace(",", "."));
+                                          const prev = set.load as Extract<
+                                            SetLoad,
+                                            { type: "distance" }
+                                          >;
+                                          updateSetLoadForExercise(
+                                            exerciseIndex,
+                                            setIndex,
+                                            {
+                                              type: "distance",
+                                              unit: prev.unit,
+                                              distanceValue:
+                                                v === ""
+                                                  ? null
+                                                  : Number.isFinite(n as number)
+                                                    ? (n as number)
+                                                    : null,
+                                            },
+                                          );
                                         }}
-                                        className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                        className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                       />
-                                      <div className="flex items-center justify-center gap-2 mt-1">
-                                        <span className="text-xs text-theme-muted">en</span>
-                                        <select
-                                          value={set.load.unit}
-                                          onChange={(e) => {
-                                            const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                            updateSetLoadForExercise(exerciseIndex, setIndex, { type: 'distance', unit: e.target.value as 'cm' | 'm', distanceValue: prev.distanceValue });
-                                          }}
-                                          className="bg-theme-tertiary border border-theme rounded px-2 py-0.5 text-theme text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                                        >
-                                          <option value="cm">cm</option>
-                                          <option value="m">m</option>
-                                        </select>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Single, Double, Machine desktop */}
-                                  {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine' || !set.load?.type) && (
-                                    <div>
+                                    ) : (
                                       <input
                                         type="text"
                                         inputMode="decimal"
                                         placeholder="0"
                                         value={(() => {
                                           const load = set.load;
-                                          if (!load) return '';
-                                          if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-                                            return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
+                                          if (!load) return "";
+                                          if (
+                                            load.type === "single" ||
+                                            load.type === "double" ||
+                                            load.type === "machine"
+                                          ) {
+                                            return typeof load.weightKg ===
+                                              "number"
+                                              ? String(load.weightKg)
+                                              : "";
                                           }
-                                          return '';
+                                          return "";
                                         })()}
                                         onChange={(e) => {
                                           const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const t: 'single' | 'double' | 'machine' = set.load?.type === 'double' ? 'double' : (set.load?.type === 'machine' ? 'machine' : 'single');
-                                          const next: SetLoad = t === 'double'
-                                            ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                            : t === 'machine'
-                                              ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                              : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
-                                          updateSetLoadForExercise(exerciseIndex, setIndex, next);
+                                          const n =
+                                            v === ""
+                                              ? null
+                                              : Number(v.replace(",", "."));
+                                          const t:
+                                            | "single"
+                                            | "double"
+                                            | "machine" =
+                                            set.load?.type === "double"
+                                              ? "double"
+                                              : set.load?.type === "machine"
+                                                ? "machine"
+                                                : "single";
+                                          const next: SetLoad =
+                                            t === "double"
+                                              ? {
+                                                  type: "double",
+                                                  unit: "kg",
+                                                  weightKg:
+                                                    v === ""
+                                                      ? null
+                                                      : Number.isFinite(
+                                                            n as number,
+                                                          )
+                                                        ? (n as number)
+                                                        : null,
+                                                }
+                                              : t === "machine"
+                                                ? {
+                                                    type: "machine",
+                                                    unit: "kg",
+                                                    weightKg:
+                                                      v === ""
+                                                        ? null
+                                                        : Number.isFinite(
+                                                              n as number,
+                                                            )
+                                                          ? (n as number)
+                                                          : null,
+                                                  }
+                                                : {
+                                                    type: "single",
+                                                    unit: "kg",
+                                                    weightKg:
+                                                      v === ""
+                                                        ? null
+                                                        : Number.isFinite(
+                                                              n as number,
+                                                            )
+                                                          ? (n as number)
+                                                          : null,
+                                                  };
+                                          updateSetLoadForExercise(
+                                            exerciseIndex,
+                                            setIndex,
+                                            next,
+                                          );
                                         }}
-                                        className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                        className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                                       />
-                                      <div className="text-xs text-theme-muted text-center mt-1">
-                                        {set.load?.type === 'double' ? '2x Haltères/KB' : set.load?.type === 'machine' ? 'Machine' : 'Haltère/KB'}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Ligne bas: Message/RPE à gauche (flex-1), Bouton valider carré à droite */}
-                              <div className="flex gap-4 pt-4 border-t border-theme/50">
-                                {/* Gauche: Message + RPE - occupe l'espace restant */}
-                                <div className="flex-1 flex flex-col justify-between gap-2">
-                                  {onSaveComment && (
-                                    <div>
-                                      <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                          <MessageSquare className="w-3 h-3 text-theme-muted" />
-                                          <span className="text-xs text-theme-muted">Message coach</span>
-                                        </div>
-                                        {sentComments.has(exercise.exerciseName) && (
-                                          <span className="text-[10px] text-[var(--color-success)] flex items-center gap-1">
-                                            <Check className="w-2.5 h-2.5" /> Envoyé
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex gap-2">
-                                        <input
-                                          type="text"
-                                          placeholder="Douleur, sensation..."
-                                          value={exerciseComments[exercise.exerciseName] || ''}
-                                          onChange={(e) => setExerciseComments(prev => ({ ...prev, [exercise.exerciseName]: e.target.value }))}
-                                          disabled={sentComments.has(exercise.exerciseName)}
-                                          className="flex-1 bg-theme-tertiary border border-theme rounded-lg px-2 py-1.5 text-theme text-xs placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
-                                        />
-                                        <button
-                                          onClick={() => handleSendComment(exercise.exerciseName)}
-                                          disabled={!exerciseComments[exercise.exerciseName]?.trim() || commentSending === exercise.exerciseName || sentComments.has(exercise.exerciseName)}
-                                          className="p-1.5 bg-[var(--color-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-theme rounded-lg transition-colors"
-                                          type="button"
-                                        >
-                                          <Send className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  <div className="flex-1 flex items-end">
-                                    <div className="w-full" ref={(el) => { focusRpeRefs.current[exerciseIndex] = el; }}>
-                                      <RpeSelector value={exercise.rpe} onChange={(rpe) => updateExerciseRpeForExercise(exerciseIndex, rpe)} size="sm" />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Droite: Bouton valider carré (aspect-square) */}
-                                <div className="flex flex-col justify-center">
-                                  <button
-                                    onClick={() => (set.completed ? toggleSetValidationForExercise(exerciseIndex) : validateSetForExercise(exerciseIndex))}
-                                    className={`
-                                      aspect-square h-full min-h-[80px] flex flex-col items-center justify-center gap-1 px-6 rounded-xl font-semibold transition-all active:scale-[0.98]
-                                      ${set.completed
-                                        ? 'bg-[var(--color-success)] text-theme'
-                                        : 'bg-[var(--color-primary)] hover:opacity-90 text-theme shadow-lg shadow-[var(--shadow-color)]'
-                                      }
-                                    `}
-                                    type="button"
-                                  >
-                                    <Check className="w-6 h-6" />
-                                    <span className="text-xs">{set.completed ? 'Validé' : 'Valider'}</span>
-                                  </button>
-                                </div>
-                              </div>
-
-                              {allSetsCompletedForExercise && (
-                                <div className="text-center text-xs text-[var(--color-success)]">Toutes les séries sont validées</div>
-                              )}
-                            </div>
-                          ) : (
-                            /* Mobile: Layout vertical original */
-                            <div className="space-y-4">
-                          {/* Navigation séries - barre de progression cliquable + Trash2/Plus */}
-                          <div data-tour-id={exerciseIndex === 0 ? 'tour-set-header' : undefined}>
-                            <div className="flex items-center gap-2">
-                              {exercise.sets.map((s, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => setSetIndexForExercise(exerciseIndex, i)}
-                                  className={`flex-1 h-3 rounded-full transition-all ${
-                                    s.completed
-                                      ? 'bg-[var(--color-success)]'
-                                      : i === setIndex
-                                        ? 'bg-[var(--color-primary)]'
-                                        : 'bg-theme-tertiary'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <div className="flex items-center justify-center gap-3 mt-2">
-                              <button
-                                onClick={() => removeSetForExercise(exerciseIndex)}
-                                disabled={exercise.sets.length <= 1}
-                                className="p-1 text-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                type="button"
-                                aria-label="Supprimer série"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                              <span className="text-sm text-theme-muted">
-                                Série {setIndex + 1} / {exercise.sets.length}
-                              </span>
-                              <button
-                                onClick={() => addSetForExercise(exerciseIndex)}
-                                className="p-1 text-theme-muted hover:text-theme transition-colors"
-                                type="button"
-                                aria-label="Ajouter série"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-3">
-                            <div data-tour-id={exerciseIndex === 0 ? 'tour-reps-input' : undefined}>
-                              <label className="block text-sm text-theme-muted mb-2">Répétitions</label>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
-                                value={set.reps}
-                                onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
-                                className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                              />
-                            </div>
-
-                            <div data-tour-id={exerciseIndex === 0 ? 'tour-weight-input' : undefined}>
-                              <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm text-theme-muted">Charge</label>
-                                <button
-                                  onClick={() => cycleSetLoadTypeForExercise(exerciseIndex, setIndex)}
-                                  className="p-2 bg-theme-tertiary hover:bg-theme-tertiary text-theme rounded-lg transition-colors"
-                                  type="button"
-                                  aria-label="Changer type de charge"
-                                  data-tour-id={exerciseIndex === 0 ? 'tour-load-type-button' : undefined}
-                                >
-                                  <RotateCcw className="w-4 h-4" />
-                                </button>
-                              </div>
-
-                              {/* Barbell: 2 inputs (barre + poids ajoutés) */}
-                              {set.load?.type === 'barbell' && (
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder="20"
-                                      value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
-                                      onChange={(e) => {
-                                        const raw = e.target.value;
-                                        const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
-                                        const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                        const next: SetLoad = {
-                                          type: 'barbell',
-                                          unit: 'kg',
-                                          barKg: Number.isFinite(n) ? n : 20,
-                                          addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null
-                                        };
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                      }}
-                                      className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                    />
-                                    <div className="text-sm text-theme-muted text-center mt-1">Barre</div>
-                                  </div>
-                                  <div>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder="0"
-                                      value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        const n = v === '' ? null : Number(v.replace(',', '.'));
-                                        const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
-                                        const next: SetLoad = {
-                                          type: 'barbell',
-                                          unit: 'kg',
-                                          barKg: prev.barKg,
-                                          addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
-                                        };
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                      }}
-                                      className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                    />
-                                    <div className="text-sm text-theme-muted text-center mt-1">Poids ajoutés</div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Assisted: 1 input (assistance en kg) */}
-                              {set.load?.type === 'assisted' && (
-                                <div>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="0"
-                                    value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const n = v === '' ? null : Number(v.replace(',', '.'));
-                                      const next: SetLoad = {
-                                        type: 'assisted',
-                                        unit: 'kg',
-                                        assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
-                                      };
-                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                    }}
-                                    className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                  />
-                                  <div className="text-sm text-theme-muted text-center mt-1">Assistance (kg)</div>
-                                </div>
-                              )}
-
-                              {/* Distance: 1 input + sélecteur unité */}
-                              {set.load?.type === 'distance' && (
-                                <div>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="0"
-                                    value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const n = v === '' ? null : Number(v.replace(',', '.'));
-                                      const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                      const next: SetLoad = {
-                                        type: 'distance',
-                                        unit: prev.unit,
-                                        distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
-                                      };
-                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                    }}
-                                    className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                  />
-                                  <div className="flex items-center justify-center gap-2 mt-1">
-                                    <span className="text-sm text-theme-muted">Distance en</span>
-                                    <select
-                                      value={set.load.unit}
-                                      onChange={(e) => {
-                                        const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
-                                        const next: SetLoad = {
-                                          type: 'distance',
-                                          unit: e.target.value as 'cm' | 'm',
-                                          distanceValue: prev.distanceValue
-                                        };
-                                        updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                      }}
-                                      className="bg-theme-tertiary border border-theme rounded-lg px-2 py-1 text-theme text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                                    >
-                                      <option value="cm">cm</option>
-                                      <option value="m">m</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Single, Double, Machine: 1 input (poids en kg) */}
-                              {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine' || !set.load?.type) && (
-                                <div>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="0"
-                                    value={(() => {
-                                      const load = set.load;
-                                      if (!load) return '';
-                                      if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-                                        return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
-                                      }
-                                      return '';
-                                    })()}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const n = v === '' ? null : Number(v.replace(',', '.'));
-                                      const t: 'single' | 'double' | 'machine' = set.load?.type === 'double'
-                                        ? 'double'
-                                        : (set.load?.type === 'machine' ? 'machine' : 'single');
-                                      const next: SetLoad = t === 'double'
-                                        ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                        : t === 'machine'
-                                          ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                          : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
-                                      updateSetLoadForExercise(exerciseIndex, setIndex, next);
-                                    }}
-                                    className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
-                                  />
-                                  <div className="text-sm text-theme-muted text-center mt-1">
-                                    {set.load?.type === 'double' ? '2x Haltères / Kettlebell' : set.load?.type === 'machine' ? 'Machine' : 'Haltère / Kettlebell'}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Ghost Mode - Basé sur le tonnage total */}
-                            {(() => {
-                              const ghost = ghostSessions[exercise.exerciseName];
-                              const ghostData = getGhostModeData(ghost, exercise.sets, exercise.sets.length);
-
-                              if (ghostData.type === 'none') return null;
-
-                              // Déterminer le style selon le type
-                              const isBeatingSoon = ghostData.type === 'beating' || ghostData.type === 'increase';
-
-                              // Formater le tonnage (en tonnes si >= 1000 kg)
-                              const formatTonnage = (kg: number) => {
-                                if (kg >= 1000) {
-                                  return `${(kg / 1000).toFixed(2)} T`;
-                                }
-                                return `${kg} kg`;
-                              };
-
-                              return (
-                                <div className={`mt-3 p-3 rounded-xl border ${isBeatingSoon ? 'bg-[var(--color-success)]/10 border-[var(--color-success)]/30' : 'bg-theme-tertiary border-theme/50'}`}>
-                                  {/* Ligne 1: Record tonnage + bouton info */}
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-xs font-medium text-theme-muted">
-                                      👻 Record:
+                                    )}
+                                    {/* Sous-texte type de charge */}
+                                    <span className="text-[10px] text-theme-muted mt-0.5 block text-center">
+                                      {set.load?.type === "barbell"
+                                        ? "Barre"
+                                        : set.load?.type === "assisted"
+                                          ? "Assisté"
+                                          : set.load?.type === "distance"
+                                            ? "Distance"
+                                            : set.load?.type === "double"
+                                              ? "Haltères/KB x2"
+                                              : set.load?.type === "machine"
+                                                ? "Machine"
+                                                : "Haltère/KB"}
                                     </span>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-semibold text-theme-secondary">
-                                        {ghostData.tonnageRecord !== undefined ? formatTonnage(ghostData.tonnageRecord) : '-'}
-                                      </span>
-                                      {ghostData.ghostSession && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setShowGhostRecordModal({
-                                              exerciseName: exercise.exerciseName,
-                                              ghost: ghostData.ghostSession!
-                                            });
-                                          }}
-                                          className="p-1 bg-theme-tertiary hover:bg-theme-secondary rounded-lg transition-colors"
-                                          title="Voir les détails du record"
-                                          type="button"
-                                        >
-                                          <Info className="w-3.5 h-3.5 text-theme-muted" />
-                                        </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Bandeau bas: [RPE + Message] | Valider (row-span-2) */}
+                              <div className="grid grid-cols-[1fr_auto] gap-2 mt-auto pt-2 border-t border-theme/50">
+                                {/* Colonne gauche: RPE (ligne 1) + Message (ligne 2) */}
+                                <div className="flex flex-col gap-1">
+                                  {/* RPE complet (1-10) sur une ligne */}
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[8px] text-theme-muted">
+                                      RPE
+                                    </span>
+                                    <div className="flex gap-px flex-1">
+                                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+                                        (rpe) => (
+                                          <button
+                                            key={rpe}
+                                            onClick={() =>
+                                              updateExerciseRpeForExercise(
+                                                exerciseIndex,
+                                                exercise.rpe === rpe
+                                                  ? undefined
+                                                  : rpe,
+                                              )
+                                            }
+                                            className={`
+                                          flex-1 h-5 text-[9px] font-bold rounded transition-colors flex items-center justify-center
+                                          ${
+                                            exercise.rpe === rpe
+                                              ? RPE_SCALE.find(
+                                                  (r) => r.value === rpe,
+                                                )?.color + " text-theme"
+                                              : "bg-theme-tertiary text-theme-muted hover:bg-theme-secondary"
+                                          }
+                                        `}
+                                            type="button"
+                                          >
+                                            {rpe}
+                                          </button>
+                                        ),
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* Ligne 2: Message dynamique si applicable */}
-                                  {ghostData.message && (
-                                    <div className={`mt-2 text-xs font-medium ${isBeatingSoon ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}`}>
-                                      {ghostData.type === 'beating' && '🔥 '}
-                                      {ghostData.type === 'increase' && '💪 '}
-                                      {ghostData.message}
+                                  {/* Message + bouton envoyer */}
+                                  {onSaveComment && (
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="text"
+                                        placeholder="Message..."
+                                        value={
+                                          exerciseComments[
+                                            exercise.exerciseName
+                                          ] || ""
+                                        }
+                                        onChange={(e) =>
+                                          setExerciseComments((prev) => ({
+                                            ...prev,
+                                            [exercise.exerciseName]:
+                                              e.target.value,
+                                          }))
+                                        }
+                                        onKeyDown={(e) => {
+                                          if (
+                                            e.key === "Enter" &&
+                                            exerciseComments[
+                                              exercise.exerciseName
+                                            ]?.trim()
+                                          ) {
+                                            handleSendComment(
+                                              exercise.exerciseName,
+                                            );
+                                          }
+                                        }}
+                                        onFocus={() =>
+                                          setMessageSentConfirm((prev) => {
+                                            const next = new Set(prev);
+                                            next.delete(exercise.exerciseName);
+                                            return next;
+                                          })
+                                        }
+                                        className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-2 py-1.5 text-theme text-[10px] placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                                      />
+                                      <button
+                                        onClick={() =>
+                                          handleSendComment(
+                                            exercise.exerciseName,
+                                          )
+                                        }
+                                        disabled={
+                                          !exerciseComments[
+                                            exercise.exerciseName
+                                          ]?.trim() &&
+                                          !messageSentConfirm.has(
+                                            exercise.exerciseName,
+                                          )
+                                        }
+                                        className={`px-2 ${messageSentConfirm.has(exercise.exerciseName) ? "bg-[var(--color-success)]" : "bg-[var(--color-primary)] hover:opacity-90"} disabled:bg-theme-tertiary disabled:text-theme-muted text-theme rounded transition-colors`}
+                                        type="button"
+                                      >
+                                        {messageSentConfirm.has(
+                                          exercise.exerciseName,
+                                        ) ? (
+                                          <Check className="w-3.5 h-3.5" />
+                                        ) : (
+                                          <ChevronRight className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
-                              );
-                            })()}
-                          </div>
 
-                          {/* Validate Set Button */}
-                          {(() => {
-                            const isLastSet = setIndex === exercise.sets.length - 1;
-                            const allSetsValidated = exercise.sets.every(s => s.completed);
-
-                            // Determine button text
-                            let buttonText: string;
-                            const hasRpe = typeof exercise.rpe === 'number';
-
-                            // Determine button text
-                            if (set.completed) {
-                              if (isLastSet && allSetsValidated) {
-                                buttonText = hasRpe ? 'Séance terminée' : 'Remplissez le RPE';
-                              } else {
-                                buttonText = 'Série validée';
-                              }
-                            } else {
-                              buttonText = isLastSet ? "Finir l'exercice" : 'Valider la série';
-                            }
-
-                            return (
-                              <button
-                                onClick={() => (set.completed ? toggleSetValidationForExercise(exerciseIndex) : validateSetForExercise(exerciseIndex))}
-                                className={`
-                                  w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
-                                  ${set.completed
-                                    ? 'bg-gray-400 text-white cursor-default'
-                                    : 'bg-[var(--color-primary)] hover:opacity-90 text-white shadow-lg shadow-[var(--shadow-color)]'
-                                  }
-                                `}
-                                type="button"
-                                data-tour-id={exerciseIndex === 0 ? 'tour-validate-set-button' : undefined}
-                              >
-                                <Check className="w-5 h-5" />
-                                <span>{buttonText}</span>
-                              </button>
-                            );
-                          })()}
-
-                          {onSaveComment && (
-                            <div className="pt-2" data-tour-id={exerciseIndex === 0 ? 'tour-message-section' : undefined}>
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <MessageSquare className="w-4 h-4 text-theme-muted" />
-                                  <span className="text-sm text-theme-muted">Message au coach</span>
-                                </div>
-                                {sentComments.has(exercise.exerciseName) ? (
-                                  <span className="text-xs text-[var(--color-success)] flex items-center gap-1">
-                                    <Check className="w-3 h-3" />
-                                    Envoyé
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Douleur, sensation, question..."
-                                  value={exerciseComments[exercise.exerciseName] || ''}
-                                  onChange={(e) => setExerciseComments(prev => ({
-                                    ...prev,
-                                    [exercise.exerciseName]: e.target.value
-                                  }))}
-                                  disabled={sentComments.has(exercise.exerciseName)}
-                                  className="flex-1 bg-theme-tertiary border border-theme rounded-lg px-3 py-2 text-theme text-sm placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
-                                />
+                                {/* Colonne droite: Bouton valider (s'étire sur toute la hauteur) */}
                                 <button
-                                  onClick={() => handleSendComment(exercise.exerciseName)}
-                                  disabled={!exerciseComments[exercise.exerciseName]?.trim() || commentSending === exercise.exerciseName || sentComments.has(exercise.exerciseName)}
-                                  className="p-2 bg-[var(--color-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-theme rounded-lg transition-colors"
-                                  title="Envoyer maintenant"
+                                  onClick={() =>
+                                    set.completed
+                                      ? toggleSetValidationForExercise(
+                                          exerciseIndex,
+                                        )
+                                      : validateSetForExercise(exerciseIndex)
+                                  }
+                                  className={`
+                                  self-stretch px-4 rounded-lg font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center
+                                  ${set.completed ? "bg-[var(--color-success)] text-theme" : "bg-[var(--color-primary)] hover:opacity-90 text-theme"}
+                                `}
                                   type="button"
                                 >
-                                  <Send className="w-4 h-4" />
+                                  <Check className="w-5 h-5" />
                                 </button>
                               </div>
                             </div>
-                          )}
-
-                          <div
-                            className={`p-3 rounded-xl transition-all duration-300 ${
-                              highlightedRpeIndex === exerciseIndex
-                                ? 'ring-2 ring-[var(--color-primary)] ring-offset-4 ring-offset-theme bg-[var(--color-primary)]/10'
-                                : ''
-                            }`}
-                            data-tour-id={exerciseIndex === 0 ? 'tour-exercise-rpe' : undefined}
-                          >
-                            <div ref={(el) => { focusRpeRefs.current[exerciseIndex] = el; }} />
-                            <RpeSelector
-                              value={exercise.rpe}
-                              onChange={(rpe) => updateExerciseRpeForExercise(exerciseIndex, rpe)}
-                              size="sm"
-                            />
                           </div>
-
-                          {allSetsCompletedForExercise && (
-                            <div className="text-center text-xs text-[var(--color-success)]">Toutes les séries sont validées</div>
-                          )}
+                        )}
+                      </div>
+                    </div>,
+                  );
+                } else {
+                  // Mobile: layout complet (desktop géré par flip card ci-dessus)
+                  renderedElements.push(
+                    <div
+                      key={exerciseIndex}
+                      className="relative"
+                      ref={(el) => {
+                        focusCardRefs.current[exerciseIndex] = el;
+                      }}
+                      data-tour-id={
+                        exerciseIndex === 0
+                          ? "tour-exercise-tile"
+                          : exerciseIndex === 1
+                            ? "tour-exercise-tile-2"
+                            : undefined
+                      }
+                    >
+                      {isExerciseDone && (
+                        <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-2 pointer-events-none">
+                          <div className="w-8 h-8 flex items-center justify-center rounded-full bg-[var(--color-success)] text-theme shadow-lg">
+                            <Check className="w-5 h-5" />
+                          </div>
+                          {typeof exercise.rpe === "number" && (
+                            <div
+                              className={`w-8 h-8 flex items-center justify-center rounded-lg text-theme font-bold shadow-lg text-sm ${RPE_SCALE.find((r) => r.value === exercise.rpe)?.color || "bg-theme-tertiary"}`}
+                            >
+                              {exercise.rpe}
                             </div>
                           )}
                         </div>
-                      </div>
-                    )}
-                  </CardContent>
-                  </Card>
-                </div>
-              );
-              }
+                      )}
+                      <Card
+                        variant={isExpanded ? "gradient" : "default"}
+                        className={`overflow-hidden relative ${isExerciseDone ? "border-2 border-[var(--color-success)]/50 bg-[var(--color-success)]/10" : ""}`}
+                      >
+                        <CardContent className="p-0">
+                          <button
+                            onClick={() =>
+                              toggleExerciseExpanded(exerciseIndex)
+                            }
+                            className="w-full text-left"
+                            type="button"
+                          >
+                            <div
+                              className={`${isExpanded ? "bg-gradient-to-r from-[var(--color-primary)]/20 to-[var(--color-accent)]/20" : ""} px-4 py-3 border-b border-theme/50`}
+                            >
+                              <div
+                                className={`flex items-center justify-between gap-3 ${isDesktop ? "flex-row" : ""}`}
+                              >
+                                <div
+                                  className={`${isDesktop ? "flex items-center gap-4 flex-1" : "min-w-0"}`}
+                                >
+                                  <h2
+                                    className={`font-bold text-theme ${isDesktop ? "text-base whitespace-nowrap" : "text-lg line-clamp-3"}`}
+                                  >
+                                    {getExerciseDisplayName(
+                                      exercise.exerciseName,
+                                    )}
+                                  </h2>
+                                  {/* Desktop: tous les badges et boutons sur une ligne */}
+                                  {isDesktop ? (
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
+                                        {exerciseData?.series ||
+                                          exercise.sets.length}{" "}
+                                        × {exerciseData?.repsDuree || "?"}
+                                      </div>
+                                      {exerciseData?.repos && (
+                                        <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
+                                          {exerciseData.repos}s
+                                        </div>
+                                      )}
+                                      {exerciseData?.tempoRpe && (
+                                        <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
+                                          {exerciseData.tempoRpe}
+                                        </div>
+                                      )}
+                                      <div className="flex-1" />
+                                      <button
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setShowHistoryModal({
+                                            index: exerciseIndex,
+                                            anchorEl: e.currentTarget,
+                                          });
+                                        }}
+                                        className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+                                        type="button"
+                                      >
+                                        Historique
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setShowConsignesModal({
+                                            index: exerciseIndex,
+                                            anchorEl: e.currentTarget,
+                                          });
+                                        }}
+                                        className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+                                        type="button"
+                                      >
+                                        Consignes
+                                      </button>
+                                      {exerciseData?.video && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setShowVideoModal({
+                                              url: exerciseData.video!,
+                                              exerciseName:
+                                                exercise.exerciseName,
+                                              anchorEl: e.currentTarget,
+                                            });
+                                          }}
+                                          className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-full text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
+                                          type="button"
+                                        >
+                                          <Video className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
+                                          {exerciseData?.series ||
+                                            exercise.sets.length}{" "}
+                                          × {exerciseData?.repsDuree || "?"}
+                                        </div>
+                                        {exerciseData?.repos && (
+                                          <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
+                                            {exerciseData.repos}s
+                                          </div>
+                                        )}
+                                        {exerciseData?.tempoRpe && (
+                                          <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
+                                            {exerciseData.tempoRpe}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div
+                                        className="mt-2 flex items-center gap-2"
+                                        data-tour-id={
+                                          exerciseIndex === 0
+                                            ? "tour-exercise-badges"
+                                            : undefined
+                                        }
+                                      >
+                                        <button
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setShowHistoryModal({
+                                              index: exerciseIndex,
+                                              anchorEl: e.currentTarget,
+                                            });
+                                          }}
+                                          className="px-3 py-1.5 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:text-theme hover:border-[var(--color-danger)] rounded-lg text-xs font-semibold transition-colors"
+                                          type="button"
+                                        >
+                                          Historique
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setShowConsignesModal({
+                                              index: exerciseIndex,
+                                              anchorEl: e.currentTarget,
+                                            });
+                                          }}
+                                          className="px-3 py-1.5 border border-[var(--color-warning)]/40 text-[var(--color-warning)] hover:text-theme hover:border-[var(--color-warning)] rounded-lg text-xs font-semibold transition-colors"
+                                          type="button"
+                                        >
+                                          Consignes
+                                        </button>
+                                        {exerciseData?.video && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              setShowVideoModal({
+                                                url: exerciseData.video!,
+                                                exerciseName:
+                                                  exercise.exerciseName,
+                                                anchorEl: e.currentTarget,
+                                              });
+                                            }}
+                                            className="p-2 bg-[var(--color-primary)]/20 border border-[var(--color-primary)]/40 rounded-full text-[var(--color-primary)] hover:text-theme hover:opacity-90/30 transition-colors"
+                                            type="button"
+                                          >
+                                            <Video className="w-5 h-5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+
+                          {isExpanded && (
+                            <div
+                              data-tour-id={
+                                exerciseIndex === 0
+                                  ? "tour-exercise-tile-back"
+                                  : undefined
+                              }
+                            >
+                              {/* Header avec nom exercice et série - desktop seulement (mobile utilise la barre de progression) */}
+                              {isDesktop && (
+                                <div
+                                  data-tour-id={
+                                    exerciseIndex === 0
+                                      ? "tour-set-header"
+                                      : undefined
+                                  }
+                                >
+                                  <div className="px-4 py-3 border-b border-theme/50">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-sm text-theme-secondary">
+                                          Série {setIndex + 1}/
+                                          {exercise.sets.length}
+                                        </div>
+                                        {set.completed && (
+                                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-white">
+                                            <Check className="w-4 h-4" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() =>
+                                            removeSetForExercise(exerciseIndex)
+                                          }
+                                          disabled={exercise.sets.length <= 1}
+                                          className="p-1 text-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                          type="button"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            addSetForExercise(exerciseIndex)
+                                          }
+                                          className="p-1 text-theme-muted hover:text-theme transition-colors"
+                                          type="button"
+                                        >
+                                          <Plus className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div
+                                className={`p-4 ${isDesktop ? "" : "space-y-4"}`}
+                              >
+                                {/* Desktop: Layout 2 colonnes */}
+                                {isDesktop ? (
+                                  <div className="space-y-4">
+                                    {/* Ligne principale: Séries+Reps à gauche, Charges à droite - alignés */}
+                                    <div className="grid grid-cols-2 gap-6">
+                                      {/* Colonne gauche: Navigation séries + Répétitions */}
+                                      <div className="flex flex-col">
+                                        {/* Header avec label + navigation (même hauteur que header charge) */}
+                                        <div className="flex items-center justify-between mb-2 h-9">
+                                          <label className="text-sm text-theme-muted">
+                                            Répétitions
+                                          </label>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={() =>
+                                                setSetIndexForExercise(
+                                                  exerciseIndex,
+                                                  Math.max(setIndex - 1, 0),
+                                                )
+                                              }
+                                              disabled={setIndex === 0}
+                                              className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary disabled:opacity-30 disabled:cursor-not-allowed text-theme-secondary hover:text-theme rounded-lg transition-colors"
+                                              aria-label="Série précédente"
+                                              type="button"
+                                            >
+                                              <ChevronLeft className="w-4 h-4" />
+                                            </button>
+                                            <span className="text-sm text-theme-muted min-w-[3rem] text-center">
+                                              {setIndex + 1}/
+                                              {exercise.sets.length}
+                                            </span>
+                                            <button
+                                              onClick={() =>
+                                                setSetIndexForExercise(
+                                                  exerciseIndex,
+                                                  Math.min(
+                                                    setIndex + 1,
+                                                    exercise.sets.length - 1,
+                                                  ),
+                                                )
+                                              }
+                                              disabled={
+                                                setIndex ===
+                                                exercise.sets.length - 1
+                                              }
+                                              className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary disabled:opacity-30 disabled:cursor-not-allowed text-theme-secondary hover:text-theme rounded-lg transition-colors"
+                                              aria-label="Série suivante"
+                                              type="button"
+                                            >
+                                              <ChevronRight className="w-4 h-4" />
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {/* Input Répétitions - aligné avec input charge */}
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          placeholder={
+                                            exerciseData?.repsDuree?.replace(
+                                              /[^0-9]/g,
+                                              "",
+                                            ) || "8"
+                                          }
+                                          value={set.reps}
+                                          onChange={(e) =>
+                                            updateSetForExercise(
+                                              exerciseIndex,
+                                              setIndex,
+                                              "reps",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                        />
+
+                                        {/* Ghost Mode (desktop) */}
+                                        {(() => {
+                                          const ghost =
+                                            ghostSessions[
+                                              exercise.exerciseName
+                                            ];
+                                          const ghostData = getGhostModeData(
+                                            ghost,
+                                            exercise.sets,
+                                            exercise.sets.length,
+                                          );
+                                          if (ghostData.type === "none")
+                                            return null;
+                                          const isBeatingSoon =
+                                            ghostData.type === "beating" ||
+                                            ghostData.type === "increase";
+                                          const formatTonnage = (kg: number) =>
+                                            kg >= 1000
+                                              ? `${(kg / 1000).toFixed(2)} T`
+                                              : `${kg} kg`;
+                                          return (
+                                            <div
+                                              className={`mt-3 p-3 rounded-xl border ${isBeatingSoon ? "bg-[var(--color-success)]/10 border-[var(--color-success)]/30" : "bg-theme-tertiary border-theme/50"}`}
+                                            >
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs font-medium text-theme-muted">
+                                                  👻 Record:
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-sm font-semibold text-theme-secondary">
+                                                    {ghostData.tonnageRecord !==
+                                                    undefined
+                                                      ? formatTonnage(
+                                                          ghostData.tonnageRecord,
+                                                        )
+                                                      : "-"}
+                                                  </span>
+                                                  {ghostData.ghostSession && (
+                                                    <button
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setShowGhostRecordModal(
+                                                          {
+                                                            exerciseName:
+                                                              exercise.exerciseName,
+                                                            ghost:
+                                                              ghostData.ghostSession!,
+                                                          },
+                                                        );
+                                                      }}
+                                                      className="p-1 bg-theme-tertiary hover:bg-theme-secondary rounded-lg transition-colors"
+                                                      type="button"
+                                                    >
+                                                      <Info className="w-3.5 h-3.5 text-theme-muted" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              {ghostData.message && (
+                                                <div
+                                                  className={`mt-2 text-xs font-medium ${isBeatingSoon ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}
+                                                >
+                                                  {ghostData.type ===
+                                                    "beating" && "🔥 "}
+                                                  {ghostData.type ===
+                                                    "increase" && "💪 "}
+                                                  {ghostData.message}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
+
+                                      {/* Colonne droite: Charge */}
+                                      <div className="flex flex-col">
+                                        {/* Header avec label + bouton cycle (même hauteur) */}
+                                        <div className="flex items-center justify-between mb-2 h-9">
+                                          <label className="text-sm text-theme-muted">
+                                            Charge
+                                          </label>
+                                          <button
+                                            onClick={() =>
+                                              cycleSetLoadTypeForExercise(
+                                                exerciseIndex,
+                                                setIndex,
+                                              )
+                                            }
+                                            className="p-1.5 bg-theme-tertiary hover:bg-theme-tertiary text-theme rounded-lg transition-colors"
+                                            type="button"
+                                            aria-label="Changer type de charge"
+                                          >
+                                            <RotateCcw className="w-4 h-4" />
+                                          </button>
+                                        </div>
+
+                                        {/* Barbell desktop */}
+                                        {set.load?.type === "barbell" && (
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                placeholder="20"
+                                                value={
+                                                  Number.isFinite(
+                                                    set.load.barKg,
+                                                  )
+                                                    ? String(set.load.barKg)
+                                                    : ""
+                                                }
+                                                onChange={(e) => {
+                                                  const raw = e.target.value;
+                                                  const n =
+                                                    raw === ""
+                                                      ? 20
+                                                      : Number(
+                                                          raw.replace(",", "."),
+                                                        );
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "barbell" }
+                                                    >;
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    {
+                                                      type: "barbell",
+                                                      unit: "kg",
+                                                      barKg: Number.isFinite(n)
+                                                        ? n
+                                                        : 20,
+                                                      addedKg:
+                                                        typeof prev.addedKg ===
+                                                        "number"
+                                                          ? prev.addedKg
+                                                          : null,
+                                                    },
+                                                  );
+                                                }}
+                                                className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                              />
+                                              <div className="text-xs text-theme-muted text-center mt-1">
+                                                Barre
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                placeholder="0"
+                                                value={
+                                                  typeof set.load.addedKg ===
+                                                  "number"
+                                                    ? String(set.load.addedKg)
+                                                    : ""
+                                                }
+                                                onChange={(e) => {
+                                                  const v = e.target.value;
+                                                  const n =
+                                                    v === ""
+                                                      ? null
+                                                      : Number(
+                                                          v.replace(",", "."),
+                                                        );
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "barbell" }
+                                                    >;
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    {
+                                                      type: "barbell",
+                                                      unit: "kg",
+                                                      barKg: prev.barKg,
+                                                      addedKg:
+                                                        v === ""
+                                                          ? null
+                                                          : Number.isFinite(
+                                                                n as number,
+                                                              )
+                                                            ? (n as number)
+                                                            : null,
+                                                    },
+                                                  );
+                                                }}
+                                                className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                              />
+                                              <div className="text-xs text-theme-muted text-center mt-1">
+                                                +Poids
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Assisted desktop */}
+                                        {set.load?.type === "assisted" && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={
+                                                typeof set.load.assistanceKg ===
+                                                "number"
+                                                  ? String(
+                                                      set.load.assistanceKg,
+                                                    )
+                                                  : ""
+                                              }
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  {
+                                                    type: "assisted",
+                                                    unit: "kg",
+                                                    assistanceKg:
+                                                      v === ""
+                                                        ? null
+                                                        : Number.isFinite(
+                                                              n as number,
+                                                            )
+                                                          ? (n as number)
+                                                          : null,
+                                                  },
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="text-xs text-theme-muted text-center mt-1">
+                                              Assistance (kg)
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Distance desktop */}
+                                        {set.load?.type === "distance" && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={
+                                                typeof set.load
+                                                  .distanceValue === "number"
+                                                  ? String(
+                                                      set.load.distanceValue,
+                                                    )
+                                                  : ""
+                                              }
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                const prev =
+                                                  set.load as Extract<
+                                                    SetLoad,
+                                                    { type: "distance" }
+                                                  >;
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  {
+                                                    type: "distance",
+                                                    unit: prev.unit,
+                                                    distanceValue:
+                                                      v === ""
+                                                        ? null
+                                                        : Number.isFinite(
+                                                              n as number,
+                                                            )
+                                                          ? (n as number)
+                                                          : null,
+                                                  },
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="flex items-center justify-center gap-2 mt-1">
+                                              <span className="text-xs text-theme-muted">
+                                                en
+                                              </span>
+                                              <select
+                                                value={set.load.unit}
+                                                onChange={(e) => {
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "distance" }
+                                                    >;
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    {
+                                                      type: "distance",
+                                                      unit: e.target.value as
+                                                        | "cm"
+                                                        | "m",
+                                                      distanceValue:
+                                                        prev.distanceValue,
+                                                    },
+                                                  );
+                                                }}
+                                                className="bg-theme-tertiary border border-theme rounded px-2 py-0.5 text-theme text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                                              >
+                                                <option value="cm">cm</option>
+                                                <option value="m">m</option>
+                                              </select>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Single, Double, Machine desktop */}
+                                        {(set.load?.type === "single" ||
+                                          set.load?.type === "double" ||
+                                          set.load?.type === "machine" ||
+                                          !set.load?.type) && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={(() => {
+                                                const load = set.load;
+                                                if (!load) return "";
+                                                if (
+                                                  load.type === "single" ||
+                                                  load.type === "double" ||
+                                                  load.type === "machine"
+                                                ) {
+                                                  return typeof load.weightKg ===
+                                                    "number"
+                                                    ? String(load.weightKg)
+                                                    : "";
+                                                }
+                                                return "";
+                                              })()}
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                const t:
+                                                  | "single"
+                                                  | "double"
+                                                  | "machine" =
+                                                  set.load?.type === "double"
+                                                    ? "double"
+                                                    : set.load?.type ===
+                                                        "machine"
+                                                      ? "machine"
+                                                      : "single";
+                                                const next: SetLoad =
+                                                  t === "double"
+                                                    ? {
+                                                        type: "double",
+                                                        unit: "kg",
+                                                        weightKg:
+                                                          v === ""
+                                                            ? null
+                                                            : Number.isFinite(
+                                                                  n as number,
+                                                                )
+                                                              ? (n as number)
+                                                              : null,
+                                                      }
+                                                    : t === "machine"
+                                                      ? {
+                                                          type: "machine",
+                                                          unit: "kg",
+                                                          weightKg:
+                                                            v === ""
+                                                              ? null
+                                                              : Number.isFinite(
+                                                                    n as number,
+                                                                  )
+                                                                ? (n as number)
+                                                                : null,
+                                                        }
+                                                      : {
+                                                          type: "single",
+                                                          unit: "kg",
+                                                          weightKg:
+                                                            v === ""
+                                                              ? null
+                                                              : Number.isFinite(
+                                                                    n as number,
+                                                                  )
+                                                                ? (n as number)
+                                                                : null,
+                                                        };
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  next,
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="text-xs text-theme-muted text-center mt-1">
+                                              {set.load?.type === "double"
+                                                ? "2x Haltères/KB"
+                                                : set.load?.type === "machine"
+                                                  ? "Machine"
+                                                  : "Haltère/KB"}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Ligne bas: Message/RPE à gauche (flex-1), Bouton valider carré à droite */}
+                                    <div className="flex gap-4 pt-4 border-t border-theme/50">
+                                      {/* Gauche: Message + RPE - occupe l'espace restant */}
+                                      <div className="flex-1 flex flex-col justify-between gap-2">
+                                        {onSaveComment && (
+                                          <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                              <div className="flex items-center gap-2">
+                                                <MessageSquare className="w-3 h-3 text-theme-muted" />
+                                                <span className="text-xs text-theme-muted">
+                                                  Message coach
+                                                </span>
+                                              </div>
+                                              {sentComments.has(
+                                                exercise.exerciseName,
+                                              ) && (
+                                                <span className="text-[10px] text-[var(--color-success)] flex items-center gap-1">
+                                                  <Check className="w-2.5 h-2.5" />{" "}
+                                                  Envoyé
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <input
+                                                type="text"
+                                                placeholder="Douleur, sensation..."
+                                                value={
+                                                  exerciseComments[
+                                                    exercise.exerciseName
+                                                  ] || ""
+                                                }
+                                                onChange={(e) =>
+                                                  setExerciseComments(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [exercise.exerciseName]:
+                                                        e.target.value,
+                                                    }),
+                                                  )
+                                                }
+                                                disabled={sentComments.has(
+                                                  exercise.exerciseName,
+                                                )}
+                                                className="flex-1 bg-theme-tertiary border border-theme rounded-lg px-2 py-1.5 text-theme text-xs placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
+                                              />
+                                              <button
+                                                onClick={() =>
+                                                  handleSendComment(
+                                                    exercise.exerciseName,
+                                                  )
+                                                }
+                                                disabled={
+                                                  !exerciseComments[
+                                                    exercise.exerciseName
+                                                  ]?.trim() ||
+                                                  commentSending ===
+                                                    exercise.exerciseName ||
+                                                  sentComments.has(
+                                                    exercise.exerciseName,
+                                                  )
+                                                }
+                                                className="p-1.5 bg-[var(--color-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-theme rounded-lg transition-colors"
+                                                type="button"
+                                              >
+                                                <Send className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+                                        <div className="flex-1 flex items-end">
+                                          <div
+                                            className="w-full"
+                                            ref={(el) => {
+                                              focusRpeRefs.current[
+                                                exerciseIndex
+                                              ] = el;
+                                            }}
+                                          >
+                                            <RpeSelector
+                                              value={exercise.rpe}
+                                              onChange={(rpe) =>
+                                                updateExerciseRpeForExercise(
+                                                  exerciseIndex,
+                                                  rpe,
+                                                )
+                                              }
+                                              size="sm"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Droite: Bouton valider carré (aspect-square) */}
+                                      <div className="flex flex-col justify-center">
+                                        <button
+                                          onClick={() =>
+                                            set.completed
+                                              ? toggleSetValidationForExercise(
+                                                  exerciseIndex,
+                                                )
+                                              : validateSetForExercise(
+                                                  exerciseIndex,
+                                                )
+                                          }
+                                          className={`
+                                      aspect-square h-full min-h-[80px] flex flex-col items-center justify-center gap-1 px-6 rounded-xl font-semibold transition-all active:scale-[0.98]
+                                      ${
+                                        set.completed
+                                          ? "bg-[var(--color-success)] text-theme"
+                                          : "bg-[var(--color-primary)] hover:opacity-90 text-theme shadow-lg shadow-[var(--shadow-color)]"
+                                      }
+                                    `}
+                                          type="button"
+                                        >
+                                          <Check className="w-6 h-6" />
+                                          <span className="text-xs">
+                                            {set.completed
+                                              ? "Validé"
+                                              : "Valider"}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {allSetsCompletedForExercise && (
+                                      <div className="text-center text-xs text-[var(--color-success)]">
+                                        Toutes les séries sont validées
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  /* Mobile: Layout vertical original */
+                                  <div className="space-y-4">
+                                    {/* Navigation séries - barre de progression cliquable + Trash2/Plus */}
+                                    <div
+                                      data-tour-id={
+                                        exerciseIndex === 0
+                                          ? "tour-set-header"
+                                          : undefined
+                                      }
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        {exercise.sets.map((s, i) => (
+                                          <button
+                                            key={i}
+                                            onClick={() =>
+                                              setSetIndexForExercise(
+                                                exerciseIndex,
+                                                i,
+                                              )
+                                            }
+                                            className={`flex-1 h-3 rounded-full transition-all ${
+                                              s.completed
+                                                ? "bg-[var(--color-success)]"
+                                                : i === setIndex
+                                                  ? "bg-[var(--color-primary)]"
+                                                  : "bg-theme-tertiary"
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                      <div className="flex items-center justify-center gap-3 mt-2">
+                                        <button
+                                          onClick={() =>
+                                            removeSetForExercise(exerciseIndex)
+                                          }
+                                          disabled={exercise.sets.length <= 1}
+                                          className="p-1 text-[var(--color-danger)] hover:text-[var(--color-danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                          type="button"
+                                          aria-label="Supprimer série"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                        <span className="text-sm text-theme-muted">
+                                          Série {setIndex + 1} /{" "}
+                                          {exercise.sets.length}
+                                        </span>
+                                        <button
+                                          onClick={() =>
+                                            addSetForExercise(exerciseIndex)
+                                          }
+                                          className="p-1 text-theme-muted hover:text-theme transition-colors"
+                                          type="button"
+                                          aria-label="Ajouter série"
+                                        >
+                                          <Plus className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                      <div
+                                        data-tour-id={
+                                          exerciseIndex === 0
+                                            ? "tour-reps-input"
+                                            : undefined
+                                        }
+                                      >
+                                        <label className="block text-sm text-theme-muted mb-2">
+                                          Répétitions
+                                        </label>
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          placeholder={
+                                            exerciseData?.repsDuree?.replace(
+                                              /[^0-9]/g,
+                                              "",
+                                            ) || "8"
+                                          }
+                                          value={set.reps}
+                                          onChange={(e) =>
+                                            updateSetForExercise(
+                                              exerciseIndex,
+                                              setIndex,
+                                              "reps",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                        />
+                                      </div>
+
+                                      <div
+                                        data-tour-id={
+                                          exerciseIndex === 0
+                                            ? "tour-weight-input"
+                                            : undefined
+                                        }
+                                      >
+                                        <div className="flex items-center justify-between mb-2">
+                                          <label className="block text-sm text-theme-muted">
+                                            Charge
+                                          </label>
+                                          <button
+                                            onClick={() =>
+                                              cycleSetLoadTypeForExercise(
+                                                exerciseIndex,
+                                                setIndex,
+                                              )
+                                            }
+                                            className="p-2 bg-theme-tertiary hover:bg-theme-tertiary text-theme rounded-lg transition-colors"
+                                            type="button"
+                                            aria-label="Changer type de charge"
+                                            data-tour-id={
+                                              exerciseIndex === 0
+                                                ? "tour-load-type-button"
+                                                : undefined
+                                            }
+                                          >
+                                            <RotateCcw className="w-4 h-4" />
+                                          </button>
+                                        </div>
+
+                                        {/* Barbell: 2 inputs (barre + poids ajoutés) */}
+                                        {set.load?.type === "barbell" && (
+                                          <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                placeholder="20"
+                                                value={
+                                                  Number.isFinite(
+                                                    set.load.barKg,
+                                                  )
+                                                    ? String(set.load.barKg)
+                                                    : ""
+                                                }
+                                                onChange={(e) => {
+                                                  const raw = e.target.value;
+                                                  const n =
+                                                    raw === ""
+                                                      ? 20
+                                                      : Number(
+                                                          raw.replace(",", "."),
+                                                        );
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "barbell" }
+                                                    >;
+                                                  const next: SetLoad = {
+                                                    type: "barbell",
+                                                    unit: "kg",
+                                                    barKg: Number.isFinite(n)
+                                                      ? n
+                                                      : 20,
+                                                    addedKg:
+                                                      typeof prev.addedKg ===
+                                                      "number"
+                                                        ? prev.addedKg
+                                                        : null,
+                                                  };
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    next,
+                                                  );
+                                                }}
+                                                className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                              />
+                                              <div className="text-sm text-theme-muted text-center mt-1">
+                                                Barre
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                placeholder="0"
+                                                value={
+                                                  typeof set.load.addedKg ===
+                                                  "number"
+                                                    ? String(set.load.addedKg)
+                                                    : ""
+                                                }
+                                                onChange={(e) => {
+                                                  const v = e.target.value;
+                                                  const n =
+                                                    v === ""
+                                                      ? null
+                                                      : Number(
+                                                          v.replace(",", "."),
+                                                        );
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "barbell" }
+                                                    >;
+                                                  const next: SetLoad = {
+                                                    type: "barbell",
+                                                    unit: "kg",
+                                                    barKg: prev.barKg,
+                                                    addedKg:
+                                                      v === ""
+                                                        ? null
+                                                        : Number.isFinite(
+                                                              n as number,
+                                                            )
+                                                          ? (n as number)
+                                                          : null,
+                                                  };
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    next,
+                                                  );
+                                                }}
+                                                className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                              />
+                                              <div className="text-sm text-theme-muted text-center mt-1">
+                                                Poids ajoutés
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Assisted: 1 input (assistance en kg) */}
+                                        {set.load?.type === "assisted" && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={
+                                                typeof set.load.assistanceKg ===
+                                                "number"
+                                                  ? String(
+                                                      set.load.assistanceKg,
+                                                    )
+                                                  : ""
+                                              }
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                const next: SetLoad = {
+                                                  type: "assisted",
+                                                  unit: "kg",
+                                                  assistanceKg:
+                                                    v === ""
+                                                      ? null
+                                                      : Number.isFinite(
+                                                            n as number,
+                                                          )
+                                                        ? (n as number)
+                                                        : null,
+                                                };
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  next,
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="text-sm text-theme-muted text-center mt-1">
+                                              Assistance (kg)
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Distance: 1 input + sélecteur unité */}
+                                        {set.load?.type === "distance" && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={
+                                                typeof set.load
+                                                  .distanceValue === "number"
+                                                  ? String(
+                                                      set.load.distanceValue,
+                                                    )
+                                                  : ""
+                                              }
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                const prev =
+                                                  set.load as Extract<
+                                                    SetLoad,
+                                                    { type: "distance" }
+                                                  >;
+                                                const next: SetLoad = {
+                                                  type: "distance",
+                                                  unit: prev.unit,
+                                                  distanceValue:
+                                                    v === ""
+                                                      ? null
+                                                      : Number.isFinite(
+                                                            n as number,
+                                                          )
+                                                        ? (n as number)
+                                                        : null,
+                                                };
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  next,
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="flex items-center justify-center gap-2 mt-1">
+                                              <span className="text-sm text-theme-muted">
+                                                Distance en
+                                              </span>
+                                              <select
+                                                value={set.load.unit}
+                                                onChange={(e) => {
+                                                  const prev =
+                                                    set.load as Extract<
+                                                      SetLoad,
+                                                      { type: "distance" }
+                                                    >;
+                                                  const next: SetLoad = {
+                                                    type: "distance",
+                                                    unit: e.target.value as
+                                                      | "cm"
+                                                      | "m",
+                                                    distanceValue:
+                                                      prev.distanceValue,
+                                                  };
+                                                  updateSetLoadForExercise(
+                                                    exerciseIndex,
+                                                    setIndex,
+                                                    next,
+                                                  );
+                                                }}
+                                                className="bg-theme-tertiary border border-theme rounded-lg px-2 py-1 text-theme text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                                              >
+                                                <option value="cm">cm</option>
+                                                <option value="m">m</option>
+                                              </select>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Single, Double, Machine: 1 input (poids en kg) */}
+                                        {(set.load?.type === "single" ||
+                                          set.load?.type === "double" ||
+                                          set.load?.type === "machine" ||
+                                          !set.load?.type) && (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              placeholder="0"
+                                              value={(() => {
+                                                const load = set.load;
+                                                if (!load) return "";
+                                                if (
+                                                  load.type === "single" ||
+                                                  load.type === "double" ||
+                                                  load.type === "machine"
+                                                ) {
+                                                  return typeof load.weightKg ===
+                                                    "number"
+                                                    ? String(load.weightKg)
+                                                    : "";
+                                                }
+                                                return "";
+                                              })()}
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                const n =
+                                                  v === ""
+                                                    ? null
+                                                    : Number(
+                                                        v.replace(",", "."),
+                                                      );
+                                                const t:
+                                                  | "single"
+                                                  | "double"
+                                                  | "machine" =
+                                                  set.load?.type === "double"
+                                                    ? "double"
+                                                    : set.load?.type ===
+                                                        "machine"
+                                                      ? "machine"
+                                                      : "single";
+                                                const next: SetLoad =
+                                                  t === "double"
+                                                    ? {
+                                                        type: "double",
+                                                        unit: "kg",
+                                                        weightKg:
+                                                          v === ""
+                                                            ? null
+                                                            : Number.isFinite(
+                                                                  n as number,
+                                                                )
+                                                              ? (n as number)
+                                                              : null,
+                                                      }
+                                                    : t === "machine"
+                                                      ? {
+                                                          type: "machine",
+                                                          unit: "kg",
+                                                          weightKg:
+                                                            v === ""
+                                                              ? null
+                                                              : Number.isFinite(
+                                                                    n as number,
+                                                                  )
+                                                                ? (n as number)
+                                                                : null,
+                                                        }
+                                                      : {
+                                                          type: "single",
+                                                          unit: "kg",
+                                                          weightKg:
+                                                            v === ""
+                                                              ? null
+                                                              : Number.isFinite(
+                                                                    n as number,
+                                                                  )
+                                                                ? (n as number)
+                                                                : null,
+                                                        };
+                                                updateSetLoadForExercise(
+                                                  exerciseIndex,
+                                                  setIndex,
+                                                  next,
+                                                );
+                                              }}
+                                              className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
+                                            />
+                                            <div className="text-sm text-theme-muted text-center mt-1">
+                                              {set.load?.type === "double"
+                                                ? "2x Haltères / Kettlebell"
+                                                : set.load?.type === "machine"
+                                                  ? "Machine"
+                                                  : "Haltère / Kettlebell"}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Ghost Mode - Basé sur le tonnage total */}
+                                      {(() => {
+                                        const ghost =
+                                          ghostSessions[exercise.exerciseName];
+                                        const ghostData = getGhostModeData(
+                                          ghost,
+                                          exercise.sets,
+                                          exercise.sets.length,
+                                        );
+
+                                        if (ghostData.type === "none")
+                                          return null;
+
+                                        // Déterminer le style selon le type
+                                        const isBeatingSoon =
+                                          ghostData.type === "beating" ||
+                                          ghostData.type === "increase";
+
+                                        // Formater le tonnage (en tonnes si >= 1000 kg)
+                                        const formatTonnage = (kg: number) => {
+                                          if (kg >= 1000) {
+                                            return `${(kg / 1000).toFixed(2)} T`;
+                                          }
+                                          return `${kg} kg`;
+                                        };
+
+                                        return (
+                                          <div
+                                            className={`mt-3 p-3 rounded-xl border ${isBeatingSoon ? "bg-[var(--color-success)]/10 border-[var(--color-success)]/30" : "bg-theme-tertiary border-theme/50"}`}
+                                          >
+                                            {/* Ligne 1: Record tonnage + bouton info */}
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-xs font-medium text-theme-muted">
+                                                👻 Record:
+                                              </span>
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-sm font-semibold text-theme-secondary">
+                                                  {ghostData.tonnageRecord !==
+                                                  undefined
+                                                    ? formatTonnage(
+                                                        ghostData.tonnageRecord,
+                                                      )
+                                                    : "-"}
+                                                </span>
+                                                {ghostData.ghostSession && (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setShowGhostRecordModal({
+                                                        exerciseName:
+                                                          exercise.exerciseName,
+                                                        ghost:
+                                                          ghostData.ghostSession!,
+                                                      });
+                                                    }}
+                                                    className="p-1 bg-theme-tertiary hover:bg-theme-secondary rounded-lg transition-colors"
+                                                    title="Voir les détails du record"
+                                                    type="button"
+                                                  >
+                                                    <Info className="w-3.5 h-3.5 text-theme-muted" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Ligne 2: Message dynamique si applicable */}
+                                            {ghostData.message && (
+                                              <div
+                                                className={`mt-2 text-xs font-medium ${isBeatingSoon ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}
+                                              >
+                                                {ghostData.type === "beating" &&
+                                                  "🔥 "}
+                                                {ghostData.type ===
+                                                  "increase" && "💪 "}
+                                                {ghostData.message}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+
+                                    {/* Validate Set Button */}
+                                    {(() => {
+                                      const isLastSet =
+                                        setIndex === exercise.sets.length - 1;
+                                      const allSetsValidated =
+                                        exercise.sets.every((s) => s.completed);
+
+                                      // Determine button text
+                                      let buttonText: string;
+                                      const hasRpe =
+                                        typeof exercise.rpe === "number";
+
+                                      // Determine button text
+                                      if (set.completed) {
+                                        if (isLastSet && allSetsValidated) {
+                                          buttonText = hasRpe
+                                            ? "Séance terminée"
+                                            : "Remplissez le RPE";
+                                        } else {
+                                          buttonText = "Série validée";
+                                        }
+                                      } else {
+                                        buttonText = isLastSet
+                                          ? "Finir l'exercice"
+                                          : "Valider la série";
+                                      }
+
+                                      return (
+                                        <button
+                                          onClick={() =>
+                                            set.completed
+                                              ? toggleSetValidationForExercise(
+                                                  exerciseIndex,
+                                                )
+                                              : validateSetForExercise(
+                                                  exerciseIndex,
+                                                )
+                                          }
+                                          className={`
+                                  w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold transition-all active:scale-[0.98]
+                                  ${
+                                    set.completed
+                                      ? "bg-gray-400 text-white cursor-default"
+                                      : "bg-[var(--color-primary)] hover:opacity-90 text-white shadow-lg shadow-[var(--shadow-color)]"
+                                  }
+                                `}
+                                          type="button"
+                                          data-tour-id={
+                                            exerciseIndex === 0
+                                              ? "tour-validate-set-button"
+                                              : undefined
+                                          }
+                                        >
+                                          <Check className="w-5 h-5" />
+                                          <span>{buttonText}</span>
+                                        </button>
+                                      );
+                                    })()}
+
+                                    {onSaveComment && (
+                                      <div
+                                        className="pt-2"
+                                        data-tour-id={
+                                          exerciseIndex === 0
+                                            ? "tour-message-section"
+                                            : undefined
+                                        }
+                                      >
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <MessageSquare className="w-4 h-4 text-theme-muted" />
+                                            <span className="text-sm text-theme-muted">
+                                              Message au coach
+                                            </span>
+                                          </div>
+                                          {sentComments.has(
+                                            exercise.exerciseName,
+                                          ) ? (
+                                            <span className="text-xs text-[var(--color-success)] flex items-center gap-1">
+                                              <Check className="w-3 h-3" />
+                                              Envoyé
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Douleur, sensation, question..."
+                                            value={
+                                              exerciseComments[
+                                                exercise.exerciseName
+                                              ] || ""
+                                            }
+                                            onChange={(e) =>
+                                              setExerciseComments((prev) => ({
+                                                ...prev,
+                                                [exercise.exerciseName]:
+                                                  e.target.value,
+                                              }))
+                                            }
+                                            disabled={sentComments.has(
+                                              exercise.exerciseName,
+                                            )}
+                                            className="flex-1 bg-theme-tertiary border border-theme rounded-lg px-3 py-2 text-theme text-sm placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
+                                          />
+                                          <button
+                                            onClick={() =>
+                                              handleSendComment(
+                                                exercise.exerciseName,
+                                              )
+                                            }
+                                            disabled={
+                                              !exerciseComments[
+                                                exercise.exerciseName
+                                              ]?.trim() ||
+                                              commentSending ===
+                                                exercise.exerciseName ||
+                                              sentComments.has(
+                                                exercise.exerciseName,
+                                              )
+                                            }
+                                            className="p-2 bg-[var(--color-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-theme rounded-lg transition-colors"
+                                            title="Envoyer maintenant"
+                                            type="button"
+                                          >
+                                            <Send className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div
+                                      className={`p-3 rounded-xl transition-all duration-300 ${
+                                        highlightedRpeIndex === exerciseIndex
+                                          ? "ring-2 ring-[var(--color-primary)] ring-offset-4 ring-offset-theme bg-[var(--color-primary)]/10"
+                                          : ""
+                                      }`}
+                                      data-tour-id={
+                                        exerciseIndex === 0
+                                          ? "tour-exercise-rpe"
+                                          : undefined
+                                      }
+                                    >
+                                      <div
+                                        ref={(el) => {
+                                          focusRpeRefs.current[exerciseIndex] =
+                                            el;
+                                        }}
+                                      />
+                                      <RpeSelector
+                                        value={exercise.rpe}
+                                        onChange={(rpe) =>
+                                          updateExerciseRpeForExercise(
+                                            exerciseIndex,
+                                            rpe,
+                                          )
+                                        }
+                                        size="sm"
+                                      />
+                                    </div>
+
+                                    {allSetsCompletedForExercise && (
+                                      <div className="text-center text-xs text-[var(--color-success)]">
+                                        Toutes les séries sont validées
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>,
+                  );
+                }
               });
 
               // Retourner premier exercice + reste wrappé dans un conteneur pour le tour
@@ -4087,7 +6328,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               return (
                 <>
                   {renderedElements[0]}
-                  <div data-tour-id="tour-remaining-exercises" className="contents">
+                  <div
+                    data-tour-id="tour-remaining-exercises"
+                    className="contents"
+                  >
                     {renderedElements.slice(1)}
                   </div>
                 </>
@@ -4102,7 +6346,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           style={{
             // Pendant le tour, le footer doit rester au-dessus du backdrop (9998)
             // uniquement quand il est la cible (étape 15) ou à la fin (étape 16)
-            zIndex: isTourActive && currentStepIndex >= 15 ? 9999 : undefined
+            zIndex: isTourActive && currentStepIndex >= 15 ? 9999 : undefined,
           }}
         >
           {/* Progress Bar - Desktop only (mobile shows at top) */}
@@ -4115,7 +6359,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="text-sm text-theme-muted w-12 text-right">{progress}%</span>
+                <span className="text-sm text-theme-muted w-12 text-right">
+                  {progress}%
+                </span>
               </div>
             </div>
           )}
@@ -4130,7 +6376,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             disabled={saving}
             className={`
               w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-colors
-              ${allExercisesCompleted ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-theme' : 'bg-theme-tertiary text-theme-secondary'}
+              ${allExercisesCompleted ? "bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-theme" : "bg-theme-tertiary text-theme-secondary"}
             `}
             type="button"
           >
@@ -4144,7 +6390,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         {isTourActive && currentStepIndex >= 4 && currentStepIndex <= 16 && (
           <div
             className="flex-shrink-0"
-            style={{ height: '200px' }}
+            style={{ height: "200px" }}
             aria-hidden="true"
           />
         )}
@@ -4155,7 +6401,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
   // MODALS
   // ===========================================
-  
+
   const renderCancelModal = () => (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-theme-secondary border border-theme rounded-2xl p-6 max-w-sm w-full shadow-2xl">
@@ -4165,10 +6411,12 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           </div>
           <div>
             <h3 className="text-lg font-bold text-theme">Abandonner ?</h3>
-            <p className="text-sm text-theme-muted">Ta progression sera perdue</p>
+            <p className="text-sm text-theme-muted">
+              Ta progression sera perdue
+            </p>
           </div>
         </div>
-        
+
         <div className="flex gap-3">
           <button
             onClick={() => setShowCancelModal(false)}
@@ -4187,13 +6435,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     </div>
   );
 
-
   const renderForceFinishModal = () => {
     if (!showForceFinishModal) return null;
 
-    const incompleteExercises = logs.filter(ex => {
-      const allSetsDone = ex.sets.length > 0 && ex.sets.every(s => s.completed);
-      const hasRpe = typeof ex.rpe === 'number';
+    const incompleteExercises = logs.filter((ex) => {
+      const allSetsDone =
+        ex.sets.length > 0 && ex.sets.every((s) => s.completed);
+      const hasRpe = typeof ex.rpe === "number";
       return !(allSetsDone && hasRpe);
     });
 
@@ -4205,7 +6453,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               <AlertTriangle className="w-5 h-5 text-[var(--color-warning)]" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-theme">Séance incomplète</h3>
+              <h3 className="text-lg font-bold text-theme">
+                Séance incomplète
+              </h3>
               <p className="text-sm text-theme-muted">
                 Certains exercices ne sont pas entièrement validés.
               </p>
@@ -4259,7 +6509,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (!exercise) return null;
 
     const lastHistory = getLastExerciseHistory(exercise.exerciseName, history);
-    const isDesktop = layout === 'desktop';
+    const isDesktop = layout === "desktop";
     const anchorEl = showHistoryModal.anchorEl;
 
     // Update ref for Popover
@@ -4273,7 +6523,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             <h3 className="text-lg font-bold text-theme">
               Historique {getExerciseDisplayName(exercise.exerciseName)}
             </h3>
-            {typeof lastHistory?.rpe === 'number' && (
+            {typeof lastHistory?.rpe === "number" && (
               <RpeBadge rpe={lastHistory.rpe} size="sm" />
             )}
           </div>
@@ -4292,19 +6542,29 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           {lastHistory ? (
             <div>
               <p className="text-sm text-theme-muted mb-4">
-                Dernière exécution {new Date(lastHistory.date).toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
+                Dernière exécution{" "}
+                {new Date(lastHistory.date).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
                 })}
               </p>
               <div className="space-y-2">
                 {lastHistory.sets.map((set, idx) => (
-                  <div key={idx} className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3">
-                    <span className="text-sm text-theme-muted">Série {set.setNumber}</span>
-                    <span className="text-theme font-medium">{set.reps || '-'}</span>
+                  <div
+                    key={idx}
+                    className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3"
+                  >
+                    <span className="text-sm text-theme-muted">
+                      Série {set.setNumber}
+                    </span>
+                    <span className="text-theme font-medium">
+                      {set.reps || "-"}
+                    </span>
                     <span className="text-theme-muted">×</span>
-                    <span className="text-[var(--color-success)] font-medium">{formatSetWeight(set)}</span>
+                    <span className="text-[var(--color-success)] font-medium">
+                      {formatSetWeight(set)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -4353,9 +6613,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     const exercise = logs[showConsignesModal.index];
     if (!exercise) return null;
 
-    const exerciseData = sessionData.find(d => d.exercice === exercise.exerciseName);
+    const exerciseData = sessionData.find(
+      (d) => d.exercice === exercise.exerciseName,
+    );
     const notes = exercise.notes || exerciseData?.notes;
-    const isDesktop = layout === 'desktop';
+    const isDesktop = layout === "desktop";
     const anchorEl = showConsignesModal.anchorEl;
 
     // Update ref for Popover
@@ -4429,7 +6691,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const renderVideoModal = () => {
     if (!showVideoModal) return null;
 
-    const isDesktop = layout === 'desktop';
+    const isDesktop = layout === "desktop";
     const anchorEl = showVideoModal.anchorEl;
 
     // Update ref for Popover
@@ -4440,7 +6702,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         url={showVideoModal.url}
         exerciseName={showVideoModal.exerciseName}
         onClose={() => setShowVideoModal(null)}
-        anchorRef={isDesktop && anchorEl ? (videoAnchorRef as React.RefObject<HTMLElement>) : undefined}
+        anchorRef={
+          isDesktop && anchorEl
+            ? (videoAnchorRef as React.RefObject<HTMLElement>)
+            : undefined
+        }
         zIndex={isTourActive ? 10003 : 50}
       />
     );
@@ -4454,33 +6720,35 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     // Fonction pour formater le poids depuis SetDetailLog
     const formatGhostSetWeight = (set: SetDetailLog): string => {
       if (!set.load) {
-        return set.weight ? `${set.weight} kg` : '-';
+        return set.weight ? `${set.weight} kg` : "-";
       }
 
       const load = set.load;
-      if (load.type === 'single') {
-        return load.weightKg !== null ? `${load.weightKg} kg` : '-';
+      if (load.type === "single") {
+        return load.weightKg !== null ? `${load.weightKg} kg` : "-";
       }
-      if (load.type === 'double') {
-        return load.weightKg !== null ? `${load.weightKg} kg/côté` : '-';
+      if (load.type === "double") {
+        return load.weightKg !== null ? `${load.weightKg} kg/côté` : "-";
       }
-      if (load.type === 'barbell') {
+      if (load.type === "barbell") {
         const bar = load.barKg || 0;
         const added = load.addedKg || 0;
         const total = bar + added;
         return `${total} kg`;
       }
-      if (load.type === 'machine') {
-        return load.weightKg !== null ? `${load.weightKg} kg` : '-';
+      if (load.type === "machine") {
+        return load.weightKg !== null ? `${load.weightKg} kg` : "-";
       }
-      if (load.type === 'assisted') {
-        return load.assistanceKg !== null ? `-${load.assistanceKg} kg` : '-';
+      if (load.type === "assisted") {
+        return load.assistanceKg !== null ? `-${load.assistanceKg} kg` : "-";
       }
-      if (load.type === 'distance') {
-        if (load.distanceValue === null) return '-';
-        return load.unit === 'm' ? `${load.distanceValue} m` : `${load.distanceValue} cm`;
+      if (load.type === "distance") {
+        if (load.distanceValue === null) return "-";
+        return load.unit === "m"
+          ? `${load.distanceValue} m`
+          : `${load.distanceValue} cm`;
       }
-      return '-';
+      return "-";
     };
 
     // Formater le tonnage total
@@ -4514,10 +6782,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             {/* Date et tonnage total */}
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-theme-muted">
-                {new Date(ghost.date).toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
+                {new Date(ghost.date).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
                 })}
               </p>
               <div className="bg-purple-500/20 border border-purple-500/30 rounded-lg px-3 py-1">
@@ -4530,11 +6798,20 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             {/* Détail des séries */}
             <div className="space-y-2">
               {ghost.sets.map((set, idx) => (
-                <div key={idx} className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3">
-                  <span className="text-sm text-theme-muted">Série {set.setNumber}</span>
-                  <span className="text-theme font-medium">{set.reps || '-'}</span>
+                <div
+                  key={idx}
+                  className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3"
+                >
+                  <span className="text-sm text-theme-muted">
+                    Série {set.setNumber}
+                  </span>
+                  <span className="text-theme font-medium">
+                    {set.reps || "-"}
+                  </span>
                   <span className="text-theme-muted">×</span>
-                  <span className="text-[var(--color-success)] font-medium">{formatGhostSetWeight(set)}</span>
+                  <span className="text-[var(--color-success)] font-medium">
+                    {formatGhostSetWeight(set)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -4573,8 +6850,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           }
         }
       `}</style>
-      {phase === 'recap' ? renderRecapPhase() : renderFocusPhase()}
-      
+      {phase === "recap" ? renderRecapPhase() : renderFocusPhase()}
+
       {showCancelModal && renderCancelModal()}
       {showForceFinishModal && renderForceFinishModal()}
       {showHistoryModal && renderHistoryModal()}

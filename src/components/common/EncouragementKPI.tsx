@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useMemo } from 'react';
-import { SessionLog } from '../../../types';
+import { SessionLog } from '../../../types.ts';
 import {
   Flame,
   Trophy,

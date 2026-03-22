@@ -18,7 +18,9 @@ interface ExercisesListProps {
   isCreatingNew?: boolean;
   onCreateNewClose?: () => void;
   onCreateMuscleGroup?: (name: string) => Promise<MuscleGroup>;
-  onCreateMovementPattern?: (name: string) => Promise<MovementPattern>;
+  onCreateMovementPattern?: (name:string) => Promise<MovementPattern>;
+  selectedItemId?: string | null;
+  onItemSelectionHandled?: () => void;
 }
 
 // Normalize exercise name for grouping - uses parseExerciseName to get base name
@@ -79,6 +81,8 @@ export function ExercisesList({
   onCreateNewClose,
   onCreateMuscleGroup,
   onCreateMovementPattern,
+  selectedItemId,
+  onItemSelectionHandled,
 }: ExercisesListProps) {
   const [selectedExerciseName, setSelectedExerciseName] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -123,6 +127,18 @@ export function ExercisesList({
       a.displayName.localeCompare(b.displayName, 'fr')
     );
   }, [exercises, coachId]);
+
+  // Auto-select based on prop
+  useEffect(() => {
+    if (selectedItemId && onItemSelectionHandled) {
+      const foundExercise = exercises.find(ex => ex.id === selectedItemId);
+      if (foundExercise) {
+        const { baseName } = parseExerciseName(foundExercise.name);
+        handleSelectExercise(baseName);
+      }
+      onItemSelectionHandled();
+    }
+  }, [selectedItemId]);
 
   // Auto-select first item if none selected
   useEffect(() => {

@@ -6,7 +6,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AthleteComment } from '../../../types';
+import { AthleteComment } from '../../../types.ts';
 import {
   ArrowLeft,
   Send,

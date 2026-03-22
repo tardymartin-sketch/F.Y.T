@@ -1,11 +1,10 @@
 // ============================================================
-// F.Y.T - HISTORY KPI CARD (ATH-003)
 // src/components/HistoryKPICard.tsx
 // Encart stats agrandissable en haut de l'historique
 // ============================================================
 
 import React, { useMemo } from 'react';
-import { SessionLog, getRpeColor } from '../../../types';
+import { SessionLog, getRpeColor } from '../../../types.ts';
 import { useExpandedState } from '../../hooks/useUIState';
 import {
   ChevronDown,

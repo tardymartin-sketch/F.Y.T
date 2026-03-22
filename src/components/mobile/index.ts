@@ -16,11 +16,11 @@ export { AddSessionMobile } from './AddSessionMobile';
 export { StatsPage } from './StatsPage';
 export { CoachTab } from './CoachTab';
 export { ProfileTab } from './ProfileTab';
-export { ProfileMobile } from './ProfileMobile';
+export { default as ProfileMobile } from './ProfileMobile';
 
 // Sub-components
 export { SessionBadgesGrid } from './SessionBadgesGrid';
-export { SessionSelectorMobile } from './SessionSelectorMobile';
+export { default as SessionSelectorMobile } from './SessionSelectorMobile';
 export { CoachMessages } from './CoachMessages';
 export { CoachMessagesCarousel } from './CoachMessagesCarousel';
 export { ConversationsList } from './ConversationsList';

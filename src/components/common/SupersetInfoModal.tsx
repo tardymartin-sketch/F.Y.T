@@ -1,12 +1,11 @@
 // ============================================================
 // F.Y.T - SUPERSET INFO MODAL
-// src/components/common/SupersetInfoModal.tsx
 // Modal d'information sur les modes d'exécution (superset, triset, etc.)
 // ============================================================
 
 import React from 'react';
 import { X, Link2, Layers, ArrowDownCircle, ArrowUpCircle, Dumbbell } from 'lucide-react';
-import { ExecutionMode, EXECUTION_MODES } from '../../../types';
+import { ExecutionMode, EXECUTION_MODES } from '../../../types.ts';
 import { Popover } from './Popover';
 
 interface Props {
@@ -112,15 +111,16 @@ export const SupersetInfoModal: React.FC<Props> = ({
 
   // Desktop: Popover ancré
   if (layout === 'desktop' && anchorEl) {
+    const PopoverComponent = Popover as any;
     return (
-      <Popover
+      <PopoverComponent
         anchorEl={anchorEl}
         onClose={onClose}
-        position="bottom"
+        position="bottom-right"
         className="w-80"
       >
         {content}
-      </Popover>
+      </PopoverComponent>
     );
   }
 

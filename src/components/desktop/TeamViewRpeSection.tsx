@@ -1,21 +1,10 @@
-// ============================================================
-// F.Y.T - TEAM VIEW RPE SECTION
-// Extrait de TeamView.tsx - Section affichant les RPE
-// À intégrer dans le composant TeamView existant
-// ============================================================
-
-// ============================================================
-// IMPORTS À AJOUTER EN HAUT DU FICHIER TeamView.tsx
-// ============================================================
-/*
+import React from 'react';
+import { Gauge, ChevronUp, ChevronDown, Check } from 'lucide-react';
 import { RpeBadge } from '../common/RpeSelector';
-import { getRpeColor, getRpeBgColor } from '../../../types';
-import { Gauge } from 'lucide-react';
-*/
+import { getRpeColor, getRpeBgColor, SessionLog, ExerciseLog } from '../../../types';
 
 // ============================================================
 // SECTION : Statistiques RPE de l'athlète
-// À ajouter dans le bloc de statistiques de l'athlète sélectionné
 // ============================================================
 
 interface RpeStatsProps {
@@ -120,35 +109,17 @@ export const AthleteRpeStats: React.FC<RpeStatsProps> = ({ history }) => {
   );
 };
 
-// ============================================================
-// MODIFICATION : Affichage des séances dans l'historique coach
-// Remplacer la section d'affichage des logs dans TeamView
-// ============================================================
-
-/*
-AVANT (dans la boucle athleteHistory.map):
--------------------------------------------
-<div key={log.id} className="overflow-hidden">
-  <button onClick={() => setExpandedSessionId(...)}>
-    ...
-  </button>
-</div>
-
-APRÈS (ajouter le RPE dans le header et le contenu):
-----------------------------------------------------
-*/
-
-// Section header de la séance (à modifier dans TeamView.tsx)
-const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boolean; onToggle: () => void }> = ({
+// Section header de la séance
+export const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boolean; onToggle: () => void }> = ({
   log,
   isExpanded,
   onToggle
 }) => {
   const date = new Date(log.date);
-  const totalSets = log.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+  const totalSets = log.exercises.reduce((acc, ex) => acc + (ex.sets?.length || 0), 0);
   const completedSets = log.exercises.reduce((acc, ex) => 
-    acc + ex.sets.filter(s => s.completed).length, 0
-  );
+    acc + (ex.sets?.filter(s => s.completed).length || 0)
+  , 0);
   const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
 
   return (
@@ -169,7 +140,6 @@ const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boolean; onT
             <h3 className="font-medium text-theme">
               {log.sessionKey.seance}
             </h3>
-            {/* ← NOUVEAU: Badge RPE */}
             {log.sessionRpe && (
               <RpeBadge rpe={log.sessionRpe} size="sm" showLabel={false} />
             )}
@@ -189,7 +159,6 @@ const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boolean; onT
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Barre de progression */}
         <div className="hidden sm:flex items-center gap-2">
           <div className="w-24 h-2 bg-theme-tertiary rounded-full overflow-hidden">
             <div 
@@ -216,8 +185,8 @@ const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boolean; onT
   );
 };
 
-// Section détails de l'exercice avec RPE (à modifier dans TeamView.tsx)
-const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> = ({
+// Section détails de l'exercice avec RPE
+export const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> = ({
   exercise,
   index
 }) => {
@@ -226,11 +195,9 @@ const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> 
   
   return (
     <div className="bg-theme-secondary border border-theme rounded-xl p-4 mb-3 last:mb-0">
-      {/* Nom de l'exercice avec RPE */}
       <div className="flex items-center justify-between mb-3">
         <h4 className="font-medium text-theme">{exercise.exerciseName}</h4>
         <div className="flex items-center gap-2">
-          {/* ← NOUVEAU: Badge RPE de l'exercice */}
           {exercise.rpe && (
             <RpeBadge rpe={exercise.rpe} size="sm" showLabel={false} />
           )}
@@ -244,9 +211,7 @@ const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> 
         </div>
       </div>
 
-      {/* Tableau des séries */}
       <div className="space-y-2">
-        {/* Header du tableau */}
         <div className="grid grid-cols-4 gap-2 text-xs font-medium text-theme-muted uppercase tracking-wider px-2">
           <div>Série</div>
           <div>Reps</div>
@@ -254,7 +219,6 @@ const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> 
           <div className="text-center">✓</div>
         </div>
 
-        {/* Lignes des séries */}
         {exercise.sets.map((set, setIdx) => (
           <div 
             key={setIdx}
@@ -278,7 +242,6 @@ const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> 
         ))}
       </div>
 
-      {/* Notes de l'exercice */}
       {exercise.notes && (
         <p className="mt-3 text-sm text-theme-muted italic border-t border-theme pt-3">
           {exercise.notes}
@@ -287,40 +250,3 @@ const ExerciseDetailWithRpe: React.FC<{ exercise: ExerciseLog; index: number }> 
     </div>
   );
 };
-
-// ============================================================
-// INSTRUCTIONS D'INTÉGRATION
-// ============================================================
-/*
-
-1. IMPORTS À AJOUTER dans TeamView.tsx:
-   
-   import { RpeBadge } from '../common/RpeSelector';
-   import { getRpeColor, getRpeBgColor } from '../../../types';
-   import { Gauge } from 'lucide-react';
-
-2. DANS LA SECTION STATISTIQUES DE L'ATHLÈTE:
-   Ajouter après les stats existantes:
-   
-   <AthleteRpeStats history={athleteHistory} />
-
-3. DANS LA BOUCLE D'AFFICHAGE DES SÉANCES:
-   Remplacer le header simple par SessionHeaderWithRpe
-   Remplacer les détails d'exercice par ExerciseDetailWithRpe
-
-4. DANS LE BLOC RPE GLOBAL DE LA SÉANCE (contenu expandé):
-   Ajouter avant les exercices:
-   
-   {log.sessionRpe && (
-     <div className={`p-3 rounded-xl ${getRpeBgColor(log.sessionRpe)} flex items-center justify-between`}>
-       <div className="flex items-center gap-2">
-         <Gauge className={`w-5 h-5 ${getRpeColor(log.sessionRpe)}`} />
-         <span className="text-sm font-medium text-theme">RPE de la séance</span>
-       </div>
-       <RpeBadge rpe={log.sessionRpe} size="md" />
-     </div>
-   )}
-
-*/
-
-export { SessionHeaderWithRpe, ExerciseDetailWithRpe };

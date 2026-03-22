@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Info, X, Check } from 'lucide-react';
-import { RPE_SCALE, getRpeInfo, getRpeColor, getRpeBgColor } from '../../../types';
+import { RPE_SCALE, getRpeInfo, getRpeColor, getRpeBgColor } from '../../../types.ts';
 import { Popover } from './Popover';
 
 interface RpeSelectorProps {

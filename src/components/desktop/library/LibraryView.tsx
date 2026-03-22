@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Dumbbell, Calendar, FolderKanban, Search, Plus, Filter, X, Library } from 'lucide-react';
+import { Dumbbell, Calendar, FolderKanban, Search, Plus, X, Library, ChevronDown } from 'lucide-react';
 import { ExercisesList } from './exercises/ExercisesList';
 import { SessionsList } from './sessions/SessionsList';
 import { ProgramsList } from './programs/ProgramsList';
@@ -12,7 +12,8 @@ import {
   ExerciseCategory,
   User,
   AthleteGroupWithCount,
-} from '../../../../types';
+  SessionExercise,
+} from '../../../../types.ts';
 import {
   fetchExercisesForCoach,
   fetchSessionTemplates,
@@ -58,7 +59,11 @@ const limbTypeOptions = [
 export function LibraryView({ coachId }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
   const [searchTerm, setSearchTerm] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [itemIdToSelect, setItemIdToSelect] = useState<string | null>(null);
+
+  // Éléments dépliés dans les résultats de recherche
+  const [expandedSearchItems, setExpandedSearchItems] = useState<Set<string>>(new Set());
+
 
   // Data states
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -81,6 +86,25 @@ export function LibraryView({ coachId }: LibraryViewProps) {
 
   // Create new exercise state
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  const toggleSearchExpand = (id: string) => {
+    setExpandedSearchItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  useEffect(() => {
+    if (!searchTerm) setExpandedSearchItems(new Set());
+  }, [searchTerm]);
+
+  const handleSelectFromSearch = (tab: LibraryTab, id: string | null) => {
+    setActiveTab(tab);
+    setItemIdToSelect(id);
+    setSearchTerm(''); // This will trigger the useEffect to clear expanded items
+  };
 
   // Load initial data (including sessions and programs for counters)
   useEffect(() => {
@@ -143,6 +167,69 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     setMovementPatterns(prev => [...prev, newPattern].sort((a, b) => a.nameFr.localeCompare(b.nameFr)));
     return newPattern;
   };
+
+  const globalSearchResults = useMemo(() => {
+    const term = searchTerm.trim();
+    if (!term) return null;
+    const normalized = normalizeString(term);
+
+    // --- Exercices ---
+    // Grouper par nom de base (avant ' :: ') pour dédupliquer les variantes
+    const baseNameMap = new Map<string, Exercise[]>();
+    exercises.forEach(ex => {
+      const base = ex.name.split(' :: ')[0].trim();
+      if (!baseNameMap.has(base)) baseNameMap.set(base, []);
+      baseNameMap.get(base)!.push(ex);
+    });
+
+    const matchingExerciseIds = new Set<string>();
+    const exerciseResults: { baseName: string; variants: Exercise[] }[] = [];
+
+    baseNameMap.forEach((variants, baseName) => {
+      const matches = variants.some(ex => normalizeString(ex.name).includes(normalized));
+      if (matches) {
+        variants.forEach(ex => matchingExerciseIds.add(ex.id));
+        exerciseResults.push({ baseName, variants });
+      }
+    });
+
+    // --- Séances ---
+    const matchingSessionIds = new Set<string>();
+    const sessionResults = sessions.filter(s => {
+      const directMatch = normalizeString(s.seanceType).includes(normalized);
+      const containsExercise = s.exercises.some(e => matchingExerciseIds.has(e.exerciseId));
+      if (directMatch || containsExercise) {
+        matchingSessionIds.add(s.id);
+        return true;
+      }
+      return false;
+    });
+
+    const uniqueProgramKeys = new Set<string>();
+    const programResults: Program[] = [];
+    
+    programs.forEach(p => {
+      // Clé d'unicité basée sur le contenu visible (Nom + Type)
+      // On ignore la date et l'athlète cible pour ne pas afficher chaque assignation comme un résultat distinct
+       const uniqueKey = `${normalizeString((p.programName || '').trim())}|${normalizeString(p.seanceType.trim())}`;
+      if (uniqueProgramKeys.has(uniqueKey)) return;
+
+      const directMatch =
+        normalizeString(p.seanceType).includes(normalized) ||
+        normalizeString(p.programName ?? '').includes(normalized);
+      const containsExercise = p.exercises.some(e => matchingExerciseIds.has(e.exerciseId));
+      const fromMatchingSession = p.sourceTemplateId
+        ? matchingSessionIds.has(p.sourceTemplateId)
+        : false;
+        
+      if (directMatch || containsExercise || fromMatchingSession) {
+        uniqueProgramKeys.add(uniqueKey);
+        programResults.push(p);
+      }
+    });
+
+    return { exercises: exerciseResults, sessions: sessionResults, programs: programResults };
+  }, [searchTerm, exercises, sessions, programs]);
 
   // Filter exercises based on search and filters (accent-insensitive, ignoring "(copie)" suffix)
   const filteredExercises = useMemo(() => {
@@ -228,32 +315,11 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     return limbTypeOptions.filter(opt => types.has(opt.id as Exercise['limbType']));
   }, [exercises, exerciseCategoryFilter, muscleGroupFilter, movementPatternFilter]);
 
-  // Filter sessions based on search (accent-insensitive)
-  const filteredSessions = useMemo(() => {
-    const normalizedSearch = normalizeString(searchTerm);
-    return sessions.filter(s => {
-      return !searchTerm ||
-        normalizeString(s.seanceType).includes(normalizedSearch);
-    });
-  }, [sessions, searchTerm]);
+  // Les filtrages pour sessions et programmes se font maintenant via globalSearchResults
+  const filteredSessions = sessions;
+  const filteredPrograms = programs;
 
-  // Filter programs based on search (accent-insensitive)
-  const filteredPrograms = useMemo(() => {
-    const normalizedSearch = normalizeString(searchTerm);
-    return programs.filter(p => {
-      return !searchTerm ||
-        normalizeString(p.seanceType).includes(normalizedSearch);
-    });
-  }, [programs, searchTerm]);
 
-  const hasActiveFilters = exerciseCategoryFilter || limbTypeFilter || muscleGroupFilter || movementPatternFilter;
-
-  const handleResetFilters = () => {
-    setExerciseCategoryFilter('');
-    setLimbTypeFilter('');
-    setMuscleGroupFilter('');
-    setMovementPatternFilter('');
-  };
 
   const handleNewClick = () => {
     setIsCreatingNew(true);
@@ -284,144 +350,67 @@ export function LibraryView({ coachId }: LibraryViewProps) {
       </div>
 
       {/* Tabs (partie du header fixe) */}
-      <div className="flex-shrink-0 flex border-b border-theme">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)] bg-theme-tertiary'
-                : 'text-theme-muted hover:text-theme hover:bg-theme-secondary/30'
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-            <span className={`px-2 py-0.5 rounded-full text-xs ${
-              activeTab === tab.id
-                ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                : 'bg-theme-tertiary text-theme-muted'
-            }`}>
-              {tab.count}
-            </span>
-          </button>
-        ))}
-      </div>
+      <div className="flex-shrink-0 flex items-center justify-between border-b border-theme px-4">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)] bg-theme-tertiary'
+                    : 'text-theme-muted hover:text-theme hover:bg-theme-secondary/30'
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  activeTab === tab.id
+                    ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
+                    : 'bg-theme-tertiary text-theme-muted'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-      {/* Search, Filters and Actions Bar (partie du header fixe) */}
-      <div className="flex-shrink-0 px-4 py-3 flex items-center gap-3 border-b border-theme/50">
-        {/* Search */}
-        <div className="relative w-48">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-muted" />
-          <input
-            type="text"
-            placeholder="Rechercher..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-1.5 bg-theme-secondary border border-theme rounded-lg text-sm text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-          />
-          {searchTerm && (
+          {/* Barre de recherche */}
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 w-4 h-4 text-theme-muted pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Rechercher exercice, séance, programme..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-56 pl-9 pr-8 py-1.5 bg-theme-secondary border border-theme rounded-lg text-sm text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 text-theme-muted hover:text-theme"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="relative flex items-center">
+          {/* Add Button - a été supprimé avec le reste de la barre d'action, on le replace ici */}
+          {showNewButton && !globalSearchResults && (
             <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-theme-muted hover:text-theme"
+              onClick={handleNewClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white rounded-lg text-sm transition-colors"
             >
-              <X className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5" />
+              Nouveau
             </button>
           )}
         </div>
-
-        {/* Filters Toggle (for exercises tab) */}
-        {activeTab === 'exercises' && (
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              showFilters || hasActiveFilters
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-theme-secondary text-theme-secondary hover:bg-theme-tertiary'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            Filtres
-            {hasActiveFilters && (
-              <span className="ml-0.5 px-1.5 py-0.5 bg-white/20 rounded text-xs">
-                {[exerciseCategoryFilter, limbTypeFilter, muscleGroupFilter, movementPatternFilter].filter(Boolean).length}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* Inline Filters (exercises only, when showFilters is true) */}
-        {activeTab === 'exercises' && showFilters && (
-          <>
-            <select
-              value={exerciseCategoryFilter}
-              onChange={(e) => setExerciseCategoryFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Catégorie</option>
-              {availableExerciseCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={muscleGroupFilter}
-              onChange={(e) => setMuscleGroupFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Muscle</option>
-              {availableMuscleGroups.map(mg => (
-                <option key={mg.id} value={mg.id}>{mg.nameFr}</option>
-              ))}
-            </select>
-
-            <select
-              value={movementPatternFilter}
-              onChange={(e) => setMovementPatternFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Pattern</option>
-              {availableMovementPatterns.map(mp => (
-                <option key={mp.id} value={mp.id}>{mp.nameFr}</option>
-              ))}
-            </select>
-
-            <select
-              value={limbTypeFilter}
-              onChange={(e) => setLimbTypeFilter(e.target.value)}
-              className="px-2 py-1.5 bg-theme-secondary border border-theme rounded-lg text-xs text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-            >
-              <option value="">Type</option>
-              {availableLimbTypes.map(type => (
-                <option key={type.id} value={type.id}>{type.label}</option>
-              ))}
-            </select>
-
-            {hasActiveFilters && (
-              <button
-                onClick={handleResetFilters}
-                className="text-theme-muted hover:text-theme text-xs"
-              >
-                ✕
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Add Button - hidden for programs tab */}
-        {showNewButton && (
-          <button
-            onClick={handleNewClick}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white rounded-lg text-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Nouveau
-          </button>
-        )}
       </div>
+
 
       {/* ========== ZONE: CONTENU (Liste Item + Visualisation Item) ========== */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -429,7 +418,170 @@ export function LibraryView({ coachId }: LibraryViewProps) {
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" />
           </div>
+        ) : globalSearchResults ? (
+          /* VUE RECHERCHE : résultats en accordéon */
+          <div className="h-full p-4 overflow-y-auto">
+            <div className="max-w-2xl mx-auto flex flex-col gap-6">
+              {/* Section Exercices */}
+              {globalSearchResults.exercises.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Exercices ({globalSearchResults.exercises.length})
+                  </h3>
+                  <div className="flex flex-col gap-2">
+                    {globalSearchResults.exercises.map(({ baseName, variants }) => {
+                      const isExpanded = expandedSearchItems.has(baseName);
+                      return (
+                        <div key={baseName} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (variants.length > 1) {
+                                toggleSearchExpand(baseName);
+                              } else {
+                                handleSelectFromSearch('exercises', variants[0].id);
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{baseName}</span>
+                            {variants.length > 1 && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{variants.length} variantes</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && variants.length > 1 && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {variants.map(variant => (
+                                <button
+                                  key={variant.id}
+                                  onClick={() => handleSelectFromSearch('exercises', variant.id)}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {variant.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Section Séances */}
+              {globalSearchResults.sessions.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Séances ({globalSearchResults.sessions.length})
+                  </h3>
+                  <div className="flex flex-col gap-2">
+                    {globalSearchResults.sessions.map(s => {
+                      const isExpanded = expandedSearchItems.has(s.id);
+                      return (
+                        <div key={s.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (s.exercises.length > 0) {
+                                toggleSearchExpand(s.id);
+                              } else {
+                                handleSelectFromSearch('sessions', s.id);
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{s.seanceType}</span>
+                            {s.exercises.length > 0 && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{s.exercises.length} exercices</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && s.exercises.length > 0 && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {s.exercises.map(ex => (
+                                <button
+                                  key={ex.exerciseId}
+                                  onClick={() => handleSelectFromSearch('exercises', ex.exerciseId)}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {ex.exerciseName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Section Programmes */}
+              {globalSearchResults.programs.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-theme-muted uppercase tracking-wider mb-2">
+                    Programmes ({globalSearchResults.programs.length})
+                  </h3>
+                  <div className="flex flex-col gap-2">
+                    {globalSearchResults.programs.map(p => {
+                      const isExpanded = expandedSearchItems.has(p.id);
+                      const hasSubItems = p.exercises && p.exercises.length > 0;
+                      return (
+                        <div key={p.id} className="flex flex-col bg-theme-secondary/30 rounded-xl border border-theme overflow-hidden">
+                          <button
+                            onClick={() => {
+                              if (hasSubItems) {
+                                toggleSearchExpand(p.id);
+                              } else {
+                                handleSelectFromSearch('programs', p.id);
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-theme-secondary text-sm text-theme flex items-center justify-between transition-colors"
+                          >
+                            <span className="font-medium">{p.programName || p.seanceType}</span>
+                            {hasSubItems && (
+                              <div className="flex items-center gap-2 text-theme-muted">
+                                <span className="text-xs bg-theme px-2 py-0.5 rounded-full">{p.exercises.length} exercices</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              </div>
+                            )}
+                          </button>
+                          {isExpanded && hasSubItems && (
+                            <div className="px-2 pb-2 bg-theme-secondary/10">
+                              {p.exercises.map(ex => (
+                                <button
+                                  key={ex.exerciseId}
+                                  onClick={() => handleSelectFromSearch('exercises', ex.exerciseId)}
+                                  className="w-full text-left px-4 py-2 mt-1 rounded-lg hover:bg-theme-secondary text-sm text-theme-muted hover:text-theme transition-colors flex items-center before:content-[''] before:w-1 before:h-1 before:bg-theme-muted before:rounded-full before:mr-3"
+                                >
+                                  {ex.exerciseName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Aucun résultat */}
+              {globalSearchResults.exercises.length === 0 &&
+                globalSearchResults.sessions.length === 0 &&
+                globalSearchResults.programs.length === 0 && (
+                <div className="text-sm text-theme-muted text-center py-12 bg-theme-secondary/30 rounded-xl border border-theme">
+                  Aucun résultat pour "{searchTerm}"
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
+          /* VUE NORMALE : onglet actif */
           <>
             {activeTab === 'exercises' && (
               <ExercisesList
@@ -443,6 +595,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onCreateNewClose={() => setIsCreatingNew(false)}
                 onCreateMuscleGroup={handleCreateMuscleGroup}
                 onCreateMovementPattern={handleCreateMovementPattern}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
             {activeTab === 'sessions' && (
@@ -454,6 +608,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onExercisesRefresh={refreshExercises}
                 isCreatingNew={isCreatingNew}
                 onCreateNewClose={() => setIsCreatingNew(false)}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
             {activeTab === 'programs' && (
@@ -466,6 +622,8 @@ export function LibraryView({ coachId }: LibraryViewProps) {
                 onRefresh={refreshPrograms}
                 isCreatingNew={isCreatingNew}
                 onCreateNewClose={() => setIsCreatingNew(false)}
+                selectedItemId={itemIdToSelect}
+                onItemSelectionHandled={() => setItemIdToSelect(null)}
               />
             )}
           </>

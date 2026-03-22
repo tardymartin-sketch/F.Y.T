@@ -15,8 +15,8 @@ import {
 import type { 
   AthleteGroupWithCount, 
   User,
-} from '../../../types';
-import { GROUP_COLORS } from '../../../types';
+} from '../../../types.ts';
+import { GROUP_COLORS } from '../../../types.ts';
 
 interface Props {
   coachId: string;
@@ -47,12 +47,12 @@ export const AthleteGroupsManager: React.FC<Props> = ({
 
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formColor, setFormColor] = useState(GROUP_COLORS[0]);
+  const [formColor, setFormColor] = useState(GROUP_COLORS[0].value);
 
   const resetForm = () => {
     setFormName('');
     setFormDescription('');
-    setFormColor(GROUP_COLORS[0]);
+    setFormColor(GROUP_COLORS[0].value);
   };
 
   const handleCreateGroup = async () => {
@@ -156,12 +156,12 @@ export const AthleteGroupsManager: React.FC<Props> = ({
             <div className="flex gap-2">
               {GROUP_COLORS.map((color) => (
                 <button
-                  key={color}
-                  onClick={() => setFormColor(color)}
+                  key={color.value}
+                  onClick={() => setFormColor(color.value)}
                   className={`w-8 h-8 rounded-lg transition-transform ${
-                    formColor === color ? 'scale-110 ring-2 ring-white' : ''
+                    formColor === color.value ? 'scale-110 ring-2 ring-white' : ''
                   }`}
-                  style={{ backgroundColor: color }}
+                  style={{ backgroundColor: color.value }}
                 />
               ))}
             </div>
@@ -214,10 +214,10 @@ export const AthleteGroupsManager: React.FC<Props> = ({
                     <div className="flex gap-2">
                       {GROUP_COLORS.map((color) => (
                         <button
-                          key={color}
-                          onClick={() => setFormColor(color)}
-                          className={`w-6 h-6 rounded-lg ${formColor === color ? 'ring-2 ring-white' : ''}`}
-                          style={{ backgroundColor: color }}
+                          key={color.value}
+                          onClick={() => setFormColor(color.value)}
+                          className={`w-6 h-6 rounded-lg ${formColor === color.value ? 'ring-2 ring-white' : ''}`}
+                          style={{ backgroundColor: color.value }}
                         />
                       ))}
                     </div>

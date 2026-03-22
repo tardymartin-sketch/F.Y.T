@@ -143,12 +143,14 @@ export interface WorkoutRow {
   ordre: number;
   exercice: string;            // Nom de l'exercice (conservé pour compatibilité)
   exerciseId?: string;         // UUID de l'exercice (undefined = fallback/legacy)
+  isTextBlock?: boolean;       // Indicateur pour bloc de texte riche (instructions)
   series: string;
   repsDuree: string;
   repos: string;
   tempoRpe: string;
   notes: string;
   video: string;
+  retour?: string; // Ajouté pour compatibilité avec certains composants desktop
   weekStartDate?: string;
   weekEndDate?: string;
   coachId?: string;           // UUID du coach (undefined = global)
@@ -1415,12 +1417,12 @@ export interface SessionExercise {
   targetReps?: string;           // "8" ou "8-10" ou "30s"
   restTimeSec?: number;
   tempo?: string;
-  notes?: string;                // Consignes spécifiques
-  videoUrl?: string;             // Dénormalisé depuis exercise
-  // Mode d'exécution (superset, triset, etc.)
+  notes?: string;
+  isTextBlock?: boolean; // Indicateur pour bloc de texte riche
   executionMode?: ExecutionMode;        // Défaut: 'straight'
   executionGroupId?: string;            // UUID partagé par les exos d'un superset
   executionGroupPosition?: number;      // 0 = premier, 1 = second
+  videoUrl?: string;                    // URL vidéo de l'exercice
 }
 
 // Template de séance (nouvelle architecture avec table session_templates)
@@ -1444,6 +1446,7 @@ export interface SessionTemplate {
 
 // Programme (séances assignées à des athlètes)
 export interface Program {
+  id: string;                    // Identifiant synthétique déterministe (clé composite : programName_seanceType_startDate_endDate_athleteTarget)
   coachId: string;
   programName?: string;          // Nom personnalisé du programme (optionnel)
   seanceType: string;

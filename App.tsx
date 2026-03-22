@@ -54,8 +54,14 @@ import {
 
 // Hooks V3
 import { useDeviceDetect } from './src/hooks/useDeviceDetect';
-import { useCurrentView, useScrollPersistence } from './src/hooks/useUIState';
+import { useScrollPersistence } from './src/hooks/useUIState';
 import { removeLocalStorageWithEvent } from './src/utils/localStorageEvents';
+
+// Stores Zustand & React Query Hooks
+import { useAuthStore } from './src/stores/useAuthStore';
+import { useUIStore, AppView } from './src/stores/useUIStore';
+import { useActiveSessionStore } from './src/stores/useActiveSessionStore';
+import { useTrainingPlans, useSessionHistory, useSaveSessionMutation, useDeleteSessionMutation } from './src/hooks/useSessions';
 
 // Theme Context
 import { ThemeProvider } from './src/contexts/ThemeContext';
@@ -118,91 +124,64 @@ const mobileViewConfig: Record<string, { icon: React.ComponentType<{ className?:
 
 const App: React.FC = () => {
   // ===========================================
-  // AUTH STATE
+  // STORES & HOOKS (Refactored Phase 1)
   // ===========================================
-  const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const { session, currentUser, authLoading, hasLinkedAthletes, initialize } = useAuthStore();
+  
+  // Initialisation de l'Auth au montage
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+  const { 
+    currentView, setCurrentView, 
+    targetExerciseName, targetMessageId, 
+    targetSessionLogId, targetHistoryExerciseName, targetHistoryDate,
+    setNavigationTargets, resetNavigationTargets 
+  } = useUIStore();
+  const { 
+    activeSessionData, editingSession, hasActiveSession, 
+    setActiveSession, clearActiveSession, syncWithLocalStorage 
+  } = useActiveSessionStore();
+
+  // Proxies de compatibilité (pour éviter de modifier tous les handlers existants)
+  const setActiveSessionData = (data: WorkoutRow[] | null) => setActiveSession(data, editingSession);
+  const setEditingSession = (log: SessionLog | null) => setActiveSession(activeSessionData, log);
+  const setHasActiveSession = (val: boolean) => { /* géré automatiquement par setActiveSession */ };
+  
+  const setTargetMessageId = (id: string | null) => setNavigationTargets({ targetMessageId: id });
+  const setTargetSessionLogId = (id: string | null) => setNavigationTargets({ targetSessionLogId: id });
+  const setTargetHistoryExerciseName = (name: string | null) => setNavigationTargets({ targetHistoryExerciseName: name });
+  const setTargetHistoryDate = (date: string | null) => setNavigationTargets({ targetHistoryDate: date });
+  const setTargetExerciseName = (name: string | null) => setNavigationTargets({ targetExerciseName: name });
+
+  // server state
+  const { data: trainingData = [], isLoading: plansLoading, refetch: refetchPlans } = useTrainingPlans(currentUser?.id);
+  const { data: history = [], isLoading: historyLoading, refetch: refetchHistory } = useSessionHistory(currentUser?.id);
+  const { mutateAsync: saveSessionMutation } = useSaveSessionMutation();
+  const { mutateAsync: deleteSessionMutation } = useDeleteSessionMutation();
+  const dataLoading = plansLoading || historyLoading;
 
   // ===========================================
-  // USER STATE
+  // REMAINING LOCAL STATES (To be migrated in next steps)
   // ===========================================
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-
-  // ===========================================
-  // NAVIGATION (V3: avec store singleton)
-  // ===========================================
-  const [currentView, setCurrentView] = useCurrentView();
-
-  // ===========================================
-  // DATA STATES
-  // ===========================================
-  const [trainingData, setTrainingData] = useState<WorkoutRow[]>([]);
-  const [history, setHistory] = useState<SessionLog[]>([]);
   const [filters, setFilters] = useState<FilterState>({
     selectedAnnee: null,
     selectedMois: null,
     selectedSemaine: null,
     selectedSeances: [],
   });
-  const [dataLoading, setDataLoading] = useState(false);
 
-  // ===========================================
-  // ACTIVE SESSION STATE
-  // ===========================================
-  const [activeSessionData, setActiveSessionData] = useState<WorkoutRow[] | null>(null);
-  const [editingSession, setEditingSession] = useState<SessionLog | null>(null);
-  const [hasActiveSession, setHasActiveSession] = useState(false);
-
-  // ===========================================
-  // [DEAD CODE] ADD SESSION STATE (séance manuelle)
-  // ===========================================
-  // const [editingManualSession, setEditingManualSession] = useState<SessionLog | null>(null);
-  // const [hasAddSession, setHasAddSession] = useState(false);
-
-  // ===========================================
-  // WEEK ORGANIZER STATE
-  // ===========================================
+  // [TEMP] À migrer vers React Query
   const [activeWeekOrganizers, setActiveWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
   const [pastWeekOrganizers, setPastWeekOrganizers] = useState<WeekOrganizerLog[]>([]);
-
-  // ===========================================
-  // V3: ATHLETE COMMENTS STATE (Étape 6A)
-  // ===========================================
   const [athleteComments, setAthleteComments] = useState<AthleteComment[]>([]);
-
-  // ===========================================
-  // V3: NAVIGATION VERS COACH TAB AVEC CONVERSATION CIBLÉE
-  // ===========================================
-  const [targetExerciseName, setTargetExerciseName] = useState<string | null>(null);
-  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
-
-  // ===========================================
-  // V3: COACH COMMENTS STATE (pour CoachConversationsView)
-  // ===========================================
   const [coachTeamComments, setCoachTeamComments] = useState<AthleteComment[]>([]);
 
   // ===========================================
-  // V3: ROLE DETECTION STATE
-  // Logique: hasCoachId → athlète, hasLinkedAthletes → coach
-  // ===========================================
-  const [hasLinkedAthletes, setHasLinkedAthletes] = useState<boolean>(false);
-
-  // ===========================================
-  // PR CELEBRATION STATE
+  // UI & FEEDBACK STATES
   // ===========================================
   const [detectedPRs, setDetectedPRs] = useState<PRDetected[]>([]);
   const [showPRModal, setShowPRModal] = useState(false);
-
-  // ===========================================
-  // HISTORY NAVIGATION STATE (depuis Stats)
-  // ===========================================
-  const [targetSessionLogId, setTargetSessionLogId] = useState<string | null>(null);
-  const [targetHistoryExerciseName, setTargetHistoryExerciseName] = useState<string | null>(null);
-  const [targetHistoryDate, setTargetHistoryDate] = useState<string | null>(null);
-
-  // ===========================================
-  // DEMO TOUR STATE
-  // ===========================================
   const [demoTourStarted, setDemoTourStarted] = useState(false);
   const [showDemoSessionPreview, setShowDemoSessionPreview] = useState(false);
 
@@ -251,9 +230,9 @@ const App: React.FC = () => {
     // Si la vue actuelle n'est pas valide, rediriger vers home
     if (!validViews.includes(currentView)) {
       console.log(`[App] Vue '${currentView}' invalide pour ce contexte (device: ${isMobile ? 'mobile' : 'desktop'}), redirection vers 'home'`);
-      setCurrentView('home');
+      setCurrentView('home' as AppView);
     }
-  }, [currentUser, hasLinkedAthletes, isMobile]);
+  }, [currentUser, hasLinkedAthletes, isMobile, currentView, setCurrentView]);
 
   // ===========================================
   // V3: SCROLL PERSISTENCE (via store singleton)
@@ -261,56 +240,19 @@ const App: React.FC = () => {
   useScrollPersistence(currentView);
 
   // ===========================================
-  // AUTH EFFECTS
-  // ===========================================
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // ===========================================
   // PERSISTENCE DE LA SESSION EN COURS
   // ===========================================
 
   useEffect(() => {
-    const savedSession = localStorage.getItem('F.Y.T_active_session');
-    if (savedSession) {
-      try {
-        const parsed = JSON.parse(savedSession);
-        if (parsed.sessionData && parsed.logs) {
-          setHasActiveSession(true);
-        }
-      } catch (e) {
-        console.error('Erreur parsing session sauvegardée:', e);
-        removeLocalStorageWithEvent('F.Y.T_active_session');
-      }
-    }
-
-    // [DEAD CODE] Vérifier si une session AddSession est en cours
-    // const savedAddSession = localStorage.getItem('F.Y.T_add_session');
-    // setHasAddSession(!!savedAddSession);
-  }, []);
+    syncWithLocalStorage();
+  }, [syncWithLocalStorage]);
 
   useEffect(() => {
     const handleStorageChange = () => {
-      const savedSession = localStorage.getItem('F.Y.T_active_session');
-      setHasActiveSession(!!savedSession);
-
-      // [DEAD CODE] Vérifier également AddSession
-      // const savedAddSession = localStorage.getItem('F.Y.T_add_session');
-      // setHasAddSession(!!savedAddSession);
+      syncWithLocalStorage();
     };
 
-    const interval = setInterval(handleStorageChange, 1000);
+    const interval = setInterval(handleStorageChange, 5000);
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('local-storage-change', handleStorageChange);
@@ -320,62 +262,7 @@ const App: React.FC = () => {
       window.removeEventListener('local-storage-change', handleStorageChange);
       clearInterval(interval);
     };
-  }, []);
-
-  // ===========================================
-  // LOAD USER AND DATA
-  // ===========================================
-
-  useEffect(() => {
-    if (session) {
-      loadUserProfile();
-    } else {
-      setCurrentUser(null);
-      setTrainingData([]);
-      setHistory([]);
-    }
-  }, [session]);
-
-  useEffect(() => {
-    if (currentUser) {
-      loadUserData();
-    }
-  }, [currentUser]);
-
-  const loadUserProfile = async () => {
-    if (!session?.user?.id) return;
-
-    try {
-      const profile = await fetchCurrentUserProfile(session.user.id);
-      setCurrentUser(profile);
-
-      // V3: Vérifier si l'utilisateur a des athlètes liés (pour déterminer s'il est coach)
-      const athletes = await fetchTeamAthletes(session.user.id);
-      setHasLinkedAthletes(athletes.length > 0);
-    } catch (error) {
-      console.error("Erreur chargement profil:", error);
-    }
-  };
-
-  const loadUserData = async () => {
-    if (!currentUser) return;
-
-    setDataLoading(true);
-    try {
-      const [plans, logs] = await Promise.all([
-        fetchTrainingPlans(currentUser.id),
-        // Utiliser exercise_logs comme source de données pour l'historique
-        fetchSessionLogsFromExerciseLogs(currentUser.id)
-      ]);
-
-      setTrainingData(plans);
-      setHistory(logs);
-    } catch (error) {
-      console.error("Erreur chargement données:", error);
-    } finally {
-      setDataLoading(false);
-    }
-  };
+  }, [syncWithLocalStorage]);
 
   // ===========================================
   // ATHLETE GROUPS HANDLERS
@@ -493,8 +380,8 @@ const App: React.FC = () => {
   };
 
   // V3: Handler pour démarrer depuis HomeMobile (reçoit directement les exercices)
-  const handleStartSessionFromExercises = (exercises: WorkoutRow[]) => {
-    if (exercises.length > 0) {
+  const handleStartSessionFromExercises = (exercises?: WorkoutRow[]) => {
+    if (exercises && exercises.length > 0) {
       setActiveSessionData(exercises);
       setEditingSession(null);
       setCurrentView('active');
@@ -557,15 +444,12 @@ const App: React.FC = () => {
     if (!currentUser) return;
 
     try {
-      // Détecter les PRs AVANT la sauvegarde (pour comparer avec l'historique existant)
+      // Détecter les PRs AVANT la sauvegarde
       const prs = await detectSessionPRs(log, currentUser.id);
 
-      await saveSessionLog(log, currentUser.id);
-      await loadUserData();
-      setActiveSessionData(null);
-      setEditingSession(null);
-      setHasActiveSession(false);
-      removeLocalStorageWithEvent('F.Y.T_active_session');
+      await saveSessionMutation({ log, userId: currentUser.id });
+      
+      clearActiveSession();
 
       // Afficher le modal PR si des records ont été battus
       if (prs.length > 0) {
@@ -581,17 +465,14 @@ const App: React.FC = () => {
   };
 
   const handleCancelSession = () => {
-    setActiveSessionData(null);
-    setEditingSession(null);
-    setHasActiveSession(false);
-    removeLocalStorageWithEvent('F.Y.T_active_session');
+    clearActiveSession();
     setCurrentView('home');
   };
 
   const handleDeleteSession = async (sessionId: string) => {
+    if (!currentUser) return;
     try {
-      await deleteSessionLog(sessionId);
-      setHistory(prev => prev.filter(s => s.id !== sessionId));
+      await deleteSessionMutation({ logId: sessionId, userId: currentUser.id });
     } catch (error) {
       console.error("Erreur suppression session:", error);
     }
@@ -711,7 +592,8 @@ const App: React.FC = () => {
     if (updates.lastName) dbUpdates.last_name = updates.lastName;
 
     await updateUserProfile(currentUser.id, dbUpdates);
-    setCurrentUser({ ...currentUser, ...updates });
+    // Rafraîchir le profil dans le store
+    await useAuthStore.getState().loadUserProfile();
   };
 
   // ===========================================
@@ -784,8 +666,8 @@ const App: React.FC = () => {
   // NAVIGATION HANDLER
   // ===========================================
 
-  const handleViewChange = (view: string) => {
-    if (view === 'active' && hasActiveSession && !activeSessionData) {
+  const handleViewChange = (view: AppView) => {
+    if (view === ('active' as AppView) && hasActiveSession && !activeSessionData) {
       handleResumeSession();
     } else {
       setCurrentView(view);
@@ -979,198 +861,198 @@ const App: React.FC = () => {
 
   return (
     <ThemeProvider>
-    <DemoTourProvider>
-    <div className={`bg-theme flex flex-col ${((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
-      {/* Demo Tour Manager - gère la logique du tour (mobile uniquement) */}
-      {isDemoMode() && (
-        <DemoTourManager
-          onNavigate={handleViewChange}
-          onSelectSession={handleDemoSelectSession}
-          onStartSession={handleDemoStartSession}
-          onKillSession={handleDemoKillSession}
-          onResetSession={handleDemoResetSession}
-          onCollapseExercise={handleDemoCollapseExercise}
-          onDeselectSessions={handleDemoDeselectSessions}
-          onSelectLower1Only={handleDemoSelectLower1Only}
-          currentView={currentView}
-          trainingDataLoaded={trainingData.length > 0}
-          isMobile={isMobile}
-        />
-      )}
+      <DemoTourProvider>
+        <div className={`bg-theme flex flex-col ${((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+          {/* Demo Tour Manager - gère la logique du tour (mobile uniquement) */}
+          {isDemoMode() && (
+            <DemoTourManager
+              onNavigate={handleViewChange as any}
+              onSelectSession={handleDemoSelectSession}
+              onStartSession={handleDemoStartSession}
+              onKillSession={handleDemoKillSession}
+              onResetSession={handleDemoResetSession}
+              onCollapseExercise={handleDemoCollapseExercise}
+              onDeselectSessions={handleDemoDeselectSessions}
+              onSelectLower1Only={handleDemoSelectLower1Only}
+              currentView={currentView}
+              trainingDataLoaded={trainingData.length > 0}
+              isMobile={isMobile}
+            />
+          )}
 
-      {/* Demo Tour Overlay - affiche les tooltips (mobile uniquement, après chargement des données) */}
-      {isDemoMode() && isMobile && trainingData.length > 0 && <DemoTourOverlay />}
+          {/* Demo Tour Overlay - affiche les tooltips (mobile uniquement, après chargement des données) */}
+          {isDemoMode() && isMobile && trainingData.length > 0 && <DemoTourOverlay />}
 
-      {/* Bannière mode démo */}
-      {isDemoMode() && <DemoBanner />}
+          {/* Bannière mode démo */}
+          {isDemoMode() && <DemoBanner />}
 
-      <div className="flex flex-1 min-h-0">
-      {/* Sidebar (desktop uniquement) - menus filtrés selon le rôle */}
-      {showSidebar && (
-        <Sidebar
-          currentView={currentView as any}
-          onNavigate={handleViewChange}
-          coachName={`${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.username}
-          onLogout={handleLogout}
-          userRole={isAdmin ? 'admin' : isCoachByRole ? 'coach' : 'athlete'}
-          userId={currentUser.id}
-          hasActiveSession={hasActiveSession}
-          // [DEAD CODE] hasAddSession={hasAddSession}
-        />
-      )}
+          <div className="flex flex-1 min-h-0">
+            {/* Sidebar (desktop uniquement) - menus filtrés selon le rôle */}
+            {showSidebar && (
+              <Sidebar
+                currentView={currentView as any}
+                onNavigate={handleViewChange}
+                coachName={`${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.username}
+                onLogout={handleLogout}
+                userRole={isAdmin ? 'admin' : isCoachByRole ? 'coach' : 'athlete'}
+                userId={currentUser.id}
+                hasActiveSession={hasActiveSession}
+              // [DEAD CODE] hasAddSession={hasAddSession}
+              />
+            )}
 
-      <main
-        className={`
+            <main
+              className={`
           flex-1 lg:ml-0
           ${((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'overflow-hidden' : 'overflow-y-auto'}
           ${showBottomNav ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : ''}
         `}
-      >
-        {/* Mobile header - icône + nom de la page sur tous les écrans mobiles */}
-        {isMobile && currentView !== 'active' && currentView !== 'addSession' && mobileViewConfig[currentView] && (() => {
-          const config = mobileViewConfig[currentView];
-          const Icon = config.icon;
-          return (
-            <div className="sticky top-0 z-30 bg-theme-secondary/95 backdrop-blur-xl border-b border-theme px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <Icon className="w-5 h-5 text-[var(--color-primary)]" />
-                <h1 className="font-bold text-theme text-lg">{config.label}</h1>
-              </div>
-            </div>
-          );
-        })()}
+            >
+              {/* Mobile header - icône + nom de la page sur tous les écrans mobiles */}
+              {isMobile && currentView !== 'active' && currentView !== 'addSession' && mobileViewConfig[currentView] && (() => {
+                const config = mobileViewConfig[currentView];
+                const Icon = config.icon;
+                return (
+                  <div className="sticky top-0 z-30 bg-theme-secondary/95 backdrop-blur-xl border-b border-theme px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-5 h-5 text-[var(--color-primary)]" />
+                      <h1 className="font-bold text-theme text-lg">{config.label}</h1>
+                    </div>
+                  </div>
+                );
+              })()}
 
-        <div className={((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-full' : 'p-4 lg:px-8 lg:pb-8 lg:pt-4'}>
-          {dataLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
-            </div>
-          ) : (
-            <>
-              {/* V3 DESKTOP ADAPTATION: Home basé sur le DEVICE */}
-              {currentView === 'home' && isMobile && (
-                <HomeMobile
-                  user={currentUser}
-                  trainingData={trainingData}
-                  history={history}
-                  activeWeekOrganizers={activeWeekOrganizers}
-                  onStartSession={handleStartSessionFromExercises}
-                  onResumeSession={handleResumeSession}
-                  hasActiveSession={hasActiveSession}
-                  onViewCoachMessages={(messageId) => {
-                    setTargetMessageId(messageId || null);
-                    setCurrentView('coach');
-                  }}
-                  // [DEAD CODE] onAddSession={handleOpenAddSession}
-                  // [DEAD CODE] hasAddSession={hasAddSession}
-                />
-              )}
+              <div className={((currentView === 'history' || currentView === 'library' || currentView === 'coach' || currentView === 'messages') && isDesktop) ? 'h-full' : 'p-4 lg:px-8 lg:pb-8 lg:pt-4'}>
+                {dataLoading ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
+                  </div>
+                ) : (
+                  <>
+                    {/* V3 DESKTOP ADAPTATION: Home basé sur le DEVICE */}
+                    {currentView === 'home' && isMobile && (
+                      <HomeMobile
+                        user={currentUser}
+                        trainingData={trainingData}
+                        history={history}
+                        activeWeekOrganizers={activeWeekOrganizers}
+                        onStartSession={handleStartSessionFromExercises}
+                        onResumeSession={handleResumeSession}
+                        hasActiveSession={hasActiveSession}
+                        onViewCoachMessages={(messageId) => {
+                          setTargetMessageId(messageId || null);
+                          setCurrentView('coach');
+                        }}
+                      // [DEAD CODE] onAddSession={handleOpenAddSession}
+                      // [DEAD CODE] hasAddSession={hasAddSession}
+                      />
+                    )}
 
-              {currentView === 'home' && isDesktop && (
-                <HomeDesktop
-                  data={trainingData}
-                  filters={filters}
-                  setFilters={setFilters}
-                  onStartSession={handleStartSessionFromExercises}
-                  user={currentUser}
-                  history={history}
-                  activeWeekOrganizers={activeWeekOrganizers}
-                  pastWeekOrganizers={pastWeekOrganizers}
-                  hasActiveSession={hasActiveSession}
-                  onResumeSession={handleResumeSession}
-                  // [DEAD CODE] hasAddSession={hasAddSession}
-                  // [DEAD CODE] onAddSession={handleOpenAddSession}
-                />
-              )}
+                    {currentView === 'home' && isDesktop && (
+                      <HomeDesktop
+                        data={trainingData}
+                        filters={filters}
+                        setFilters={setFilters}
+                        onStartSession={handleStartSessionFromExercises}
+                        user={currentUser}
+                        history={history}
+                        activeWeekOrganizers={activeWeekOrganizers}
+                        pastWeekOrganizers={pastWeekOrganizers}
+                        hasActiveSession={hasActiveSession}
+                        onResumeSession={handleResumeSession}
+                      // [DEAD CODE] hasAddSession={hasAddSession}
+                      // [DEAD CODE] onAddSession={handleOpenAddSession}
+                      />
+                    )}
 
-              {/* V3 DESKTOP ADAPTATION: ActiveSession basé sur le DEVICE */}
-              {currentView === 'active' && activeSessionData && isMobile && (
-                <ActiveSessionMobile
-                  sessionData={activeSessionData}
-                  history={history}
-                  onSave={handleSaveSession}
-                  onCancel={handleCancelSession}
-                  initialLog={editingSession}
-                  userId={currentUser.id}
-                  onSaveComment={handleSaveAthleteComment}
-                />
-              )}
+                    {/* V3 DESKTOP ADAPTATION: ActiveSession basé sur le DEVICE */}
+                    {currentView === 'active' && activeSessionData && isMobile && (
+                      <ActiveSessionMobile
+                        sessionData={activeSessionData}
+                        history={history}
+                        onSave={handleSaveSession}
+                        onCancel={handleCancelSession}
+                        initialLog={editingSession}
+                        userId={currentUser.id}
+                        onSaveComment={handleSaveAthleteComment}
+                      />
+                    )}
 
-              {currentView === 'active' && activeSessionData && isDesktop && (
-                <ActiveSessionDesktop
-                  sessionData={activeSessionData}
-                  history={history}
-                  onSave={handleSaveSession}
-                  onCancel={handleCancelSession}
-                  initialLog={editingSession}
-                  userId={currentUser.id}
-                  onSaveComment={handleSaveAthleteComment}
-                  existingComments={athleteComments}
-                  onMarkCommentsAsRead={handleMarkCommentsAsRead}
-                  onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
-                />
-              )}
+                    {currentView === 'active' && activeSessionData && isDesktop && (
+                      <ActiveSessionDesktop
+                        sessionData={activeSessionData}
+                        history={history}
+                        onSave={handleSaveSession}
+                        onCancel={handleCancelSession}
+                        initialLog={editingSession}
+                        userId={currentUser.id}
+                        onSaveComment={handleSaveAthleteComment}
+                        existingComments={athleteComments}
+                        onMarkCommentsAsRead={handleMarkCommentsAsRead}
+                        onNavigateToCoachTab={behavesAsAthlete ? handleNavigateToCoachTab : undefined}
+                      />
+                    )}
 
-              {/* Historique: HistoryMobile sur mobile, HistoryDesktop sur desktop */}
-              {currentView === 'history' && isMobile && (
-                <HistoryMobile
-                  history={history}
-                  onDelete={handleDeleteSession}
-                  onEdit={handleEditSession}
-                  userId={currentUser.id}
-                  // [DEAD CODE] onEditManualSession={handleEditManualSession}
-                  targetSessionLogId={targetSessionLogId}
-                  targetExerciseName={targetHistoryExerciseName}
-                  targetDate={targetHistoryDate}
-                  onClearTarget={() => {
-                    setTargetSessionLogId(null);
-                    setTargetHistoryExerciseName(null);
-                    setTargetHistoryDate(null);
-                  }}
-                />
-              )}
+                    {/* Historique: HistoryMobile sur mobile, HistoryDesktop sur desktop */}
+                    {currentView === 'history' && isMobile && (
+                      <HistoryMobile
+                        history={history}
+                        onDelete={handleDeleteSession}
+                        onEdit={handleEditSession}
+                        userId={currentUser.id}
+                        // [DEAD CODE] onEditManualSession={handleEditManualSession}
+                        targetSessionLogId={targetSessionLogId}
+                        targetExerciseName={targetHistoryExerciseName}
+                        targetDate={targetHistoryDate}
+                        onClearTarget={() => {
+                          setTargetSessionLogId(null);
+                          setTargetHistoryExerciseName(null);
+                          setTargetHistoryDate(null);
+                        }}
+                      />
+                    )}
 
-              {currentView === 'history' && isDesktop && (
-                <HistoryDesktop
-                  history={history}
-                  onDelete={handleDeleteSession}
-                  onEdit={handleEditSession}
-                  userId={currentUser.id}
-                  // [DEAD CODE] onEditManualSession={handleEditManualSession}
-                  targetSessionLogId={targetSessionLogId}
-                  targetExerciseName={targetHistoryExerciseName}
-                  targetDate={targetHistoryDate}
-                  onClearTarget={() => {
-                    setTargetSessionLogId(null);
-                    setTargetHistoryExerciseName(null);
-                    setTargetHistoryDate(null);
-                  }}
-                  workoutData={trainingData}
-                />
-              )}
+                    {currentView === 'history' && isDesktop && (
+                      <HistoryDesktop
+                        history={history}
+                        onDelete={handleDeleteSession}
+                        onEdit={handleEditSession}
+                        userId={currentUser.id}
+                        // [DEAD CODE] onEditManualSession={handleEditManualSession}
+                        targetSessionLogId={targetSessionLogId}
+                        targetExerciseName={targetHistoryExerciseName}
+                        targetDate={targetHistoryDate}
+                        onClearTarget={() => {
+                          setTargetSessionLogId(null);
+                          setTargetHistoryExerciseName(null);
+                          setTargetHistoryDate(null);
+                        }}
+                        workoutData={trainingData}
+                      />
+                    )}
 
-              {/* V3: Vue Stats (Data Viz) */}
-              {currentView === 'stats' && (
-                <StatsPage
-                  userId={currentUser.id}
-                  onViewSession={(sessionLogId, exerciseName) => {
-                    setTargetSessionLogId(sessionLogId);
-                    setTargetHistoryExerciseName(exerciseName);
-                    setTargetHistoryDate(null);
-                    setCurrentView('history');
-                  }}
-                  onViewDate={(date) => {
-                    setTargetHistoryDate(date);
-                    setTargetSessionLogId(null);
-                    setTargetHistoryExerciseName(null);
-                    setCurrentView('history');
-                  }}
-                  layout={isDesktop ? 'desktop' : 'mobile'}
-                />
-              )}
+                    {/* V3: Vue Stats (Data Viz) */}
+                    {currentView === 'stats' && (
+                      <StatsPage
+                        userId={currentUser.id}
+                        onViewSession={(sessionLogId, exerciseName) => {
+                          setTargetSessionLogId(sessionLogId);
+                          setTargetHistoryExerciseName(exerciseName);
+                          setTargetHistoryDate(null);
+                          setCurrentView('history');
+                        }}
+                        onViewDate={(date) => {
+                          setTargetHistoryDate(date);
+                          setTargetSessionLogId(null);
+                          setTargetHistoryExerciseName(null);
+                          setCurrentView('history');
+                        }}
+                        layout={isDesktop ? 'desktop' : 'mobile'}
+                      />
+                    )}
 
-              {/* [DEAD CODE] V3: Vue Ajout de séance manuelle */}
-              {/* currentView === 'addSession' && (
+                    {/* [DEAD CODE] V3: Vue Ajout de séance manuelle */}
+                    {/* currentView === 'addSession' && (
                 <AddSessionMobile
                   onSave={handleSaveManualSession}
                   onCancel={handleCancelAddSession}
@@ -1179,142 +1061,142 @@ const App: React.FC = () => {
                 />
               ) */}
 
-              {/* V3 DESKTOP ADAPTATION: Vue Coach - même composant pour tous les profils */}
-              {/* Mobile: CoachConversationsView pour tous */}
-              {currentView === 'coach' && isMobile && (
-                <CoachConversationsView
-                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
-                  currentUserId={currentUser.id}
-                  onSendMessage={behavesAsAthlete
-                    ? async (athleteId, exerciseName, message, sessionId) => {
-                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
-                      }
-                    : handleCoachSendMessage
-                  }
-                  onMarkAsRead={handleMarkCommentsAsRead}
-                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
-                />
-              )}
+                    {/* V3 DESKTOP ADAPTATION: Vue Coach - même composant pour tous les profils */}
+                    {/* Mobile: CoachConversationsView pour tous */}
+                    {currentView === 'coach' && isMobile && (
+                      <CoachConversationsView
+                        comments={behavesAsAthlete ? athleteComments : coachTeamComments}
+                        currentUserId={currentUser.id}
+                        onSendMessage={behavesAsAthlete
+                          ? async (athleteId, exerciseName, message, sessionId) => {
+                            await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                          }
+                          : handleCoachSendMessage
+                        }
+                        onMarkAsRead={handleMarkCommentsAsRead}
+                        displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
+                      />
+                    )}
 
-              {/* Desktop: CoachConversationsView pour tous */}
-              {currentView === 'coach' && isDesktop && (
-                <CoachConversationsView
-                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
-                  currentUserId={currentUser.id}
-                  onSendMessage={behavesAsAthlete
-                    ? async (athleteId, exerciseName, message, sessionId) => {
-                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
-                      }
-                    : handleCoachSendMessage
-                  }
-                  onMarkAsRead={handleMarkCommentsAsRead}
-                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
-                />
-              )}
+                    {/* Desktop: CoachConversationsView pour tous */}
+                    {currentView === 'coach' && isDesktop && (
+                      <CoachConversationsView
+                        comments={behavesAsAthlete ? athleteComments : coachTeamComments}
+                        currentUserId={currentUser.id}
+                        onSendMessage={behavesAsAthlete
+                          ? async (athleteId, exerciseName, message, sessionId) => {
+                            await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                          }
+                          : handleCoachSendMessage
+                        }
+                        onMarkAsRead={handleMarkCommentsAsRead}
+                        displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
+                      />
+                    )}
 
-              {/* V3 DESKTOP ADAPTATION: Vue Profil accessible sur mobile et desktop */}
-              {/* Sur mobile: toujours via BottomNav, sur desktop: via sidebar ou menu */}
-              {currentView === 'profile' && (
-                <ProfileTab
-                  user={currentUser}
-                  onUpdateProfile={async (updates) => {
-                    await handleUpdateProfile(updates);
-                  }}
-                  onLogout={handleLogout}
-                />
-              )}
+                    {/* V3 DESKTOP ADAPTATION: Vue Profil accessible sur mobile et desktop */}
+                    {/* Sur mobile: toujours via BottomNav, sur desktop: via sidebar ou menu */}
+                    {currentView === 'profile' && (
+                      <ProfileTab
+                        user={currentUser}
+                        onUpdateProfile={async (updates) => {
+                          await handleUpdateProfile(updates);
+                        }}
+                        onLogout={handleLogout}
+                      />
+                    )}
 
-              {currentView === 'team' && behavesAsCoach && (
-                <TeamView
-                  coachId={currentUser.id}
-                  fetchTeam={handleFetchTeam}
-                  fetchAthleteHistory={handleFetchAthleteHistory}
-                  fetchTeamComments={handleFetchTeamComments}
-                  markCommentsAsRead={handleMarkCommentsAsRead}
-                  fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
-                  saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
-                  deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
-                  fetchAthleteGroups={handleFetchAthleteGroups}
-                  createAthleteGroup={handleCreateAthleteGroup}
-                  updateAthleteGroup={handleUpdateAthleteGroup}
-                  deleteAthleteGroup={handleDeleteAthleteGroup}
-                  updateGroupMembers={handleUpdateGroupMembers}
-                  loadGroupMembers={handleLoadGroupMembers}
-                />
-              )}
+                    {currentView === 'team' && behavesAsCoach && (
+                      <TeamView
+                        coachId={currentUser.id}
+                        fetchTeam={handleFetchTeam}
+                        fetchAthleteHistory={handleFetchAthleteHistory}
+                        fetchTeamComments={handleFetchTeamComments}
+                        markCommentsAsRead={handleMarkCommentsAsRead}
+                        fetchWeekOrganizerLogs={handleFetchWeekOrganizerLogs}
+                        saveWeekOrganizerLog={handleSaveWeekOrganizerLog}
+                        deleteWeekOrganizerLog={handleDeleteWeekOrganizerLog}
+                        fetchAthleteGroups={handleFetchAthleteGroups}
+                        createAthleteGroup={handleCreateAthleteGroup}
+                        updateAthleteGroup={handleUpdateAthleteGroup}
+                        deleteAthleteGroup={handleDeleteAthleteGroup}
+                        updateGroupMembers={handleUpdateGroupMembers}
+                        loadGroupMembers={handleLoadGroupMembers}
+                      />
+                    )}
 
-              {/* V3: Vue Bibliothèque (Exercices et Séances) - Coach/Admin uniquement */}
-              {currentView === 'library' && isCoachByRole && (
-                <LibraryView coachId={currentUser.id} />
-              )}
+                    {/* V3: Vue Bibliothèque (Exercices et Séances) - Coach/Admin uniquement */}
+                    {currentView === 'library' && isCoachByRole && (
+                      <LibraryView coachId={currentUser.id} />
+                    )}
 
-              {/* V3: Vue Messages - même composant pour tous les profils */}
-              {currentView === 'messages' && (
-                <CoachConversationsView
-                  comments={behavesAsAthlete ? athleteComments : coachTeamComments}
-                  currentUserId={currentUser.id}
-                  onSendMessage={behavesAsAthlete
-                    ? async (athleteId, exerciseName, message, sessionId) => {
-                        await handleSaveAthleteComment(exerciseName, message, sessionId || '');
-                      }
-                    : handleCoachSendMessage
-                  }
-                  onMarkAsRead={handleMarkCommentsAsRead}
-                  displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
-                />
-              )}
+                    {/* V3: Vue Messages - même composant pour tous les profils */}
+                    {currentView === 'messages' && (
+                      <CoachConversationsView
+                        comments={behavesAsAthlete ? athleteComments : coachTeamComments}
+                        currentUserId={currentUser.id}
+                        onSendMessage={behavesAsAthlete
+                          ? async (athleteId, exerciseName, message, sessionId) => {
+                            await handleSaveAthleteComment(exerciseName, message, sessionId || '');
+                          }
+                          : handleCoachSendMessage
+                        }
+                        onMarkAsRead={handleMarkCommentsAsRead}
+                        displayMode={behavesAsCoach ? 'hierarchical' : 'flat'}
+                      />
+                    )}
 
-              {currentView === 'admin' && isAdmin && (
-                <AdminUsersView
-                  fetchAllUsers={handleFetchAllUsers}
-                  onUpdateCoach={handleUpdateCoach}
-                />
-              )}
+                    {currentView === 'admin' && isAdmin && (
+                      <AdminUsersView
+                        fetchAllUsers={handleFetchAllUsers}
+                        onUpdateCoach={handleUpdateCoach}
+                      />
+                    )}
 
-              {currentView === 'settings' && (
-                <SettingsView
-                  user={currentUser}
-                  onUpdateProfile={handleUpdateProfile}
-                  onLogout={handleLogout}
-                />
-              )}
+                    {currentView === 'settings' && (
+                      <SettingsView
+                        user={currentUser}
+                        onUpdateProfile={handleUpdateProfile}
+                        onLogout={handleLogout}
+                      />
+                    )}
 
-              {currentView === 'import' && (
-                <StravaImport user={currentUser} />
-              )}
+                    {currentView === 'import' && (
+                      <StravaImport user={currentUser} />
+                    )}
 
-              {currentView === 'storybook' && isAdmin && (
-                <Storybook />
-              )}
-            </>
-          )}
+                    {currentView === 'storybook' && isAdmin && (
+                      <Storybook />
+                    )}
+                  </>
+                )}
+              </div>
+            </main>
+
+            {/* V3: Bottom Navigation Athlète (Étape 3) */}
+            {showBottomNav && (
+              <BottomNav
+                activeTab={currentView as 'home' | 'history' | 'stats' | 'coach' | 'profile'}
+                onTabChange={handleViewChange}
+                userId={currentUser?.id}
+              />
+            )}
+
+            {/* PR Celebration Modal */}
+            {showPRModal && detectedPRs.length > 0 && (
+              <PRCelebrationModal
+                prs={detectedPRs}
+                onClose={() => {
+                  setShowPRModal(false);
+                  setDetectedPRs([]);
+                  setCurrentView('home');
+                }}
+              />
+            )}
+
+          </div>
         </div>
-      </main>
-
-      {/* V3: Bottom Navigation Athlète (Étape 3) */}
-      {showBottomNav && (
-        <BottomNav
-          activeTab={currentView as 'home' | 'history' | 'stats' | 'coach' | 'profile'}
-          onTabChange={handleViewChange}
-          userId={currentUser?.id}
-        />
-      )}
-
-      {/* PR Celebration Modal */}
-      {showPRModal && detectedPRs.length > 0 && (
-        <PRCelebrationModal
-          prs={detectedPRs}
-          onClose={() => {
-            setShowPRModal(false);
-            setDetectedPRs([]);
-            setCurrentView('home');
-          }}
-        />
-      )}
-
-      </div>
-    </div>
-    </DemoTourProvider>
+      </DemoTourProvider>
     </ThemeProvider>
   );
 };
