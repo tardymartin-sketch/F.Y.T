@@ -1,8 +1,44 @@
-import { useState, useMemo, useEffect } from 'react';
-import { ChevronRight, Globe, Lock, Copy, Trash2, X, Calendar, Save, Plus, GripVertical, Play, FileText, Check, Video, List, ChevronDown, Link2, Dumbbell, Unlink, Edit3 } from 'lucide-react';
-import { SessionTemplate, SessionExercise, Exercise, parseExerciseName, getExerciseVariantDisplayName, buildExerciseName, ExecutionMode, EXECUTION_MODES } from '../../../../../types';
-import { createSessionTemplate, updateSessionTemplate, deleteSessionTemplate, createExerciseForCoach, fetchExerciseByName } from '../../../../services/supabaseService';
-
+import { useState, useMemo, useEffect } from "react";
+import {
+  ChevronRight,
+  Globe,
+  Lock,
+  Copy,
+  Trash2,
+  X,
+  Calendar,
+  Save,
+  Plus,
+  GripVertical,
+  Play,
+  FileText,
+  Check,
+  Video,
+  List,
+  ChevronDown,
+  Link2,
+  Dumbbell,
+  Unlink,
+  Edit3,
+} from "lucide-react";
+import {
+  SessionTemplate,
+  SessionExercise,
+  Exercise,
+  parseExerciseName,
+  getExerciseVariantDisplayName,
+  buildExerciseName,
+  ExecutionMode,
+  EXECUTION_MODES,
+} from "../../../../../types";
+import {
+  createSessionTemplate,
+  updateSessionTemplate,
+  deleteSessionTemplate,
+  createExerciseForCoach,
+  fetchExerciseByName,
+} from "../../../../services/supabaseService";
+import { TextBlockCard } from "../../../common/TextBlockCard";
 interface SessionsListProps {
   sessions: SessionTemplate[];
   exercises: Exercise[];
@@ -19,17 +55,21 @@ interface SessionsListProps {
 function normalizeString(str: string): string {
   return str
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim();
 }
 
 // Format date for display (DD/MM/YY)
 function formatDate(dateStr?: string): string {
-  if (!dateStr) return '';
+  if (!dateStr) return "";
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
-  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return date.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 // Get period label for a session (used in tabs)
@@ -43,7 +83,7 @@ function getPeriodLabel(session: SessionTemplate): string {
   if (session.endDate) {
     return `Jusqu'au ${formatDate(session.endDate)}`;
   }
-  return 'Sans période';
+  return "Sans période";
 }
 
 // Handle horizontal scroll on mouse wheel for variant tabs
@@ -68,13 +108,16 @@ interface UnmatchedExercise {
 function findMatchingExercise(
   sessionExercise: SessionExercise,
   allExercises: Exercise[],
-  coachId: string
+  coachId: string,
 ): Exercise | null {
   // First, check by exerciseId - if we're using an existing exercise and haven't changed key fields
-  const exerciseById = allExercises.find(ex => ex.id === sessionExercise.exerciseId);
+  const exerciseById = allExercises.find(
+    (ex) => ex.id === sessionExercise.exerciseId,
+  );
   if (exerciseById) {
     // Only video differentiates exercise variants
-    const videoMatches = (sessionExercise.videoUrl || '') === (exerciseById.videoUrl || '');
+    const videoMatches =
+      (sessionExercise.videoUrl || "") === (exerciseById.videoUrl || "");
 
     if (videoMatches) {
       return exerciseById;
@@ -92,7 +135,8 @@ function findMatchingExercise(
     if (normalizeString(exBaseName) !== normalizeString(baseName)) continue;
 
     // Only video differentiates exercise variants
-    const videoMatches = (sessionExercise.videoUrl || '') === (exercise.videoUrl || '');
+    const videoMatches =
+      (sessionExercise.videoUrl || "") === (exercise.videoUrl || "");
 
     if (videoMatches) {
       return exercise;
@@ -105,15 +149,19 @@ function findMatchingExercise(
 // Get differences between session exercise and closest matching exercise
 function getExerciseDifferences(
   sessionExercise: SessionExercise,
-  existingExercise: Exercise
+  existingExercise: Exercise,
 ): { field: string; currentValue: string; existingValue: string }[] {
-  const differences: { field: string; currentValue: string; existingValue: string }[] = [];
+  const differences: {
+    field: string;
+    currentValue: string;
+    existingValue: string;
+  }[] = [];
 
-  if ((sessionExercise.videoUrl || '') !== (existingExercise.videoUrl || '')) {
+  if ((sessionExercise.videoUrl || "") !== (existingExercise.videoUrl || "")) {
     differences.push({
-      field: 'Vidéo',
-      currentValue: sessionExercise.videoUrl ? 'Oui' : 'Non',
-      existingValue: existingExercise.videoUrl ? 'Oui' : 'Non'
+      field: "Vidéo",
+      currentValue: sessionExercise.videoUrl ? "Oui" : "Non",
+      existingValue: existingExercise.videoUrl ? "Oui" : "Non",
     });
   }
 
@@ -124,16 +172,18 @@ function getExerciseDifferences(
 function findClosestExercise(
   sessionExercise: SessionExercise,
   allExercises: Exercise[],
-  coachId: string
+  coachId: string,
 ): Exercise | undefined {
   const { baseName } = parseExerciseName(sessionExercise.exerciseName);
 
   // First try to find the original exercise by ID
-  const original = allExercises.find(ex => ex.id === sessionExercise.exerciseId);
+  const original = allExercises.find(
+    (ex) => ex.id === sessionExercise.exerciseId,
+  );
   if (original) return original;
 
   // Otherwise find first exercise with same base name
-  return allExercises.find(ex => {
+  return allExercises.find((ex) => {
     if (ex.coachId && ex.coachId !== coachId) return false;
     const { baseName: exBaseName } = parseExerciseName(ex.name);
     return normalizeString(exBaseName) === normalizeString(baseName);
@@ -145,7 +195,7 @@ function NotesPopover({
   isOpen,
   onClose,
   notes,
-  onSave
+  onSave,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -161,8 +211,14 @@ function NotesPopover({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="text-theme font-medium mb-2">Consignes</h3>
         <textarea
           value={editedNotes}
@@ -197,7 +253,7 @@ function NotesPopover({
 function VideoModal({
   url,
   onClose,
-  onChangeUrl
+  onChangeUrl,
 }: {
   url: string;
   onClose: () => void;
@@ -208,7 +264,9 @@ function VideoModal({
 
   const getYouTubeEmbedUrl = (videoUrl: string) => {
     if (!videoUrl) return null;
-    const match = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/);
+    const match = videoUrl.match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    );
     return match ? `https://www.youtube.com/embed/${match[1]}` : null;
   };
 
@@ -220,8 +278,14 @@ function VideoModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="relative w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           onClick={onClose}
           className="absolute -top-10 right-0 text-white hover:text-theme-muted"
@@ -243,7 +307,7 @@ function VideoModal({
           <div className="bg-theme-secondary rounded-lg p-8 text-center mb-4">
             <Video className="w-12 h-12 text-theme-muted mx-auto mb-4" />
             <p className="text-theme-muted mb-2">
-              {currentUrl ? 'Format vidéo non supporté' : 'Aucune vidéo'}
+              {currentUrl ? "Format vidéo non supporté" : "Aucune vidéo"}
             </p>
             <p className="text-theme-muted text-sm">
               Ajoutez un lien YouTube ci-dessous
@@ -306,7 +370,7 @@ function SessionDetailPanel({
   onSave: (
     session: {
       seanceType: string;
-      exercises: Array<Omit<SessionExercise, 'id'> & { id?: string }>;
+      exercises: Array<Omit<SessionExercise, "id"> & { id?: string }>;
       startDate?: string;
       endDate?: string;
       description?: string;
@@ -315,9 +379,16 @@ function SessionDetailPanel({
       validityMonth?: number;
       validityWeek?: number;
     },
-    exercisesToCreate: { exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>; sessionExerciseIndex: number }[],
+    exercisesToCreate: {
+      exercise: Omit<Exercise, "id" | "createdAt" | "updatedAt">;
+      sessionExerciseIndex: number;
+    }[],
     shouldUpdate?: boolean,
-    existingTemplate?: { templateId?: string; startDate?: string; endDate?: string }
+    existingTemplate?: {
+      templateId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
   ) => Promise<void>;
   onClose: () => void;
   isNewSession?: boolean;
@@ -330,8 +401,8 @@ function SessionDetailPanel({
 }) {
   // Sort variants by date (newest first)
   const sortedVariants = [...variants].sort((a, b) => {
-    const aKey = `${a.startDate || ''}`;
-    const bKey = `${b.startDate || ''}`;
+    const aKey = `${a.startDate || ""}`;
+    const bKey = `${b.startDate || ""}`;
     return bKey.localeCompare(aKey);
   });
 
@@ -341,44 +412,71 @@ function SessionDetailPanel({
   const [hasChanges, setHasChanges] = useState(false);
 
   // Form state
-  const [seanceType, setSeanceType] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [sessionExercises, setSessionExercises] = useState<SessionExercise[]>([]);
+  // Form state
+  const [seanceType, setSeanceType] = useState("");
+  const [description, setDescription] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [sessionExercises, setSessionExercises] = useState<SessionExercise[]>(
+    [],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Original values for comparison
-  const [originalStartDate, setOriginalStartDate] = useState('');
-  const [originalEndDate, setOriginalEndDate] = useState('');
-  const [originalExercises, setOriginalExercises] = useState<SessionExercise[]>([]);
+  const [originalStartDate, setOriginalStartDate] = useState("");
+  const [originalEndDate, setOriginalEndDate] = useState("");
+  const [originalDescription, setOriginalDescription] = useState("");
+  const [originalExercises, setOriginalExercises] = useState<SessionExercise[]>(
+    [],
+  );
 
   // Exercise search
-  const [exerciseSearch, setExerciseSearch] = useState('');
+  const [exerciseSearch, setExerciseSearch] = useState("");
   const [showExerciseDropdown, setShowExerciseDropdown] = useState(false);
 
   // Notes popover state
-  const [notesPopoverIndex, setNotesPopoverIndex] = useState<number | null>(null);
+  const [notesPopoverIndex, setNotesPopoverIndex] = useState<number | null>(
+    null,
+  );
 
   // Video modal state - tracks exercise index
   const [videoModalIndex, setVideoModalIndex] = useState<number | null>(null);
 
   // Variant selector dropdown state
-  const [variantDropdownIndex, setVariantDropdownIndex] = useState<number | null>(null);
+  const [variantDropdownIndex, setVariantDropdownIndex] = useState<
+    number | null
+  >(null);
 
   // Superset/Execution mode state
-  const [executionModeDropdownIndex, setExecutionModeDropdownIndex] = useState<number | null>(null);
-  const [supersetSearchIndex, setSupersetSearchIndex] = useState<number | null>(null);
-  const [supersetSearchQuery, setSupersetSearchQuery] = useState('');
+  const [executionModeDropdownIndex, setExecutionModeDropdownIndex] = useState<
+    number | null
+  >(null);
+  const [supersetSearchIndex, setSupersetSearchIndex] = useState<number | null>(
+    null,
+  );
+  const [supersetSearchQuery, setSupersetSearchQuery] = useState("");
 
   // NEW: Unmatched exercise flow
-  const [unmatchedExercises, setUnmatchedExercises] = useState<UnmatchedExercise[]>([]);
-  const [currentUnmatchedIndex, setCurrentUnmatchedIndex] = useState<number | null>(null);
-  const [variantNames, setVariantNames] = useState<Map<number, string>>(new Map());
+  const [unmatchedExercises, setUnmatchedExercises] = useState<
+    UnmatchedExercise[]
+  >([]);
+  const [currentUnmatchedIndex, setCurrentUnmatchedIndex] = useState<
+    number | null
+  >(null);
+  const [variantNames, setVariantNames] = useState<Map<number, string>>(
+    new Map(),
+  );
   const [showDateConfirmation, setShowDateConfirmation] = useState(false);
   const [showUpdateConfirmation, setShowUpdateConfirmation] = useState(false);
-  const [existingSessionToUpdate, setExistingSessionToUpdate] = useState<SessionTemplate | null>(null);
-  const [pendingExercisesToCreate, setPendingExercisesToCreate] = useState<{ exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>; sessionExerciseIndex: number }[]>([]);
+  const [existingSessionToUpdate, setExistingSessionToUpdate] =
+    useState<SessionTemplate | null>(null);
+  const [pendingExercisesToCreate, setPendingExercisesToCreate] = useState<
+    {
+      exercise: Omit<Exercise, "id" | "createdAt" | "updatedAt">;
+      sessionExerciseIndex: number;
+    }[]
+  >([]);
 
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -410,23 +508,28 @@ function SessionDetailPanel({
   const isEditingMode = isNewSession || isDuplicating || isEditing;
 
   // Initialize form from current session
+  // Initialize form from current session
   const initializeForm = (session: SessionTemplate | null) => {
     if (session) {
       setSeanceType(session.seanceType);
-      setStartDate(session.startDate || '');
-      setEndDate(session.endDate || '');
-      setOriginalStartDate(session.startDate || '');
-      setOriginalEndDate(session.endDate || '');
-      const exs = session.exercises.map(ex => ({ ...ex }));
+      setDescription(session.description || "");
+      setStartDate(session.startDate || "");
+      setEndDate(session.endDate || "");
+      setOriginalStartDate(session.startDate || "");
+      setOriginalEndDate(session.endDate || "");
+      setOriginalDescription(session.description || "");
+      const exs = session.exercises.map((ex) => ({ ...ex }));
       setSessionExercises(exs);
       // Store original exercises for modification detection
-      setOriginalExercises(exs.map(ex => ({ ...ex })));
+      setOriginalExercises(exs.map((ex) => ({ ...ex })));
     } else {
-      setSeanceType('');
-      setStartDate('');
-      setEndDate('');
-      setOriginalStartDate('');
-      setOriginalEndDate('');
+      setSeanceType("");
+      setDescription("");
+      setStartDate("");
+      setEndDate("");
+      setOriginalStartDate("");
+      setOriginalEndDate("");
+      setOriginalDescription("");
       setSessionExercises([]);
       setOriginalExercises([]);
     }
@@ -447,7 +550,15 @@ function SessionDetailPanel({
     } else if (currentSession) {
       initializeForm(currentSession);
     }
-  }, [isDuplicating, duplicatingSession, isEditing, editingSession, isNewSession, currentSession?.startDate, currentSession?.endDate]);
+  }, [
+    isDuplicating,
+    duplicatingSession,
+    isEditing,
+    editingSession,
+    isNewSession,
+    currentSession?.startDate,
+    currentSession?.endDate,
+  ]);
 
   // Update form when tab changes
   const handleTabChange = (index: number) => {
@@ -459,33 +570,36 @@ function SessionDetailPanel({
   };
 
   // Filter exercises for dropdown
-  const filteredExercises = exercises.filter(ex =>
-    normalizeString(ex.name).includes(normalizeString(exerciseSearch))
+  const filteredExercises = exercises.filter((ex) =>
+    normalizeString(ex.name).includes(normalizeString(exerciseSearch)),
   );
 
   // Get exercise video URL from exercises list
   const getExerciseVideoUrl = (exerciseId: string): string | undefined => {
-    const exercise = exercises.find(ex => ex.id === exerciseId);
+    const exercise = exercises.find((ex) => ex.id === exerciseId);
     return exercise?.videoUrl;
   };
 
   // Get all variants of an exercise based on base name
   const getExerciseVariants = (exerciseId: string): Exercise[] => {
-    const currentExercise = exercises.find(ex => ex.id === exerciseId);
+    const currentExercise = exercises.find((ex) => ex.id === exerciseId);
     if (!currentExercise) return [];
 
     const { baseName } = parseExerciseName(currentExercise.name);
     const normalizedBase = normalizeString(baseName);
 
-    return exercises.filter(ex => {
+    return exercises.filter((ex) => {
       const { baseName: exBaseName } = parseExerciseName(ex.name);
       return normalizeString(exBaseName) === normalizedBase;
     });
   };
 
   // Handle variant selection change
-  const handleVariantChange = (exerciseIndex: number, newExerciseId: string) => {
-    const newExercise = exercises.find(ex => ex.id === newExerciseId);
+  const handleVariantChange = (
+    exerciseIndex: number,
+    newExerciseId: string,
+  ) => {
+    const newExercise = exercises.find((ex) => ex.id === newExerciseId);
     if (!newExercise) return;
 
     const updated = [...sessionExercises];
@@ -508,32 +622,60 @@ function SessionDetailPanel({
       exerciseId: exercise.id,
       exerciseName: exercise.name,
       position: sessionExercises.length,
-      targetSets: '3',
-      targetReps: '10',
+      targetSets: "3",
+      targetReps: "10",
       tempo: exercise.tempo,
       videoUrl: exercise.videoUrl,
       notes: exercise.coachInstructions,
-      executionMode: 'straight',
+      executionMode: "straight",
     };
     setSessionExercises([...sessionExercises, newExercise]);
-    setExerciseSearch('');
+    setExerciseSearch("");
     setShowExerciseDropdown(false);
+    setHasChanges(true);
+    setHasChanges(true);
+  };
+
+  const handleAddTextBlock = () => {
+    // Chercher un exercice "Instructions" ou utiliser le premier disponible comme placeholder
+    const instructionExercise =
+      exercises.find((ex) => normalizeString(ex.name) === "instructions") ||
+      exercises[0];
+
+    if (!instructionExercise) return;
+
+    const newBlock: SessionExercise = {
+      id: Date.now().toString(),
+      exerciseId: instructionExercise.id,
+      exerciseName: "Instructions", // Forcage du nom pour l'affichage
+      position: sessionExercises.length,
+      targetSets: "",
+      targetReps: "",
+      isTextBlock: true,
+      notes: "<p>Ajoutez vos instructions ici...</p>",
+      executionMode: "straight",
+    };
+    setSessionExercises([...sessionExercises, newBlock]);
     setHasChanges(true);
   };
 
   const handleRemoveExercise = (index: number) => {
     const updated = sessionExercises.filter((_, i) => i !== index);
-    updated.forEach((ex, i) => ex.position = i);
+    updated.forEach((ex, i) => (ex.position = i));
     setSessionExercises(updated);
     setHasChanges(true);
   };
 
-  const handleExerciseChange = (index: number, field: keyof SessionExercise, value: any) => {
+  const handleExerciseChange = (
+    index: number,
+    field: keyof SessionExercise,
+    value: any,
+  ) => {
     const updated = [...sessionExercises];
     updated[index] = { ...updated[index], [field]: value };
 
     // For targetSets in a superset, sync across all linked exercises
-    if (field === 'targetSets' && updated[index].executionGroupId) {
+    if (field === "targetSets" && updated[index].executionGroupId) {
       const groupId = updated[index].executionGroupId;
       updated.forEach((ex, i) => {
         if (i !== index && ex.executionGroupId === groupId) {
@@ -554,14 +696,14 @@ function SessionDetailPanel({
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.effectAllowed = "move";
     }
   };
 
   const handleDragOver = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = "move";
     }
     if (draggedIndex === null || draggedIndex === targetIndex) return;
 
@@ -570,7 +712,7 @@ function SessionDetailPanel({
 
     // Determine if dragged item is part of a superset
     const groupId = draggedEx.executionGroupId;
-    if (groupId && draggedEx.executionMode === 'superset') {
+    if (groupId && draggedEx.executionMode === "superset") {
       // Find all indices of this superset group, sorted by current position
       const groupIndices = updated
         .map((ex, i) => ({ ex, i }))
@@ -585,7 +727,7 @@ function SessionDetailPanel({
       if (targetIndex >= firstGroupIdx && targetIndex <= lastGroupIdx) return;
 
       // Extract all group exercises (preserving their internal order)
-      const groupExercises = groupIndices.map(i => updated[i]);
+      const groupExercises = groupIndices.map((i) => updated[i]);
 
       // Remove group exercises from array (from end to start to keep indices valid)
       for (let i = groupIndices.length - 1; i >= 0; i--) {
@@ -604,17 +746,19 @@ function SessionDetailPanel({
       updated.splice(insertAt, 0, ...groupExercises);
 
       // Update all positions
-      updated.forEach((ex, i) => ex.position = i);
+      updated.forEach((ex, i) => (ex.position = i));
 
       // Find new draggedIndex (first exercise of the group)
-      const newDraggedIndex = updated.findIndex(ex => ex.executionGroupId === groupId);
+      const newDraggedIndex = updated.findIndex(
+        (ex) => ex.executionGroupId === groupId,
+      );
       setSessionExercises(updated);
       setDraggedIndex(newDraggedIndex);
     } else {
       // Regular exercise: simple move
       const [draggedItem] = updated.splice(draggedIndex, 1);
       updated.splice(targetIndex, 0, draggedItem);
-      updated.forEach((ex, i) => ex.position = i);
+      updated.forEach((ex, i) => (ex.position = i));
       setSessionExercises(updated);
       setDraggedIndex(targetIndex);
     }
@@ -630,7 +774,7 @@ function SessionDetailPanel({
     e.stopPropagation(); // Prevent parent superset block drag
     setSupersetDragIdx(index);
     if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.effectAllowed = "move";
     }
   };
 
@@ -638,19 +782,22 @@ function SessionDetailPanel({
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = "move";
     }
     if (supersetDragIdx !== null && supersetDragIdx !== index) {
       const draggedEx = sessionExercises[supersetDragIdx];
       const targetEx = sessionExercises[index];
       // Only allow reorder within the same superset group
-      if (draggedEx?.executionGroupId && draggedEx.executionGroupId === targetEx?.executionGroupId) {
+      if (
+        draggedEx?.executionGroupId &&
+        draggedEx.executionGroupId === targetEx?.executionGroupId
+      ) {
         const updated = [...sessionExercises];
         // Swap the two exercises in the array
         const [draggedItem] = updated.splice(supersetDragIdx, 1);
         updated.splice(index, 0, draggedItem);
         // Update positions and executionGroupPosition within the group
-        updated.forEach((ex, i) => ex.position = i);
+        updated.forEach((ex, i) => (ex.position = i));
         const groupId = draggedEx.executionGroupId;
         let groupPos = 0;
         updated.forEach((ex, i) => {
@@ -672,10 +819,10 @@ function SessionDetailPanel({
 
   // Handle execution mode change
   const handleExecutionModeChange = (index: number, mode: ExecutionMode) => {
-    if (mode === 'superset') {
+    if (mode === "superset") {
       // Open superset search to select second exercise
       setSupersetSearchIndex(index);
-      setSupersetSearchQuery('');
+      setSupersetSearchQuery("");
     } else {
       // Set to straight mode (remove from any superset)
       const updated = [...sessionExercises];
@@ -689,7 +836,7 @@ function SessionDetailPanel({
           if (ex.executionGroupId === groupId) {
             updated[i] = {
               ...ex,
-              executionMode: 'straight',
+              executionMode: "straight",
               executionGroupId: undefined,
               executionGroupPosition: undefined,
             };
@@ -709,7 +856,10 @@ function SessionDetailPanel({
   };
 
   // Create superset between two exercises
-  const handleCreateSuperset = (firstIndex: number, secondExercise: Exercise) => {
+  const handleCreateSuperset = (
+    firstIndex: number,
+    secondExercise: Exercise,
+  ) => {
     const updated = [...sessionExercises];
     const groupId = crypto.randomUUID();
 
@@ -719,12 +869,12 @@ function SessionDetailPanel({
       exerciseId: secondExercise.id,
       exerciseName: secondExercise.name,
       position: firstIndex + 1, // Insert right after first exercise
-      targetSets: updated[firstIndex].targetSets || '3',
-      targetReps: updated[firstIndex].targetReps || '10',
+      targetSets: updated[firstIndex].targetSets || "3",
+      targetReps: updated[firstIndex].targetReps || "10",
       tempo: secondExercise.tempo,
       videoUrl: secondExercise.videoUrl,
       notes: secondExercise.coachInstructions,
-      executionMode: 'superset',
+      executionMode: "superset",
       executionGroupId: groupId,
       executionGroupPosition: 1,
     };
@@ -732,7 +882,7 @@ function SessionDetailPanel({
     // Update first exercise with superset info
     updated[firstIndex] = {
       ...updated[firstIndex],
-      executionMode: 'superset',
+      executionMode: "superset",
       executionGroupId: groupId,
       executionGroupPosition: 0,
     };
@@ -741,21 +891,21 @@ function SessionDetailPanel({
     updated.splice(firstIndex + 1, 0, newExercise);
 
     // Update positions for all exercises
-    updated.forEach((ex, i) => ex.position = i);
+    updated.forEach((ex, i) => (ex.position = i));
 
     setSessionExercises(updated);
     setSupersetSearchIndex(null);
-    setSupersetSearchQuery('');
+    setSupersetSearchQuery("");
     setHasChanges(true);
   };
 
   // Break a superset
   const handleBreakSuperset = (groupId: string) => {
-    const updated = sessionExercises.map(ex => {
+    const updated = sessionExercises.map((ex) => {
       if (ex.executionGroupId === groupId) {
         return {
           ...ex,
-          executionMode: 'straight' as ExecutionMode,
+          executionMode: "straight" as ExecutionMode,
           executionGroupId: undefined,
           executionGroupPosition: undefined,
         };
@@ -771,16 +921,22 @@ function SessionDetailPanel({
     if (!supersetSearchQuery.trim()) return [];
 
     const normalizedQuery = normalizeString(supersetSearchQuery);
-    const currentExerciseIds = new Set(sessionExercises.map(ex => ex.exerciseId));
+    const currentExerciseIds = new Set(
+      sessionExercises.map((ex) => ex.exerciseId),
+    );
 
     // Filter exercises by search query
-    const matchingExercises = exercises.filter(ex =>
-      normalizeString(ex.name).includes(normalizedQuery)
+    const matchingExercises = exercises.filter((ex) =>
+      normalizeString(ex.name).includes(normalizedQuery),
     );
 
     // Split into two categories: not in session (priority) vs in session
-    const notInSession = matchingExercises.filter(ex => !currentExerciseIds.has(ex.id));
-    const inSession = matchingExercises.filter(ex => currentExerciseIds.has(ex.id));
+    const notInSession = matchingExercises.filter(
+      (ex) => !currentExerciseIds.has(ex.id),
+    );
+    const inSession = matchingExercises.filter((ex) =>
+      currentExerciseIds.has(ex.id),
+    );
 
     return [...notInSession.slice(0, 5), ...inSession.slice(0, 3)];
   };
@@ -788,21 +944,23 @@ function SessionDetailPanel({
   // Check if an exercise was modified compared to its original state
   const wasExerciseModified = (sessionEx: SessionExercise): boolean => {
     // Find original exercise by ID
-    const original = originalExercises.find(o => o.id === sessionEx.id);
+    const original = originalExercises.find((o) => o.id === sessionEx.id);
 
     if (!original) {
       // New exercise added during this session - check if it matches the DB exercise
-      const dbExercise = exercises.find(ex => ex.id === sessionEx.exerciseId);
+      const dbExercise = exercises.find((ex) => ex.id === sessionEx.exerciseId);
       if (!dbExercise) return true; // No DB exercise found, needs check
 
       // Only video affects exercise identity (tempo, notes, reps, sets are session-level)
-      const videoChanged = (sessionEx.videoUrl || '') !== (dbExercise.videoUrl || '');
+      const videoChanged =
+        (sessionEx.videoUrl || "") !== (dbExercise.videoUrl || "");
 
       return videoChanged;
     }
 
     // Compare with original values from session load - only video affects exercise identity
-    const videoChanged = (sessionEx.videoUrl || '') !== (original.videoUrl || '');
+    const videoChanged =
+      (sessionEx.videoUrl || "") !== (original.videoUrl || "");
 
     return videoChanged;
   };
@@ -812,12 +970,12 @@ function SessionDetailPanel({
     setError(null);
 
     if (!seanceType.trim()) {
-      setError('Le nom de la séance est requis');
+      setError("Le nom de la séance est requis");
       return;
     }
 
     if (sessionExercises.length === 0) {
-      setError('Ajoutez au moins un exercice');
+      setError("Ajoutez au moins un exercice");
       return;
     }
 
@@ -836,13 +994,15 @@ function SessionDetailPanel({
       if (!match) {
         // No exact match found - need to create variant
         const closest = findClosestExercise(sessionEx, exercises, coachId);
-        const differences = closest ? getExerciseDifferences(sessionEx, closest) : [];
+        const differences = closest
+          ? getExerciseDifferences(sessionEx, closest)
+          : [];
 
         unmatched.push({
           sessionExerciseIndex: index,
           sessionExercise: sessionEx,
           closestMatch: closest,
-          differences
+          differences,
         });
       }
     });
@@ -859,7 +1019,12 @@ function SessionDetailPanel({
   };
 
   // Check if we should update existing session or create new variant
-  const checkSessionUpdateOrCreate = (exercisesToCreate: { exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>; sessionExerciseIndex: number }[]) => {
+  const checkSessionUpdateOrCreate = (
+    exercisesToCreate: {
+      exercise: Omit<Exercise, "id" | "createdAt" | "updatedAt">;
+      sessionExerciseIndex: number;
+    }[],
+  ) => {
     setPendingExercisesToCreate(exercisesToCreate);
 
     // For new sessions or duplications, always create
@@ -879,7 +1044,8 @@ function SessionDetailPanel({
     }
 
     // Check if dates match the current session (UPDATE case)
-    const datesMatchCurrent = startDate === originalStartDate && endDate === originalEndDate;
+    const datesMatchCurrent =
+      startDate === originalStartDate && endDate === originalEndDate;
 
     if (datesMatchCurrent) {
       // Dates haven't changed - show update confirmation
@@ -887,10 +1053,11 @@ function SessionDetailPanel({
       setShowUpdateConfirmation(true);
     } else {
       // Dates changed - check if new dates match another existing variant
-      const matchingVariant = variants.find(v =>
-        v !== currentSession &&
-        (v.startDate || '') === startDate &&
-        (v.endDate || '') === endDate
+      const matchingVariant = variants.find(
+        (v) =>
+          v !== currentSession &&
+          (v.startDate || "") === startDate &&
+          (v.endDate || "") === endDate,
       );
 
       if (matchingVariant) {
@@ -917,11 +1084,14 @@ function SessionDetailPanel({
     if (currentUnmatchedIndex === null) return;
 
     const unmatched = unmatchedExercises[currentUnmatchedIndex];
-    const variantName = variantNames.get(currentUnmatchedIndex) || 'Ma variante';
-    const { baseName } = parseExerciseName(unmatched.sessionExercise.exerciseName);
+    const variantName =
+      variantNames.get(currentUnmatchedIndex) || "Ma variante";
+    const { baseName } = parseExerciseName(
+      unmatched.sessionExercise.exerciseName,
+    );
 
     // Store the exercise to create
-    const newExercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'> = {
+    const newExercise: Omit<Exercise, "id" | "createdAt" | "updatedAt"> = {
       name: buildExerciseName(baseName, variantName),
       coachId,
       tempo: unmatched.sessionExercise.tempo,
@@ -934,10 +1104,13 @@ function SessionDetailPanel({
       categoryId: unmatched.closestMatch?.categoryId,
     };
 
-    const toCreate = [...pendingExercisesToCreate, {
-      exercise: newExercise,
-      sessionExerciseIndex: unmatched.sessionExerciseIndex
-    }];
+    const toCreate = [
+      ...pendingExercisesToCreate,
+      {
+        exercise: newExercise,
+        sessionExerciseIndex: unmatched.sessionExerciseIndex,
+      },
+    ];
     setPendingExercisesToCreate(toCreate);
 
     // Move to next unmatched or finish
@@ -980,18 +1153,30 @@ function SessionDetailPanel({
 
   // Perform the actual save
   const performSave = async (
-    exercisesToCreate: { exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>; sessionExerciseIndex: number }[],
+    exercisesToCreate: {
+      exercise: Omit<Exercise, "id" | "createdAt" | "updatedAt">;
+      sessionExerciseIndex: number;
+    }[],
     shouldUpdate: boolean = false,
-    existingTemplate?: { templateId?: string; startDate?: string; endDate?: string }
+    existingTemplate?: {
+      templateId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
   ) => {
     setSaving(true);
     try {
-      await onSave({
-        seanceType: seanceType.trim(),
-        exercises: sessionExercises,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-      }, exercisesToCreate, shouldUpdate, existingTemplate);
+      await onSave(
+        {
+          seanceType: seanceType.trim(),
+          exercises: sessionExercises,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+        },
+        exercisesToCreate,
+        shouldUpdate,
+        existingTemplate,
+      );
 
       if ((isNewSession || isDuplicating || isEditing) && onSessionCreated) {
         onSessionCreated(seanceType.trim());
@@ -1006,7 +1191,7 @@ function SessionDetailPanel({
       setShowUpdateConfirmation(false);
       setExistingSessionToUpdate(null);
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de la sauvegarde');
+      setError(err.message || "Erreur lors de la sauvegarde");
     } finally {
       setSaving(false);
     }
@@ -1024,7 +1209,12 @@ function SessionDetailPanel({
     setShowDuplicatePopover(false);
   };
 
-  if (!isNewSession && !isDuplicating && !isEditing && sortedVariants.length === 0) {
+  if (
+    !isNewSession &&
+    !isDuplicating &&
+    !isEditing &&
+    sortedVariants.length === 0
+  ) {
     return (
       <div className="h-full flex items-center justify-center text-theme-muted">
         Aucune variante disponible
@@ -1038,7 +1228,7 @@ function SessionDetailPanel({
       <div className="flex-shrink-0 border-b border-theme">
         {/* Close button, title, and save button */}
         <div className="flex items-center justify-between p-2 border-b border-theme/50">
-          {(isNewSession || isDuplicating || isEditing) ? (
+          {isNewSession || isDuplicating || isEditing ? (
             <input
               type="text"
               value={seanceType}
@@ -1046,12 +1236,20 @@ function SessionDetailPanel({
                 setSeanceType(e.target.value);
                 handleFieldChange();
               }}
-              placeholder={isDuplicating ? "Nom de la copie" : isEditing ? "Nom de la séance" : "Nom de la séance"}
+              placeholder={
+                isDuplicating
+                  ? "Nom de la copie"
+                  : isEditing
+                    ? "Nom de la séance"
+                    : "Nom de la séance"
+              }
               className="text-lg font-semibold text-theme px-2 bg-transparent border-b border-theme focus:border-[var(--color-primary)] focus:outline-none flex-1"
               autoFocus
             />
           ) : (
-            <h2 className="text-lg font-semibold text-theme px-2">{sessionName}</h2>
+            <h2 className="text-lg font-semibold text-theme px-2">
+              {sessionName}
+            </h2>
           )}
           <div className="flex items-center gap-2">
             {hasChanges && (
@@ -1061,7 +1259,15 @@ function SessionDetailPanel({
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white rounded-lg text-sm font-medium disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
-                {saving ? 'Sauvegarde...' : isDuplicating ? 'Dupliquer' : isNewSession ? 'Créer' : isEditing ? 'Enregistrer' : 'Sauvegarder'}
+                {saving
+                  ? "Sauvegarde..."
+                  : isDuplicating
+                    ? "Dupliquer"
+                    : isNewSession
+                      ? "Créer"
+                      : isEditing
+                        ? "Enregistrer"
+                        : "Sauvegarder"}
               </button>
             )}
             <button
@@ -1088,8 +1294,8 @@ function SessionDetailPanel({
                   key={`${variant.seanceType}-${variant.startDate}-${variant.endDate}-${index}`}
                   className={`flex items-center gap-2 px-4 py-2 border-r border-theme/50 cursor-pointer whitespace-nowrap ${
                     index === activeTabIndex
-                      ? 'bg-theme-secondary text-theme'
-                      : 'text-theme-muted hover:bg-theme-tertiary hover:text-theme'
+                      ? "bg-theme-secondary text-theme"
+                      : "text-theme-muted hover:bg-theme-tertiary hover:text-theme"
                   }`}
                   onClick={() => handleTabChange(index)}
                 >
@@ -1161,7 +1367,7 @@ function SessionDetailPanel({
                 handleFieldChange();
               }}
               disabled={!isEditingMode}
-              className={`w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
             />
           </div>
           <div>
@@ -1176,7 +1382,7 @@ function SessionDetailPanel({
                 handleFieldChange();
               }}
               disabled={!isEditingMode}
-              className={`w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
             />
           </div>
         </div>
@@ -1188,7 +1394,8 @@ function SessionDetailPanel({
               Exercices *
             </label>
             <span className="text-xs text-theme-muted">
-              {sessionExercises.length} exercice{sessionExercises.length > 1 ? 's' : ''}
+              {sessionExercises.length} exercice
+              {sessionExercises.length > 1 ? "s" : ""}
             </span>
           </div>
 
@@ -1202,22 +1409,32 @@ function SessionDetailPanel({
                 // Skip if already rendered as part of a superset
                 if (renderedIndices.has(idx)) return null;
 
-                const exerciseVideoUrl = ex.videoUrl || getExerciseVideoUrl(ex.exerciseId);
+                const exerciseVideoUrl =
+                  ex.videoUrl || getExerciseVideoUrl(ex.exerciseId);
                 const variants = getExerciseVariants(ex.exerciseId);
                 const hasMultipleVariants = variants.length > 1;
                 const { baseName } = parseExerciseName(ex.exerciseName);
-                const isInSuperset = !!(ex.executionGroupId && ex.executionMode === 'superset');
-                const isFirstInSuperset = isInSuperset && ex.executionGroupPosition === 0;
+                const isInSuperset = !!(
+                  ex.executionGroupId && ex.executionMode === "superset"
+                );
+                const isFirstInSuperset =
+                  isInSuperset && ex.executionGroupPosition === 0;
 
                 // Find linked exercises for superset
                 const linkedExercises = isFirstInSuperset
                   ? sessionExercises
                       .map((e, i) => ({ exercise: e, index: i }))
-                      .filter(({ exercise }) => exercise.executionGroupId === ex.executionGroupId && exercise.id !== ex.id)
+                      .filter(
+                        ({ exercise }) =>
+                          exercise.executionGroupId === ex.executionGroupId &&
+                          exercise.id !== ex.id,
+                      )
                   : [];
 
                 // Mark linked exercises as rendered
-                linkedExercises.forEach(({ index }) => renderedIndices.add(index));
+                linkedExercises.forEach(({ index }) =>
+                  renderedIndices.add(index),
+                );
 
                 // ========== SUPERSET BLOCK (fused exercises) ==========
                 if (isFirstInSuperset && linkedExercises.length > 0) {
@@ -1225,14 +1442,20 @@ function SessionDetailPanel({
                   const allGroupExercises = [
                     { exercise: ex, index: idx },
                     ...linkedExercises,
-                  ].sort((a, b) => (a.exercise.executionGroupPosition ?? 0) - (b.exercise.executionGroupPosition ?? 0));
+                  ].sort(
+                    (a, b) =>
+                      (a.exercise.executionGroupPosition ?? 0) -
+                      (b.exercise.executionGroupPosition ?? 0),
+                  );
 
                   // Find the first exercise (by position) to use for rest time
                   const firstGroupEx = allGroupExercises[0];
 
                   // Check if this superset block is currently being dragged
-                  const allGroupIndices = allGroupExercises.map(g => g.index);
-                  const isSupersetDragged = draggedIndex !== null && allGroupIndices.includes(draggedIndex);
+                  const allGroupIndices = allGroupExercises.map((g) => g.index);
+                  const isSupersetDragged =
+                    draggedIndex !== null &&
+                    allGroupIndices.includes(draggedIndex);
 
                   return (
                     <div
@@ -1242,7 +1465,9 @@ function SessionDetailPanel({
                         if (supersetDragIdx === null) handleDragOver(e, idx);
                       }}
                       className={`rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/5 overflow-hidden transition-all duration-200 ${
-                        isSupersetDragged ? 'opacity-70 shadow-lg shadow-[var(--color-primary)]/30 scale-[1.02] ring-2 ring-[var(--color-primary)]' : ''
+                        isSupersetDragged
+                          ? "opacity-70 shadow-lg shadow-[var(--color-primary)]/30 scale-[1.02] ring-2 ring-[var(--color-primary)]"
+                          : ""
                       }`}
                     >
                       {/* Superset header - draggable for block-level reorder */}
@@ -1250,16 +1475,22 @@ function SessionDetailPanel({
                         draggable={isEditingMode}
                         onDragStart={(e) => handleDragStart(e, idx)}
                         onDragEnd={handleDragEnd}
-                        className={`flex items-center justify-between px-3 py-2 bg-[var(--color-primary)]/10 border-b border-[var(--color-primary)]/30 ${isEditingMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                        className={`flex items-center justify-between px-3 py-2 bg-[var(--color-primary)]/10 border-b border-[var(--color-primary)]/30 ${isEditingMode ? "cursor-grab active:cursor-grabbing" : ""}`}
                       >
                         <div className="flex items-center gap-2">
-                          {isEditingMode && <GripVertical className="w-4 h-4 text-[var(--color-primary)] opacity-60" />}
+                          {isEditingMode && (
+                            <GripVertical className="w-4 h-4 text-[var(--color-primary)] opacity-60" />
+                          )}
                           <Link2 className="w-4 h-4 text-[var(--color-primary)]" />
-                          <span className="text-sm font-medium text-[var(--color-primary)]">Superset</span>
+                          <span className="text-sm font-medium text-[var(--color-primary)]">
+                            Superset
+                          </span>
                         </div>
                         {isEditingMode && (
                           <button
-                            onClick={() => handleBreakSuperset(ex.executionGroupId!)}
+                            onClick={() =>
+                              handleBreakSuperset(ex.executionGroupId!)
+                            }
                             className="p-1 text-theme-muted hover:text-[var(--color-danger)] rounded hover:bg-theme-tertiary flex items-center gap-1"
                             title="Dissocier le superset"
                           >
@@ -1270,149 +1501,238 @@ function SessionDetailPanel({
                       </div>
 
                       {/* Exercise rows - each individually draggable within the superset */}
-                      {allGroupExercises.map(({ exercise: groupEx, index: groupIdx }, posIndex) => {
-                        const groupVideoUrl = groupEx.videoUrl || getExerciseVideoUrl(groupEx.exerciseId);
-                        const groupVariants = getExerciseVariants(groupEx.exerciseId);
-                        const groupHasVariants = groupVariants.length > 1;
-                        const { baseName: groupBaseName } = parseExerciseName(groupEx.exerciseName);
-                        const letter = String.fromCharCode(65 + posIndex); // A, B, C...
+                      {allGroupExercises.map(
+                        ({ exercise: groupEx, index: groupIdx }, posIndex) => {
+                          const groupVideoUrl =
+                            groupEx.videoUrl ||
+                            getExerciseVideoUrl(groupEx.exerciseId);
+                          const groupVariants = getExerciseVariants(
+                            groupEx.exerciseId,
+                          );
+                          const groupHasVariants = groupVariants.length > 1;
+                          const { baseName: groupBaseName } = parseExerciseName(
+                            groupEx.exerciseName,
+                          );
+                          const letter = String.fromCharCode(65 + posIndex); // A, B, C...
 
-                        return (
-                          <div
-                            key={groupEx.id}
-                            draggable={isEditingMode}
-                            onDragStart={(e) => handleSupersetDragStart(e, groupIdx)}
-                            onDragOver={(e) => handleSupersetDragOver(e, groupIdx)}
-                            onDragEnd={handleSupersetDragEnd}
-                            className={`p-3 border-b border-[var(--color-primary)]/20 last:border-b-0 transition-all duration-150 ${
-                              supersetDragIdx === groupIdx ? 'opacity-60 bg-[var(--color-primary)]/15 scale-[1.01]' : ''
-                            } ${isEditingMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                          >
-                            <div className="flex items-start gap-2">
-                              {isEditingMode && <GripVertical className="w-3.5 h-3.5 text-theme-muted cursor-move mt-1 flex-shrink-0" />}
-                              <span className="text-[var(--color-primary)] text-sm font-bold w-6 mt-0.5">{letter}</span>
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 relative">
-                                    <p className="text-theme text-sm font-medium">{groupBaseName}</p>
-                                    {isEditingMode && groupHasVariants && (
-                                      <div className="relative">
-                                        <button
-                                          onClick={() => setVariantDropdownIndex(variantDropdownIndex === groupIdx ? null : groupIdx)}
-                                          className="p-1 text-theme-muted hover:text-theme rounded hover:bg-theme-tertiary flex items-center gap-0.5"
-                                          title="Choisir une variante"
-                                        >
-                                          <List className="w-3 h-3" />
-                                          <ChevronDown className="w-3 h-3" />
-                                        </button>
-                                        {variantDropdownIndex === groupIdx && (
-                                          <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
-                                            {groupVariants.map(variant => {
-                                              const variantDisplay = getExerciseVariantDisplayName(variant, variant.coachId === coachId);
-                                              const isSelected = variant.id === groupEx.exerciseId;
-                                              return (
-                                                <button
-                                                  key={variant.id}
-                                                  onClick={() => handleVariantChange(groupIdx, variant.id)}
-                                                  className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
-                                                    isSelected
-                                                      ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                                                      : 'text-theme hover:bg-theme-tertiary'
-                                                  }`}
-                                                >
-                                                  {variant.coachId ? (
-                                                    <Lock className="w-3 h-3 text-[var(--color-accent)] flex-shrink-0" />
-                                                  ) : (
-                                                    <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
-                                                  )}
-                                                  <span className="truncate">{variantDisplay}</span>
-                                                  {isSelected && <Check className="w-3 h-3 ml-auto flex-shrink-0" />}
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => setVideoModalIndex(groupIdx)}
-                                      className={`p-1 rounded hover:bg-theme-tertiary ${groupVideoUrl ? 'text-[var(--color-primary)] hover:text-[var(--color-primary-light)]' : 'text-theme-muted hover:text-theme'}`}
-                                      title={groupVideoUrl ? 'Voir la vidéo' : 'Ajouter une vidéo'}
-                                    >
-                                      <Play className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => setNotesPopoverIndex(groupIdx)}
-                                      className={`p-1 rounded hover:bg-theme-tertiary ${groupEx.notes ? 'text-[var(--color-warning)]' : 'text-theme-muted hover:text-theme'}`}
-                                      title="Consignes"
-                                    >
-                                      <FileText className="w-4 h-4" />
-                                    </button>
-                                    {isEditingMode && (
-                                      <button
-                                        onClick={() => handleRemoveExercise(groupIdx)}
-                                        className="p-1 text-theme-muted hover:text-[var(--color-danger)] rounded hover:bg-theme-tertiary"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4 mt-2">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="text"
-                                      value={groupEx.targetSets || ''}
-                                      onChange={(e) => handleExerciseChange(groupIdx, 'targetSets', e.target.value || undefined)}
-                                      disabled={!isEditingMode}
-                                      className={`w-12 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                                      placeholder="3"
-                                    />
-                                    <span className="text-theme-muted text-xs">séries</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="text"
-                                      value={groupEx.targetReps || ''}
-                                      onChange={(e) => handleExerciseChange(groupIdx, 'targetReps', e.target.value)}
-                                      disabled={!isEditingMode}
-                                      className={`w-16 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                                      placeholder="10"
-                                    />
-                                    <span className="text-theme-muted text-xs">reps</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="text"
-                                      value={groupEx.tempo || ''}
-                                      onChange={(e) => handleExerciseChange(groupIdx, 'tempo', e.target.value)}
-                                      disabled={!isEditingMode}
-                                      className={`w-20 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                                      placeholder="3-0-1-0"
-                                    />
-                                    <span className="text-theme-muted text-xs">tempo</span>
-                                  </div>
-                                </div>
-                                {groupEx.notes && (
-                                  <p className="mt-2 text-xs text-theme-muted italic truncate">{groupEx.notes}</p>
+                          return (
+                            <div
+                              key={groupEx.id}
+                              draggable={isEditingMode}
+                              onDragStart={(e) =>
+                                handleSupersetDragStart(e, groupIdx)
+                              }
+                              onDragOver={(e) =>
+                                handleSupersetDragOver(e, groupIdx)
+                              }
+                              onDragEnd={handleSupersetDragEnd}
+                              className={`p-3 border-b border-[var(--color-primary)]/20 last:border-b-0 transition-all duration-150 ${
+                                supersetDragIdx === groupIdx
+                                  ? "opacity-60 bg-[var(--color-primary)]/15 scale-[1.01]"
+                                  : ""
+                              } ${isEditingMode ? "cursor-grab active:cursor-grabbing" : ""}`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {isEditingMode && (
+                                  <GripVertical className="w-3.5 h-3.5 text-theme-muted cursor-move mt-1 flex-shrink-0" />
                                 )}
+                                <span className="text-[var(--color-primary)] text-sm font-bold w-6 mt-0.5">
+                                  {letter}
+                                </span>
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 relative">
+                                      <p className="text-theme text-sm font-medium">
+                                        {groupBaseName}
+                                      </p>
+                                      {isEditingMode && groupHasVariants && (
+                                        <div className="relative">
+                                          <button
+                                            onClick={() =>
+                                              setVariantDropdownIndex(
+                                                variantDropdownIndex ===
+                                                  groupIdx
+                                                  ? null
+                                                  : groupIdx,
+                                              )
+                                            }
+                                            className="p-1 text-theme-muted hover:text-theme rounded hover:bg-theme-tertiary flex items-center gap-0.5"
+                                            title="Choisir une variante"
+                                          >
+                                            <List className="w-3 h-3" />
+                                            <ChevronDown className="w-3 h-3" />
+                                          </button>
+                                          {variantDropdownIndex ===
+                                            groupIdx && (
+                                            <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
+                                              {groupVariants.map((variant) => {
+                                                const variantDisplay =
+                                                  getExerciseVariantDisplayName(
+                                                    variant,
+                                                    variant.coachId === coachId,
+                                                  );
+                                                const isSelected =
+                                                  variant.id ===
+                                                  groupEx.exerciseId;
+                                                return (
+                                                  <button
+                                                    key={variant.id}
+                                                    onClick={() =>
+                                                      handleVariantChange(
+                                                        groupIdx,
+                                                        variant.id,
+                                                      )
+                                                    }
+                                                    className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                                                      isSelected
+                                                        ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                                        : "text-theme hover:bg-theme-tertiary"
+                                                    }`}
+                                                  >
+                                                    {variant.coachId ? (
+                                                      <Lock className="w-3 h-3 text-[var(--color-accent)] flex-shrink-0" />
+                                                    ) : (
+                                                      <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
+                                                    )}
+                                                    <span className="truncate">
+                                                      {variantDisplay}
+                                                    </span>
+                                                    {isSelected && (
+                                                      <Check className="w-3 h-3 ml-auto flex-shrink-0" />
+                                                    )}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() =>
+                                          setVideoModalIndex(groupIdx)
+                                        }
+                                        className={`p-1 rounded hover:bg-theme-tertiary ${groupVideoUrl ? "text-[var(--color-primary)] hover:text-[var(--color-primary-light)]" : "text-theme-muted hover:text-theme"}`}
+                                        title={
+                                          groupVideoUrl
+                                            ? "Voir la vidéo"
+                                            : "Ajouter une vidéo"
+                                        }
+                                      >
+                                        <Play className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          setNotesPopoverIndex(groupIdx)
+                                        }
+                                        className={`p-1 rounded hover:bg-theme-tertiary ${groupEx.notes ? "text-[var(--color-warning)]" : "text-theme-muted hover:text-theme"}`}
+                                        title="Consignes"
+                                      >
+                                        <FileText className="w-4 h-4" />
+                                      </button>
+                                      {isEditingMode && (
+                                        <button
+                                          onClick={() =>
+                                            handleRemoveExercise(groupIdx)
+                                          }
+                                          className="p-1 text-theme-muted hover:text-[var(--color-danger)] rounded hover:bg-theme-tertiary"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={groupEx.targetSets || ""}
+                                        onChange={(e) =>
+                                          handleExerciseChange(
+                                            groupIdx,
+                                            "targetSets",
+                                            e.target.value || undefined,
+                                          )
+                                        }
+                                        disabled={!isEditingMode}
+                                        className={`w-12 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
+                                        placeholder="3"
+                                      />
+                                      <span className="text-theme-muted text-xs">
+                                        séries
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={groupEx.targetReps || ""}
+                                        onChange={(e) =>
+                                          handleExerciseChange(
+                                            groupIdx,
+                                            "targetReps",
+                                            e.target.value,
+                                          )
+                                        }
+                                        disabled={!isEditingMode}
+                                        className={`w-16 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
+                                        placeholder="10"
+                                      />
+                                      <span className="text-theme-muted text-xs">
+                                        reps
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={groupEx.tempo || ""}
+                                        onChange={(e) =>
+                                          handleExerciseChange(
+                                            groupIdx,
+                                            "tempo",
+                                            e.target.value,
+                                          )
+                                        }
+                                        disabled={!isEditingMode}
+                                        className={`w-20 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
+                                        placeholder="3-0-1-0"
+                                      />
+                                      <span className="text-theme-muted text-xs">
+                                        tempo
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {groupEx.notes && (
+                                    <p className="mt-2 text-xs text-theme-muted italic truncate">
+                                      {groupEx.notes}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        },
+                      )}
 
                       {/* Superset rest time (shared, stored on first exercise by position) */}
                       <div className="px-3 py-2 bg-[var(--color-primary)]/5 border-t border-[var(--color-primary)]/30 flex items-center gap-2">
-                        <span className="text-theme-muted text-xs">Récupération :</span>
+                        <span className="text-theme-muted text-xs">
+                          Récupération :
+                        </span>
                         <input
                           type="number"
-                          value={firstGroupEx.exercise.restTimeSec || ''}
-                          onChange={(e) => handleExerciseChange(firstGroupEx.index, 'restTimeSec', e.target.value ? parseInt(e.target.value) : undefined)}
+                          value={firstGroupEx.exercise.restTimeSec || ""}
+                          onChange={(e) =>
+                            handleExerciseChange(
+                              firstGroupEx.index,
+                              "restTimeSec",
+                              e.target.value
+                                ? parseInt(e.target.value)
+                                : undefined,
+                            )
+                          }
                           disabled={!isEditingMode}
-                          className={`w-14 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          className={`w-14 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
                           placeholder="90"
                         />
                         <span className="text-theme-muted text-xs">sec</span>
@@ -1430,21 +1750,33 @@ function SessionDetailPanel({
                     onDragOver={(e) => handleDragOver(e, idx)}
                     onDragEnd={handleDragEnd}
                     className={`p-3 bg-theme-secondary rounded-lg transition-all duration-200 ${
-                      draggedIndex === idx ? 'opacity-70 shadow-lg shadow-[var(--color-primary)]/30 scale-[1.02] ring-2 ring-[var(--color-primary)] z-10' : ''
-                    } ${isEditingMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                      draggedIndex === idx
+                        ? "opacity-70 shadow-lg shadow-[var(--color-primary)]/30 scale-[1.02] ring-2 ring-[var(--color-primary)] z-10"
+                        : ""
+                    } ${isEditingMode ? "cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <div className="flex items-start gap-2">
-                      {isEditingMode && <GripVertical className="w-4 h-4 text-theme-muted cursor-move mt-1" />}
-                      <span className="text-theme-muted text-sm w-6 mt-0.5">{idx + 1}.</span>
+                      {isEditingMode && (
+                        <GripVertical className="w-4 h-4 text-theme-muted cursor-move mt-1" />
+                      )}
+                      <span className="text-theme-muted text-sm w-6 mt-0.5">
+                        {idx + 1}.
+                      </span>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 relative">
-                            <p className="text-theme text-sm font-medium">{baseName}</p>
+                            <p className="text-theme text-sm font-medium">
+                              {baseName}
+                            </p>
                             {/* Variant selector */}
                             {isEditingMode && hasMultipleVariants && (
                               <div className="relative">
                                 <button
-                                  onClick={() => setVariantDropdownIndex(variantDropdownIndex === idx ? null : idx)}
+                                  onClick={() =>
+                                    setVariantDropdownIndex(
+                                      variantDropdownIndex === idx ? null : idx,
+                                    )
+                                  }
                                   className="p-1 text-theme-muted hover:text-theme rounded hover:bg-theme-tertiary flex items-center gap-0.5"
                                   title="Choisir une variante"
                                 >
@@ -1453,17 +1785,24 @@ function SessionDetailPanel({
                                 </button>
                                 {variantDropdownIndex === idx && (
                                   <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
-                                    {variants.map(variant => {
-                                      const variantDisplay = getExerciseVariantDisplayName(variant, variant.coachId === coachId);
-                                      const isSelected = variant.id === ex.exerciseId;
+                                    {variants.map((variant) => {
+                                      const variantDisplay =
+                                        getExerciseVariantDisplayName(
+                                          variant,
+                                          variant.coachId === coachId,
+                                        );
+                                      const isSelected =
+                                        variant.id === ex.exerciseId;
                                       return (
                                         <button
                                           key={variant.id}
-                                          onClick={() => handleVariantChange(idx, variant.id)}
+                                          onClick={() =>
+                                            handleVariantChange(idx, variant.id)
+                                          }
                                           className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
                                             isSelected
-                                              ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                                              : 'text-theme hover:bg-theme-tertiary'
+                                              ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                              : "text-theme hover:bg-theme-tertiary"
                                           }`}
                                         >
                                           {variant.coachId ? (
@@ -1471,8 +1810,12 @@ function SessionDetailPanel({
                                           ) : (
                                             <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
                                           )}
-                                          <span className="truncate">{variantDisplay}</span>
-                                          {isSelected && <Check className="w-3 h-3 ml-auto flex-shrink-0" />}
+                                          <span className="truncate">
+                                            {variantDisplay}
+                                          </span>
+                                          {isSelected && (
+                                            <Check className="w-3 h-3 ml-auto flex-shrink-0" />
+                                          )}
                                         </button>
                                       );
                                     })}
@@ -1484,13 +1827,21 @@ function SessionDetailPanel({
                             {isEditingMode && (
                               <div className="relative ml-2">
                                 <button
-                                  onClick={() => setExecutionModeDropdownIndex(executionModeDropdownIndex === idx ? null : idx)}
+                                  onClick={() =>
+                                    setExecutionModeDropdownIndex(
+                                      executionModeDropdownIndex === idx
+                                        ? null
+                                        : idx,
+                                    )
+                                  }
                                   className={`p-1 rounded hover:bg-theme-tertiary flex items-center gap-1 ${
-                                    ex.executionMode === 'superset' ? 'text-[var(--color-primary)]' : 'text-theme-muted hover:text-theme'
+                                    ex.executionMode === "superset"
+                                      ? "text-[var(--color-primary)]"
+                                      : "text-theme-muted hover:text-theme"
                                   }`}
                                   title="Mode d'exécution"
                                 >
-                                  {ex.executionMode === 'superset' ? (
+                                  {ex.executionMode === "superset" ? (
                                     <Link2 className="w-3 h-3" />
                                   ) : (
                                     <Dumbbell className="w-3 h-3" />
@@ -1500,28 +1851,42 @@ function SessionDetailPanel({
                                 {executionModeDropdownIndex === idx && (
                                   <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-36">
                                     <button
-                                      onClick={() => handleExecutionModeChange(idx, 'straight')}
+                                      onClick={() =>
+                                        handleExecutionModeChange(
+                                          idx,
+                                          "straight",
+                                        )
+                                      }
                                       className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
-                                        ex.executionMode !== 'superset'
-                                          ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                                          : 'text-theme hover:bg-theme-tertiary'
+                                        ex.executionMode !== "superset"
+                                          ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                          : "text-theme hover:bg-theme-tertiary"
                                       }`}
                                     >
                                       <Dumbbell className="w-3 h-3" />
                                       <span>Classique</span>
-                                      {ex.executionMode !== 'superset' && <Check className="w-3 h-3 ml-auto" />}
+                                      {ex.executionMode !== "superset" && (
+                                        <Check className="w-3 h-3 ml-auto" />
+                                      )}
                                     </button>
                                     <button
-                                      onClick={() => handleExecutionModeChange(idx, 'superset')}
+                                      onClick={() =>
+                                        handleExecutionModeChange(
+                                          idx,
+                                          "superset",
+                                        )
+                                      }
                                       className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
-                                        ex.executionMode === 'superset'
-                                          ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                                          : 'text-theme hover:bg-theme-tertiary'
+                                        ex.executionMode === "superset"
+                                          ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                          : "text-theme hover:bg-theme-tertiary"
                                       }`}
                                     >
                                       <Link2 className="w-3 h-3" />
                                       <span>Superset</span>
-                                      {ex.executionMode === 'superset' && <Check className="w-3 h-3 ml-auto" />}
+                                      {ex.executionMode === "superset" && (
+                                        <Check className="w-3 h-3 ml-auto" />
+                                      )}
                                     </button>
                                   </div>
                                 )}
@@ -1532,15 +1897,19 @@ function SessionDetailPanel({
                             {/* Video button - always visible */}
                             <button
                               onClick={() => setVideoModalIndex(idx)}
-                              className={`p-1 rounded hover:bg-theme-tertiary ${exerciseVideoUrl ? 'text-[var(--color-primary)] hover:text-[var(--color-primary-light)]' : 'text-theme-muted hover:text-theme'}`}
-                              title={exerciseVideoUrl ? 'Voir la vidéo' : 'Ajouter une vidéo'}
+                              className={`p-1 rounded hover:bg-theme-tertiary ${exerciseVideoUrl ? "text-[var(--color-primary)] hover:text-[var(--color-primary-light)]" : "text-theme-muted hover:text-theme"}`}
+                              title={
+                                exerciseVideoUrl
+                                  ? "Voir la vidéo"
+                                  : "Ajouter une vidéo"
+                              }
                             >
                               <Play className="w-4 h-4" />
                             </button>
                             {/* Notes button */}
                             <button
                               onClick={() => setNotesPopoverIndex(idx)}
-                              className={`p-1 rounded hover:bg-theme-tertiary ${ex.notes ? 'text-[var(--color-warning)]' : 'text-theme-muted hover:text-theme'}`}
+                              className={`p-1 rounded hover:bg-theme-tertiary ${ex.notes ? "text-[var(--color-warning)]" : "text-theme-muted hover:text-theme"}`}
                               title="Consignes"
                             >
                               <FileText className="w-4 h-4" />
@@ -1563,7 +1932,9 @@ function SessionDetailPanel({
                             <input
                               type="text"
                               value={supersetSearchQuery}
-                              onChange={(e) => setSupersetSearchQuery(e.target.value)}
+                              onChange={(e) =>
+                                setSupersetSearchQuery(e.target.value)
+                              }
                               className="w-full px-3 py-2 bg-theme border border-[var(--color-primary)] rounded-lg text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
                               placeholder="Rechercher le 2ème exercice..."
                               autoFocus
@@ -1571,7 +1942,7 @@ function SessionDetailPanel({
                             <button
                               onClick={() => {
                                 setSupersetSearchIndex(null);
-                                setSupersetSearchQuery('');
+                                setSupersetSearchQuery("");
                               }}
                               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-theme-muted hover:text-theme"
                             >
@@ -1580,12 +1951,16 @@ function SessionDetailPanel({
                             {supersetSearchQuery && (
                               <div className="absolute top-full left-0 right-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
                                 {getSupersetSearchResults().length === 0 ? (
-                                  <div className="p-3 text-theme-muted text-sm">Aucun exercice trouvé</div>
+                                  <div className="p-3 text-theme-muted text-sm">
+                                    Aucun exercice trouvé
+                                  </div>
                                 ) : (
-                                  getSupersetSearchResults().map(searchEx => (
+                                  getSupersetSearchResults().map((searchEx) => (
                                     <button
                                       key={searchEx.id}
-                                      onClick={() => handleCreateSuperset(idx, searchEx)}
+                                      onClick={() =>
+                                        handleCreateSuperset(idx, searchEx)
+                                      }
                                       className="w-full px-3 py-2 text-left text-sm text-theme hover:bg-theme-tertiary flex items-center gap-2"
                                     >
                                       <Link2 className="w-4 h-4 text-[var(--color-primary)]" />
@@ -1603,46 +1978,80 @@ function SessionDetailPanel({
                           <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              value={ex.targetSets || ''}
-                              onChange={(e) => handleExerciseChange(idx, 'targetSets', e.target.value || undefined)}
+                              value={ex.targetSets || ""}
+                              onChange={(e) =>
+                                handleExerciseChange(
+                                  idx,
+                                  "targetSets",
+                                  e.target.value || undefined,
+                                )
+                              }
                               disabled={!isEditingMode}
-                              className={`w-12 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`w-12 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
                               placeholder="3"
                             />
-                            <span className="text-theme-muted text-xs">séries</span>
+                            <span className="text-theme-muted text-xs">
+                              séries
+                            </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              value={ex.targetReps || ''}
-                              onChange={(e) => handleExerciseChange(idx, 'targetReps', e.target.value)}
+                              value={ex.targetReps || ""}
+                              onChange={(e) =>
+                                handleExerciseChange(
+                                  idx,
+                                  "targetReps",
+                                  e.target.value,
+                                )
+                              }
                               disabled={!isEditingMode}
-                              className={`w-16 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`w-16 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
                               placeholder="10"
                             />
-                            <span className="text-theme-muted text-xs">reps</span>
+                            <span className="text-theme-muted text-xs">
+                              reps
+                            </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              value={ex.tempo || ''}
-                              onChange={(e) => handleExerciseChange(idx, 'tempo', e.target.value)}
+                              value={ex.tempo || ""}
+                              onChange={(e) =>
+                                handleExerciseChange(
+                                  idx,
+                                  "tempo",
+                                  e.target.value,
+                                )
+                              }
                               disabled={!isEditingMode}
-                              className={`w-20 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`w-20 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
                               placeholder="3-0-1-0"
                             />
-                            <span className="text-theme-muted text-xs">tempo</span>
+                            <span className="text-theme-muted text-xs">
+                              tempo
+                            </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
-                              value={ex.restTimeSec || ''}
-                              onChange={(e) => handleExerciseChange(idx, 'restTimeSec', e.target.value ? parseInt(e.target.value) : undefined)}
+                              value={ex.restTimeSec || ""}
+                              onChange={(e) =>
+                                handleExerciseChange(
+                                  idx,
+                                  "restTimeSec",
+                                  e.target.value
+                                    ? parseInt(e.target.value)
+                                    : undefined,
+                                )
+                              }
                               disabled={!isEditingMode}
-                              className={`w-14 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`w-14 px-2 py-1 bg-theme border border-theme rounded text-theme text-xs text-center ${!isEditingMode ? "opacity-60 cursor-not-allowed" : ""}`}
                               placeholder="90"
                             />
-                            <span className="text-theme-muted text-xs">repos (s)</span>
+                            <span className="text-theme-muted text-xs">
+                              repos (s)
+                            </span>
                           </div>
                         </div>
 
@@ -1668,18 +2077,18 @@ function SessionDetailPanel({
                 value={exerciseSearch}
                 onChange={(e) => {
                   setExerciseSearch(e.target.value);
-                  setShowExerciseDropdown(true);
                 }}
                 onFocus={() => setShowExerciseDropdown(true)}
                 className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-                placeholder="Rechercher un exercice à ajouter..."
               />
               {showExerciseDropdown && exerciseSearch && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
                   {filteredExercises.length === 0 ? (
-                    <div className="p-3 text-theme-muted text-sm">Aucun exercice trouvé</div>
+                    <div className="p-3 text-theme-muted text-sm">
+                      Aucun exercice trouvé
+                    </div>
                   ) : (
-                    filteredExercises.slice(0, 10).map(ex => (
+                    filteredExercises.slice(0, 10).map((ex) => (
                       <button
                         key={ex.id}
                         onClick={() => handleAddExercise(ex)}
@@ -1702,126 +2111,168 @@ function SessionDetailPanel({
         <NotesPopover
           isOpen={true}
           onClose={() => setNotesPopoverIndex(null)}
-          notes={sessionExercises[notesPopoverIndex]?.notes || ''}
-          onSave={(notes) => handleExerciseChange(notesPopoverIndex, 'notes', notes || undefined)}
+          notes={sessionExercises[notesPopoverIndex]?.notes || ""}
+          onSave={(notes) =>
+            handleExerciseChange(notesPopoverIndex, "notes", notes || undefined)
+          }
         />
       )}
 
       {/* Video Modal */}
       {videoModalIndex !== null && (
         <VideoModal
-          url={sessionExercises[videoModalIndex]?.videoUrl || getExerciseVideoUrl(sessionExercises[videoModalIndex]?.exerciseId) || ''}
+          url={
+            sessionExercises[videoModalIndex]?.videoUrl ||
+            getExerciseVideoUrl(
+              sessionExercises[videoModalIndex]?.exerciseId,
+            ) ||
+            ""
+          }
           onClose={() => setVideoModalIndex(null)}
           onChangeUrl={(newUrl) => {
-            handleExerciseChange(videoModalIndex, 'videoUrl', newUrl || undefined);
+            handleExerciseChange(
+              videoModalIndex,
+              "videoUrl",
+              newUrl || undefined,
+            );
           }}
         />
       )}
 
       {/* NEW: Unmatched Exercise Popup - Create Variant */}
-      {currentUnmatchedIndex !== null && unmatchedExercises[currentUnmatchedIndex] && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-theme font-medium">Nouvel exercice détecté</h3>
-              <span className="text-theme-muted text-sm">
-                {currentUnmatchedIndex + 1} / {unmatchedExercises.length}
-              </span>
-            </div>
+      {currentUnmatchedIndex !== null &&
+        unmatchedExercises[currentUnmatchedIndex] && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-theme font-medium">
+                  Nouvel exercice détecté
+                </h3>
+                <span className="text-theme-muted text-sm">
+                  {currentUnmatchedIndex + 1} / {unmatchedExercises.length}
+                </span>
+              </div>
 
-            {(() => {
-              const unmatched = unmatchedExercises[currentUnmatchedIndex];
-              const { baseName } = parseExerciseName(unmatched.sessionExercise.exerciseName);
+              {(() => {
+                const unmatched = unmatchedExercises[currentUnmatchedIndex];
+                const { baseName } = parseExerciseName(
+                  unmatched.sessionExercise.exerciseName,
+                );
 
-              return (
-                <>
-                  <p className="text-[var(--color-primary)] font-medium mb-2">{baseName}</p>
-
-                  <p className="text-theme-secondary text-sm mb-3">
-                    Cet exercice a des caractéristiques différentes de celles enregistrées.
-                    Voulez-vous créer une nouvelle variante ?
-                  </p>
-
-                  {/* Show differences */}
-                  {unmatched.differences.length > 0 && (
-                    <div className="mb-4 bg-theme rounded-lg p-3 max-h-32 overflow-y-auto">
-                      <p className="text-theme-muted text-xs uppercase tracking-wider mb-2">Différences</p>
-                      <div className="space-y-1">
-                        {unmatched.differences.map((diff, i) => (
-                          <div key={i} className="text-xs flex items-center gap-2">
-                            <span className="text-theme-muted">{diff.field}:</span>
-                            <span className="text-theme-muted">{diff.existingValue}</span>
-                            <span className="text-theme-muted">→</span>
-                            <span className="text-[var(--color-primary)]">{diff.currentValue}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Variant name input */}
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-theme-secondary mb-1">
-                      Nom de la variante
-                    </label>
-                    <input
-                      type="text"
-                      value={variantNames.get(currentUnmatchedIndex) || ''}
-                      onChange={(e) => handleVariantNameChange(e.target.value)}
-                      placeholder="Ma variante"
-                      className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
-                      autoFocus
-                    />
-                    <p className="text-theme-muted text-xs mt-1">
-                      Sera enregistré comme : {baseName} :: {variantNames.get(currentUnmatchedIndex) || 'Ma variante'}
+                return (
+                  <>
+                    <p className="text-[var(--color-primary)] font-medium mb-2">
+                      {baseName}
                     </p>
-                  </div>
-                </>
-              );
-            })()}
 
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={handleCancelSaveFlow}
-                className="px-3 py-1.5 rounded text-sm font-medium bg-theme-tertiary hover:bg-theme-secondary text-theme-secondary"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreateVariant}
-                className="px-3 py-1.5 rounded text-sm font-medium bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white"
-              >
-                Créer la variante
-              </button>
+                    <p className="text-theme-secondary text-sm mb-3">
+                      Cet exercice a des caractéristiques différentes de celles
+                      enregistrées. Voulez-vous créer une nouvelle variante ?
+                    </p>
+
+                    {/* Show differences */}
+                    {unmatched.differences.length > 0 && (
+                      <div className="mb-4 bg-theme rounded-lg p-3 max-h-32 overflow-y-auto">
+                        <p className="text-theme-muted text-xs uppercase tracking-wider mb-2">
+                          Différences
+                        </p>
+                        <div className="space-y-1">
+                          {unmatched.differences.map((diff, i) => (
+                            <div
+                              key={i}
+                              className="text-xs flex items-center gap-2"
+                            >
+                              <span className="text-theme-muted">
+                                {diff.field}:
+                              </span>
+                              <span className="text-theme-muted">
+                                {diff.existingValue}
+                              </span>
+                              <span className="text-theme-muted">→</span>
+                              <span className="text-[var(--color-primary)]">
+                                {diff.currentValue}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Variant name input */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-theme-secondary mb-1">
+                        Nom de la variante
+                      </label>
+                      <input
+                        type="text"
+                        value={variantNames.get(currentUnmatchedIndex) || ""}
+                        onChange={(e) =>
+                          handleVariantNameChange(e.target.value)
+                        }
+                        placeholder="Ma variante"
+                        className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
+                        autoFocus
+                      />
+                      <p className="text-theme-muted text-xs mt-1">
+                        Sera enregistré comme : {baseName} ::{" "}
+                        {variantNames.get(currentUnmatchedIndex) ||
+                          "Ma variante"}
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handleCancelSaveFlow}
+                  className="px-3 py-1.5 rounded text-sm font-medium bg-theme-tertiary hover:bg-theme-secondary text-theme-secondary"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleCreateVariant}
+                  className="px-3 py-1.5 rounded text-sm font-medium bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white"
+                >
+                  Créer la variante
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* NEW: Date Confirmation Popup - Creating new variant */}
       {showDateConfirmation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <h3 className="text-theme font-medium mb-2">Créer une nouvelle variante</h3>
+            <h3 className="text-theme font-medium mb-2">
+              Créer une nouvelle variante
+            </h3>
 
             <p className="text-theme-secondary text-sm mb-4">
-              Les dates sont différentes de la séance actuelle. Une nouvelle variante sera créée.
+              Les dates sont différentes de la séance actuelle. Une nouvelle
+              variante sera créée.
             </p>
 
             <div className="mb-4 bg-theme rounded-lg p-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-theme-muted">Date de début:</span>
-                <span className="text-theme">{startDate ? formatDate(startDate) : 'Non définie'}</span>
+                <span className="text-theme">
+                  {startDate ? formatDate(startDate) : "Non définie"}
+                </span>
               </div>
               <div className="flex items-center justify-between text-sm mt-2">
                 <span className="text-theme-muted">Date de fin:</span>
-                <span className="text-theme">{endDate ? formatDate(endDate) : 'Non définie'}</span>
+                <span className="text-theme">
+                  {endDate ? formatDate(endDate) : "Non définie"}
+                </span>
               </div>
             </div>
 
             {isCommon && (
               <p className="text-[var(--color-warning)] text-xs mb-4">
-                Note: Cette séance est commune. Une nouvelle variante sera créée.
+                Note: Cette séance est commune. Une nouvelle variante sera
+                créée.
               </p>
             )}
 
@@ -1847,30 +2298,44 @@ function SessionDetailPanel({
       {showUpdateConfirmation && existingSessionToUpdate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <h3 className="text-theme font-medium mb-2">Mettre à jour la séance</h3>
+            <h3 className="text-theme font-medium mb-2">
+              Mettre à jour la séance
+            </h3>
 
             <p className="text-theme-secondary text-sm mb-4">
-              Voulez-vous mettre à jour la séance <span className="text-[var(--color-primary)] font-medium">{seanceType}</span> du{' '}
+              Voulez-vous mettre à jour la séance{" "}
+              <span className="text-[var(--color-primary)] font-medium">
+                {seanceType}
+              </span>{" "}
+              du{" "}
               <span className="text-theme font-medium">
-                {existingSessionToUpdate.startDate ? formatDate(existingSessionToUpdate.startDate) : 'sans date'}
-              </span>{' '}
-              au{' '}
+                {existingSessionToUpdate.startDate
+                  ? formatDate(existingSessionToUpdate.startDate)
+                  : "sans date"}
+              </span>{" "}
+              au{" "}
               <span className="text-theme font-medium">
-                {existingSessionToUpdate.endDate ? formatDate(existingSessionToUpdate.endDate) : 'sans date'}
-              </span>{' '}
+                {existingSessionToUpdate.endDate
+                  ? formatDate(existingSessionToUpdate.endDate)
+                  : "sans date"}
+              </span>{" "}
               qui existe déjà ?
             </p>
 
             <div className="mb-4 bg-theme rounded-lg p-3">
-              <p className="text-theme-muted text-xs uppercase tracking-wider mb-2">Modifications</p>
+              <p className="text-theme-muted text-xs uppercase tracking-wider mb-2">
+                Modifications
+              </p>
               <div className="text-sm text-theme-secondary">
-                {sessionExercises.length} exercice{sessionExercises.length > 1 ? 's' : ''} dans cette séance
+                {sessionExercises.length} exercice
+                {sessionExercises.length > 1 ? "s" : ""} dans cette séance
               </div>
             </div>
 
             {isCommon && (
               <p className="text-[var(--color-warning)] text-xs mb-4">
-                Note: Cette séance est commune. Une copie personnalisée sera créée.
+                Note: Cette séance est commune. Une copie personnalisée sera
+                créée.
               </p>
             )}
 
@@ -1896,9 +2361,12 @@ function SessionDetailPanel({
       {showDeletePopover && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <h3 className="text-theme font-medium mb-2">Supprimer la variante</h3>
+            <h3 className="text-theme font-medium mb-2">
+              Supprimer la variante
+            </h3>
             <p className="text-theme-secondary text-sm mb-4">
-              Êtes-vous sûr de vouloir supprimer cette variante de "{sessionName}" ?
+              Êtes-vous sûr de vouloir supprimer cette variante de "
+              {sessionName}" ?
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -1922,7 +2390,9 @@ function SessionDetailPanel({
       {showDuplicatePopover && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <h3 className="text-theme font-medium mb-2">Dupliquer la variante</h3>
+            <h3 className="text-theme font-medium mb-2">
+              Dupliquer la variante
+            </h3>
             <p className="text-theme-secondary text-sm mb-4">
               Voulez-vous créer une copie de cette variante de "{sessionName}" ?
             </p>
@@ -1948,9 +2418,12 @@ function SessionDetailPanel({
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-theme-secondary rounded-lg p-4 max-w-md w-full mx-4 border border-theme">
-            <h3 className="text-theme font-medium mb-2">Annuler les modifications</h3>
+            <h3 className="text-theme font-medium mb-2">
+              Annuler les modifications
+            </h3>
             <p className="text-theme-secondary text-sm mb-4">
-              Vous avez des modifications non enregistrées. Voulez-vous les annuler ?
+              Vous avez des modifications non enregistrées. Voulez-vous les
+              annuler ?
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -1984,11 +2457,16 @@ export function SessionsList({
   selectedItemId,
   onItemSelectionHandled,
 }: SessionsListProps) {
-  const [selectedSessionName, setSelectedSessionName] = useState<string | null>(null);
+  const [selectedSessionName, setSelectedSessionName] = useState<string | null>(
+    null,
+  );
   const [isDuplicating, setIsDuplicating] = useState(false);
-  const [duplicatingSession, setDuplicatingSession] = useState<SessionTemplate | null>(null);
+  const [duplicatingSession, setDuplicatingSession] =
+    useState<SessionTemplate | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingSession, setEditingSession] = useState<SessionTemplate | null>(null);
+  const [editingSession, setEditingSession] = useState<SessionTemplate | null>(
+    null,
+  );
   const [localExercises, setLocalExercises] = useState<Exercise[]>(exercises);
 
   // Update local exercises when prop changes
@@ -1998,9 +2476,12 @@ export function SessionsList({
 
   // Group sessions by normalized name (case-insensitive, accent-insensitive)
   const sessionsByName = useMemo(() => {
-    const groups: Record<string, { displayName: string; variants: SessionTemplate[] }> = {};
+    const groups: Record<
+      string,
+      { displayName: string; variants: SessionTemplate[] }
+    > = {};
 
-    sessions.forEach(session => {
+    sessions.forEach((session) => {
       const normalizedName = normalizeString(session.seanceType);
 
       if (!groups[normalizedName]) {
@@ -2013,10 +2494,10 @@ export function SessionsList({
     });
 
     // Sort variants within each group by date (newest first)
-    Object.values(groups).forEach(group => {
+    Object.values(groups).forEach((group) => {
       group.variants.sort((a, b) => {
-        const aKey = `${a.startDate || ''}`;
-        const bKey = `${b.startDate || ''}`;
+        const aKey = `${a.startDate || ""}`;
+        const bKey = `${b.startDate || ""}`;
         return bKey.localeCompare(aKey);
       });
     });
@@ -2027,13 +2508,23 @@ export function SessionsList({
   // Get sorted session names (alphabetically, accent-insensitive)
   const sortedSessionNames = useMemo(() => {
     return Object.entries(sessionsByName)
-      .sort(([, a], [, b]) => normalizeString(a.displayName).localeCompare(normalizeString(b.displayName)))
+      .sort(([, a], [, b]) =>
+        normalizeString(a.displayName).localeCompare(
+          normalizeString(b.displayName),
+        ),
+      )
       .map(([normalizedName]) => normalizedName);
   }, [sessionsByName]);
 
   // Auto-select first item if none selected
   useEffect(() => {
-    if (!selectedSessionName && sortedSessionNames.length > 0 && !isCreatingNew && !isDuplicating && !isEditing) {
+    if (
+      !selectedSessionName &&
+      sortedSessionNames.length > 0 &&
+      !isCreatingNew &&
+      !isDuplicating &&
+      !isEditing
+    ) {
       setSelectedSessionName(sortedSessionNames[0]);
     }
   }, [sortedSessionNames, selectedSessionName, isCreatingNew, isDuplicating]);
@@ -2041,7 +2532,7 @@ export function SessionsList({
   // Auto-select based on prop
   useEffect(() => {
     if (selectedItemId && onItemSelectionHandled) {
-      const foundSession = sessions.find(s => s.id === selectedItemId);
+      const foundSession = sessions.find((s) => s.id === selectedItemId);
       if (foundSession) {
         const normalizedName = normalizeString(foundSession.seanceType);
         setSelectedSessionName(normalizedName);
@@ -2057,10 +2548,15 @@ export function SessionsList({
   }, [selectedSessionName, sessionsByName]);
 
   const selectedDisplayName = selectedSessionName
-    ? sessionsByName[selectedSessionName]?.displayName || ''
-    : '';
+    ? sessionsByName[selectedSessionName]?.displayName || ""
+    : "";
 
-  const isShowingDetail = selectedSessionName && selectedVariants.length > 0 && !isCreatingNew && !isDuplicating && !isEditing;
+  const isShowingDetail =
+    selectedSessionName &&
+    selectedVariants.length > 0 &&
+    !isCreatingNew &&
+    !isDuplicating &&
+    !isEditing;
 
   // Handle duplicate
   const handleDuplicate = (session: SessionTemplate) => {
@@ -2093,12 +2589,12 @@ export function SessionsList({
       await onRefresh();
 
       // Check if there are remaining variants
-      const remaining = selectedVariants.filter(v => v.id !== session.id);
+      const remaining = selectedVariants.filter((v) => v.id !== session.id);
       if (remaining.length === 0) {
         setSelectedSessionName(null);
       }
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      console.error("Erreur lors de la suppression:", error);
       throw error;
     }
   };
@@ -2107,7 +2603,7 @@ export function SessionsList({
   const handleSave = async (
     sessionData: {
       seanceType: string;
-      exercises: Array<Omit<SessionExercise, 'id'> & { id?: string }>;
+      exercises: Array<Omit<SessionExercise, "id"> & { id?: string }>;
       startDate?: string;
       endDate?: string;
       description?: string;
@@ -2116,9 +2612,16 @@ export function SessionsList({
       validityMonth?: number;
       validityWeek?: number;
     },
-    exercisesToCreate: { exercise: Omit<Exercise, 'id' | 'createdAt' | 'updatedAt'>; sessionExerciseIndex: number }[],
+    exercisesToCreate: {
+      exercise: Omit<Exercise, "id" | "createdAt" | "updatedAt">;
+      sessionExerciseIndex: number;
+    }[],
     shouldUpdate: boolean = false,
-    existingTemplate?: { templateId?: string; startDate?: string; endDate?: string }
+    existingTemplate?: {
+      templateId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
   ) => {
     try {
       // First, create any new exercise variants (or find existing ones with same name)
@@ -2128,9 +2631,10 @@ export function SessionsList({
       for (const { exercise, sessionExerciseIndex } of exercisesToCreate) {
         // Check if an exercise with this exact name already exists for this coach
         // The uniqueness constraint is on (name, coach_id), so we only check coach's exercises
-        const existingExercise = localExercises.find(ex =>
-          ex.name.toLowerCase() === exercise.name?.toLowerCase() &&
-          ex.coachId === coachId
+        const existingExercise = localExercises.find(
+          (ex) =>
+            ex.name.toLowerCase() === exercise.name?.toLowerCase() &&
+            ex.coachId === coachId,
         );
 
         if (existingExercise) {
@@ -2142,18 +2646,23 @@ export function SessionsList({
             const created = await createExerciseForCoach(exercise, coachId);
             createdExercises.set(sessionExerciseIndex, created);
             // Update local exercises to avoid duplicate attempts for same name
-            setLocalExercises(prev => [...prev, created]);
+            setLocalExercises((prev) => [...prev, created]);
             exercisesCreated = true;
           } catch (err: any) {
             // Handle duplicate key error - exercise might exist but not in our local state
-            if (err.code === '23505' && exercise.name) {
+            if (err.code === "23505" && exercise.name) {
               // Fetch the existing exercise from the database
-              const existingInDb = await fetchExerciseByName(exercise.name, coachId);
+              const existingInDb = await fetchExerciseByName(
+                exercise.name,
+                coachId,
+              );
               if (existingInDb) {
                 createdExercises.set(sessionExerciseIndex, existingInDb);
-                setLocalExercises(prev => [...prev, existingInDb]);
+                setLocalExercises((prev) => [...prev, existingInDb]);
               } else {
-                throw new Error(`L'exercice "${exercise.name}" existe déjà mais n'a pas pu être récupéré.`);
+                throw new Error(
+                  `L'exercice "${exercise.name}" existe déjà mais n'a pas pu être récupéré.`,
+                );
               }
             } else {
               throw err;
@@ -2208,7 +2717,7 @@ export function SessionsList({
             endDate: sessionData.endDate,
           },
           exercisesForSave,
-          coachId
+          coachId,
         );
       } else {
         // Create new template
@@ -2225,7 +2734,7 @@ export function SessionsList({
             coachId,
             exercises: exercisesForSave,
           },
-          coachId
+          coachId,
         );
       }
 
@@ -2266,12 +2775,15 @@ export function SessionsList({
     setSelectedSessionName(normalizedName);
   };
 
-  const showDetailPanel = isShowingDetail || isCreatingNew || isDuplicating || isEditing;
+  const showDetailPanel =
+    isShowingDetail || isCreatingNew || isDuplicating || isEditing;
 
   return (
     <div className="flex gap-4 h-full p-4 min-h-0 overflow-hidden">
       {/* ========== ZONE LISTE - Bordure visible ========== */}
-      <div className={`${showDetailPanel ? 'w-1/3' : 'w-full'} bg-theme-secondary/50 border border-theme rounded-xl flex flex-col min-h-0 overflow-hidden`}>
+      <div
+        className={`${showDetailPanel ? "w-1/3" : "w-full"} bg-theme-secondary/50 border border-theme rounded-xl flex flex-col min-h-0 overflow-hidden`}
+      >
         <div className="flex-1 h-0 custom-scrollbar">
           {sortedSessionNames.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-theme-muted">
@@ -2280,9 +2792,13 @@ export function SessionsList({
             </div>
           ) : (
             <div className="p-2 space-y-2">
-              {sortedSessionNames.map(normalizedName => {
+              {sortedSessionNames.map((normalizedName) => {
                 const group = sessionsByName[normalizedName];
-                const isSelected = selectedSessionName === normalizedName && !isCreatingNew && !isDuplicating && !isEditing;
+                const isSelected =
+                  selectedSessionName === normalizedName &&
+                  !isCreatingNew &&
+                  !isDuplicating &&
+                  !isEditing;
 
                 return (
                   <div
@@ -2299,8 +2815,8 @@ export function SessionsList({
                     }}
                     className={`p-4 cursor-pointer rounded-xl transition-all duration-200 ${
                       isSelected
-                        ? 'bg-blue-600/20 border-2 border-blue-500'
-                        : 'bg-theme-secondary/50 border border-theme hover:bg-theme-secondary hover:border-theme'
+                        ? "bg-blue-600/20 border-2 border-blue-500"
+                        : "bg-theme-secondary/50 border border-theme hover:bg-theme-secondary hover:border-theme"
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -2352,7 +2868,7 @@ export function SessionsList({
             onDelete={handleDelete}
             onSave={handleSave}
             onClose={handleCloseDetail}
-                        isNewSession={true}
+            isNewSession={true}
             onSessionCreated={handleSessionCreated}
           />
         </div>

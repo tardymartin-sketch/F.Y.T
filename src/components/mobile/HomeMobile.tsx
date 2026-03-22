@@ -286,8 +286,8 @@ export const HomeAthlete: React.FC<Props> = ({
   console.log('[HomeAthlete] Historique des séances:', {
     historyCount: history.length,
     lastLogs: history.slice(-5).map(log => ({
-      sessionName: log.sessionName,
-      date: log.completedAt,
+      sessionName: log.sessionKey?.seance,
+      date: log.date,
       seance: log.sessionKey?.seance
     }))
   });
@@ -753,17 +753,6 @@ export const HomeAthlete: React.FC<Props> = ({
             <p className="text-sm text-theme-muted mb-3">
               Sélectionne une ou plusieurs séances :
             </p>
-
-            {/* DEBUG: Props passées à SessionBadgesGrid (vue suggérée) */}
-            {console.log('[HomeAthlete] Props SessionBadgesGrid (vue suggérée):', {
-              sessionsCount: sessionChips.length,
-              showCompletionStatus: true,
-              hasHistory: !!history,
-              historyCount: history.length,
-              weekStartDate: weekInfo?.startDate,
-              weekEndDate: weekInfo?.endDate,
-              weekInfo
-            })}
 
             <div data-tour-id="tour-session-selector">
               <SessionBadgesGrid

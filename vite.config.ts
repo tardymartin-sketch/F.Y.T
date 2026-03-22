@@ -28,6 +28,11 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
       }
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      exclude: ['**/node_modules/**', '**/dist/**', '**/tests/**'],
     }
   };
 });

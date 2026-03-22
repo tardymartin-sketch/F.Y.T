@@ -111,15 +111,16 @@ export const SupersetInfoModal: React.FC<Props> = ({
 
   // Desktop: Popover ancré
   if (layout === 'desktop' && anchorEl) {
+    const PopoverComponent = Popover as any;
     return (
-      <Popover
+      <PopoverComponent
         anchorEl={anchorEl}
         onClose={onClose}
-        position="bottom"
+        position="bottom-right"
         className="w-80"
       >
         {content}
-      </Popover>
+      </PopoverComponent>
     );
   }
 

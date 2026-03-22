@@ -7,17 +7,10 @@
  * - SessionPreview.tsx (affichage lecture seule)
  * - ActiveSessionMobile.tsx (affichage pendant l'entraînement)
  */
-import React, { useState } from 'react';
-import {
-  GripVertical,
-  Trash2,
-  FileText,
-  Pencil,
-  Check,
-  X,
-} from 'lucide-react';
-import { RichTextDisplay } from '../desktop/RichTextEditor';
-import { LexicalRichTextEditor } from '../desktop/LexicalEditor';
+import React, { useState } from "react";
+import { GripVertical, Trash2, FileText, Pencil, Check, X } from "lucide-react";
+import { RichTextDisplay } from "./RichTextDisplay";
+import { LexicalRichTextEditor } from "../desktop/LexicalEditor";
 
 // ===========================================
 // PROPS
@@ -58,7 +51,7 @@ export const TextBlockCard: React.FC<TextBlockCardProps> = ({
   onDragStart,
   onDragOver,
   onDragEnd,
-  className = '',
+  className = "",
   isDragged = false,
   compact = false,
 }) => {
@@ -89,9 +82,11 @@ export const TextBlockCard: React.FC<TextBlockCardProps> = ({
       >
         <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border-b border-blue-500/20">
           <FileText className="w-4 h-4 text-blue-400" />
-          <span className="text-sm font-medium text-blue-400">Instructions</span>
+          <span className="text-sm font-medium text-blue-400">
+            Instructions
+          </span>
         </div>
-        <div className={`px-3 ${compact ? 'py-2' : 'py-3'}`}>
+        <div className={`px-3 ${compact ? "py-2" : "py-3"}`}>
           <RichTextDisplay
             html={content}
             className="text-sm text-theme-secondary"
@@ -111,7 +106,9 @@ export const TextBlockCard: React.FC<TextBlockCardProps> = ({
         <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 border-b border-blue-500/20">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-blue-400" />
-            <span className="text-sm font-medium text-blue-400">Modifier les instructions</span>
+            <span className="text-sm font-medium text-blue-400">
+              Modifier les instructions
+            </span>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -148,8 +145,10 @@ export const TextBlockCard: React.FC<TextBlockCardProps> = ({
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       className={`rounded-lg border-2 border-blue-500/30 bg-blue-500/5 overflow-hidden transition-all duration-200 ${
-        isDragged ? 'opacity-70 shadow-lg shadow-blue-500/30 scale-[1.02] ring-2 ring-blue-500' : ''
-      } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${className}`}
+        isDragged
+          ? "opacity-70 shadow-lg shadow-blue-500/30 scale-[1.02] ring-2 ring-blue-500"
+          : ""
+      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${className}`}
     >
       {/* Header avec grip + actions */}
       <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 border-b border-blue-500/20">
@@ -158,7 +157,9 @@ export const TextBlockCard: React.FC<TextBlockCardProps> = ({
             <GripVertical className="w-4 h-4 text-blue-400/60 cursor-move" />
           )}
           <FileText className="w-4 h-4 text-blue-400" />
-          <span className="text-sm font-medium text-blue-400">Instructions</span>
+          <span className="text-sm font-medium text-blue-400">
+            Instructions
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <button

@@ -92,7 +92,6 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
             w-6 h-6 text-white
             ${sessionState === 'none' ? 'ml-0.5' : ''} 
           `}
-          strokeWidth={2.5}
         />
 
         {/* Indicateur de session active (ring pulsant) */}

@@ -165,15 +165,6 @@ export const CoachMessages: React.FC<Props> = ({
               className="prose prose-invert prose-sm max-w-none"
               dangerouslySetInnerHTML={{ __html: showFullMessage.message }}
             />
-
-            {/* Coach Info */}
-            {showFullMessage.coachName && (
-              <div className="pt-4 border-t border-theme">
-                <p className="text-sm text-theme-muted">
-                  Envoyé par <span className="text-theme-secondary">{showFullMessage.coachName}</span>
-                </p>
-              </div>
-            )}
           </div>
         </div>
       </div>
