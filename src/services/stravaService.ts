@@ -359,25 +359,32 @@ class StravaService {
       }
     }
 
-    // Sauvegarder les activités avec streams si demandé
-    for (const activity of allActivities) {
-      let streams = null;
-      let segments = null;
+    // Process activities in batches to respect rate limits while improving performance
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < allActivities.length; i += BATCH_SIZE) {
+      const batch = allActivities.slice(i, i + BATCH_SIZE);
       
-      if (withStreams) {
-        try {
-          streams = await this.fetchActivityStreams(accessToken, activity.id);
-          await new Promise(resolve => setTimeout(resolve, 50));
-          
-          const fullActivity = await this.fetchActivityDetails(accessToken, activity.id);
-          segments = (fullActivity as any).segment_efforts || [];
-          await new Promise(resolve => setTimeout(resolve, 50));
-        } catch (err) {
-          console.warn(`Could not fetch streams/segments for activity ${activity.id}:`, err);
+      await Promise.all(batch.map(async (activity) => {
+        let streams = null;
+        let segments = null;
+
+        if (withStreams) {
+          try {
+            // Parallelize fetching streams and details for the same activity
+            const [streamsResult, fullActivity] = await Promise.all([
+              this.fetchActivityStreams(accessToken, activity.id),
+              this.fetchActivityDetails(accessToken, activity.id)
+            ]);
+
+            streams = streamsResult;
+            segments = (fullActivity as any).segment_efforts || [];
+          } catch (err) {
+            console.warn(`Could not fetch streams/segments for activity ${activity.id}:`, err);
+          }
         }
-      }
-      
-      await this.saveActivity(userId, activity, streams, segments);
+
+        await this.saveActivity(userId, activity, streams, segments);
+      }));
     }
 
     await supabase
