@@ -10,7 +10,7 @@ test.describe('Coach - Program Management', () => {
 
         // 1. Connexion Coach
         await authPage.goto();
-        await authPage.loginAsCoach('coach.ben@test.com', 'Coach2025!');
+        await authPage.loginAsCoach('coach.music@test.com', 'Music2025!');
         
         // 2. Navigation vers la bibliothèque
         await dashboard.goToLibrary();
@@ -37,7 +37,8 @@ test.describe('Coach - Program Management', () => {
         await page.getByRole('button', { name: /Selectionner des seances/i }).click();
         const firstSession = page.locator('div[class*="bg-theme-secondary"] button').first();
         await expect(firstSession).toBeVisible();
-        const sessionName = await firstSession.innerText();
+        const sessionNameText = await firstSession.innerText();
+        const sessionName = sessionNameText.trim().split('\n')[0];
         await firstSession.click();
         
         // 7. Sélectionner tous les athlètes
