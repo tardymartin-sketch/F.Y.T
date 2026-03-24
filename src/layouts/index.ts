@@ -11,6 +11,4 @@ export { MobileLayout, MobileLayoutMinimal } from './MobileLayout';
 export { AthleteLayout, AthleteLayoutMinimal } from './MobileLayout';
 
 // Desktop layout
-export { CoachLayout } from './CoachLayout';
 // Alias pour futur renommage
-export { CoachLayout as DesktopLayout } from './CoachLayout';

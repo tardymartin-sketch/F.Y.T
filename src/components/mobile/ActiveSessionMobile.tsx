@@ -746,7 +746,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       // pour les supersets (ne pas grouper par nom d'exercice)
       // Filtrer les blocs texte : ils ne génèrent pas de logs d'exercice
       const initialLogs: ExerciseLog[] = sessionData
-        .filter((row) => !row.isTextBlock)
         .map((row) => {
           const numSets = parseInt(row.series) || 3;
           const suggestedWeight = getSuggestedWeight(row.exercice, history);

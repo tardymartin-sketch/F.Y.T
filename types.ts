@@ -143,7 +143,6 @@ export interface WorkoutRow {
   ordre: number;
   exercice: string;            // Nom de l'exercice (conservé pour compatibilité)
   exerciseId?: string;         // UUID de l'exercice (undefined = fallback/legacy)
-  isTextBlock?: boolean;       // Indicateur pour bloc de texte riche (instructions)
   series: string;
   repsDuree: string;
   repos: string;
@@ -1418,7 +1417,6 @@ export interface SessionExercise {
   restTimeSec?: number;
   tempo?: string;
   notes?: string;
-  isTextBlock?: boolean; // Indicateur pour bloc de texte riche
   executionMode?: ExecutionMode;        // Défaut: 'straight'
   executionGroupId?: string;            // UUID partagé par les exos d'un superset
   executionGroupPosition?: number;      // 0 = premier, 1 = second

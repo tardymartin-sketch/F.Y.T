@@ -73,7 +73,6 @@ function formatMessageContent(html: string): string {
 // CONSTANTS
 // ===========================================
 
-const SWIPE_HINT_STORAGE_KEY = 'fyt_coach_carousel_hint_shown';
 
 // ===========================================
 // COMPONENT
@@ -88,7 +87,6 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
   initialMessageId,
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [showHint, setShowHint] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
@@ -107,21 +105,6 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
     }
   }, [initialMessageId, sortedMessages]);
 
-  // Check if we should show the swipe hint animation
-  useEffect(() => {
-    if (sortedMessages.length > 1) {
-      const hintShown = localStorage.getItem(SWIPE_HINT_STORAGE_KEY);
-      if (!hintShown) {
-        setShowHint(true);
-        // Mark as shown after animation plays
-        const timer = setTimeout(() => {
-          localStorage.setItem(SWIPE_HINT_STORAGE_KEY, 'true');
-          setShowHint(false);
-        }, 2500);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [sortedMessages.length]);
 
   // Swipe detection
   const minSwipeDistance = 50;
@@ -222,7 +205,7 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          className={`p-3 ${showHint ? 'animate-swipe-hint' : ''}`}
+          className={`p-3`}
         >
           {sortedMessages[activeIndex] && (
             <button
@@ -268,25 +251,7 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Swipe Hint (mobile only) */}
-        {showHint && sortedMessages.length > 1 && (
-          <div className="text-center pb-2 text-xs text-theme-muted animate-pulse">
-            ← Swipe →
-          </div>
-        )}
 
-        {/* CSS for swipe hint animation */}
-        <style>{`
-          @keyframes swipe-hint {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-8px); }
-            75% { transform: translateX(8px); }
-          }
-
-          .animate-swipe-hint {
-            animation: swipe-hint 0.8s ease-in-out 2;
-          }
-        `}</style>
       </div>
     );
   }
@@ -330,7 +295,7 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        className={`p-4 ${showHint ? 'animate-swipe-hint' : ''}`}
+        className={`p-4`}
       >
         {sortedMessages[activeIndex] && (
           <div
@@ -375,25 +340,7 @@ export const CoachMessagesCarousel: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Swipe Hint Text (shown only during animation) */}
-      {showHint && sortedMessages.length > 1 && (
-        <div className="text-center pb-3 text-xs text-theme-muted animate-pulse">
-          ← Swipe pour plus →
-        </div>
-      )}
 
-      {/* CSS for swipe hint animation */}
-      <style>{`
-        @keyframes swipe-hint {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-8px); }
-          75% { transform: translateX(8px); }
-        }
-
-        .animate-swipe-hint {
-          animation: swipe-hint 0.8s ease-in-out 2;
-        }
-      `}</style>
     </div>
   );
 };

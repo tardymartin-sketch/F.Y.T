@@ -636,28 +636,6 @@ function SessionDetailPanel({
     setHasChanges(true);
   };
 
-  const handleAddTextBlock = () => {
-    // Chercher un exercice "Instructions" ou utiliser le premier disponible comme placeholder
-    const instructionExercise =
-      exercises.find((ex) => normalizeString(ex.name) === "instructions") ||
-      exercises[0];
-
-    if (!instructionExercise) return;
-
-    const newBlock: SessionExercise = {
-      id: Date.now().toString(),
-      exerciseId: instructionExercise.id,
-      exerciseName: "Instructions", // Forcage du nom pour l'affichage
-      position: sessionExercises.length,
-      targetSets: "",
-      targetReps: "",
-      isTextBlock: true,
-      notes: "<p>Ajoutez vos instructions ici...</p>",
-      executionMode: "straight",
-    };
-    setSessionExercises([...sessionExercises, newBlock]);
-    setHasChanges(true);
-  };
 
   const handleRemoveExercise = (index: number) => {
     const updated = sessionExercises.filter((_, i) => i !== index);
