@@ -145,8 +145,6 @@ export async function createDemoSession(): Promise<CreateDemoResult> {
     localStorage.setItem(DEMO_SESSION_KEY, sessionId);
     localStorage.setItem(DEMO_PROFILE_KEY, userId);
 
-    console.log('[createDemoSession] Session démo créée avec succès');
-
     return {
       success: true,
       sessionId,
@@ -212,7 +210,6 @@ export function clearDemoLocalData(): void {
   localStorage.removeItem('F.Y.T_active_session');
   localStorage.removeItem('F.Y.T_add_session');
   localStorage.removeItem('F.Y.T_session_preview');
-  console.log('[clearDemoLocalData] Données démo nettoyées');
 }
 
 /**
@@ -224,12 +221,10 @@ export function initDemoLocalData(): void {
   // Générer et stocker les training plans
   const trainingData = generateDemoTrainingData(now);
   localStorage.setItem(DEMO_TRAINING_KEY, JSON.stringify(trainingData));
-  console.log(`[initDemoLocalData] ${trainingData.length} training plans générés`);
 
   // Générer et stocker l'historique
   const historyData = generateDemoSessionHistory(now);
   localStorage.setItem(DEMO_HISTORY_KEY, JSON.stringify(historyData));
-  console.log(`[initDemoLocalData] ${historyData.length} sessions d'historique générées`);
 }
 
 /**
@@ -276,7 +271,6 @@ export function saveDemoSessionLog(log: SessionLog): SessionLog {
   }
 
   localStorage.setItem(DEMO_HISTORY_KEY, JSON.stringify(history));
-  console.log('[saveDemoSessionLog] Session sauvegardée localement:', log.id);
 
   return log;
 }
