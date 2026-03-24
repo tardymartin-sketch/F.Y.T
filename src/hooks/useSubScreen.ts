@@ -123,10 +123,19 @@ export function useSubScreenWithValidation<T>(
 // HELPER: Créer un validator typé
 // ===========================================
 
+/**
+ * Helper function to create validation functions with types
+ */
 export function createValidator<T>(
-  check: (value: any) => boolean
-): (value: any) => value is T {
-  return (value: any): value is T => check(value);
+  validatorFn: (data: any) => boolean
+): (data: any) => data is T {
+  return (data: any): data is T => {
+    try {
+      return validatorFn(data);
+    } catch (e) {
+      return false;
+    }
+  };
 }
 
 // ===========================================
