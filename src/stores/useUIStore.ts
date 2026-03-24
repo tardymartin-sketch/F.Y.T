@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AppView = 'home' | 'history' | 'stats' | 'coach' | 'profile' | 'active' | 'addSession' | 'library' | 'import' | 'team' | 'settings' | 'admin' | 'storybook' | 'messages';
+export type AppView = 'home' | 'history' | 'stats' | 'coach' | 'profile' | 'active' | 'library' | 'import' | 'team' | 'settings' | 'admin' | 'storybook' | 'messages';
 
 interface UIState {
   currentView: AppView;

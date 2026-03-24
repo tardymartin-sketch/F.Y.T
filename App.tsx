@@ -206,13 +206,13 @@ const App: React.FC = () => {
 
     // Vues valides selon le DEVICE et le RÔLE
     // Mobile: toutes les vues de l'onglet BottomNav + vues spécifiques au rôle
-    const validMobileViews = ['home', 'history', 'stats', 'coach', 'profile', 'active', 'addSession'];
+    const validMobileViews = ['home', 'history', 'stats', 'coach', 'profile', 'active'];
     if (effectiveBehavesAsCoach) {
       validMobileViews.push('team', 'messages');
     }
 
     // Desktop: toutes les vues + sidebar
-    const validDesktopViews = ['home', 'history', 'stats', 'coach', 'profile', 'active', 'addSession', 'settings'];
+    const validDesktopViews = ['home', 'history', 'stats', 'coach', 'profile', 'active', 'settings'];
     if (effectiveBehavesAsCoach) {
       validDesktopViews.push('team', 'messages', 'import');
     }
@@ -851,7 +851,7 @@ const App: React.FC = () => {
         `}
             >
               {/* Mobile header - icône + nom de la page sur tous les écrans mobiles */}
-              {isMobile && currentView !== 'active' && currentView !== 'addSession' && mobileViewConfig[currentView] && (() => {
+              {isMobile && currentView !== 'active' && mobileViewConfig[currentView] && (() => {
                 const config = mobileViewConfig[currentView];
                 const Icon = config.icon;
                 return (
