@@ -12,6 +12,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { WorkoutRow, FilterState, User, SessionLog, WeekOrganizerLog } from '../../../types';
 import { SessionBadgesGrid } from '../mobile/SessionBadgesGrid';
 import { SessionPreview } from '../common/SessionPreview';
+import { RichTextDisplay } from '../common/RichTextDisplay';
 import {
   Play,
   Calendar,
@@ -475,9 +476,9 @@ export const Home: React.FC<Props> = ({
                   <p className="text-xs text-theme-muted mb-2">
                     {new Date(organizer.startDate).toLocaleDateString('fr-FR')} - {new Date(organizer.endDate).toLocaleDateString('fr-FR')}
                   </p>
-                  <div
+                  <RichTextDisplay
                     className="text-sm text-theme-secondary prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: organizer.message }}
+                    html={organizer.message}
                   />
                 </div>
               </div>
@@ -637,9 +638,9 @@ export const Home: React.FC<Props> = ({
                       {new Date(organizer.startDate).toLocaleDateString('fr-FR')}
                     </span>
                   </div>
-                  <div
+                  <RichTextDisplay
                     className="text-sm text-theme-secondary prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: organizer.message }}
+                    html={organizer.message}
                   />
                 </div>
               ))}

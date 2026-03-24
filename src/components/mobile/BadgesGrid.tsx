@@ -9,6 +9,7 @@ import { Trophy, ChevronRight, Loader2 } from 'lucide-react';
 import type { BadgeWithProgress, BadgeCategory } from '../../../types';
 import { getUserBadgesProgress } from '../../services/badgeService';
 import { BadgeModal } from './BadgeModal';
+import { RichTextDisplay } from '../common/RichTextDisplay';
 
 // ===========================================
 // CONSTANTS
@@ -94,9 +95,9 @@ const BadgeIcon: React.FC<BadgeIconProps> = ({ badge, onClick }) => {
       `}
       title={badge.name}
     >
-      <div
+      <RichTextDisplay
         className={`w-6 h-6 ${badge.isUnlocked ? config.color : 'text-theme-muted'}`}
-        dangerouslySetInnerHTML={{ __html: badge.iconSvg }}
+        html={badge.iconSvg}
       />
     </button>
   );

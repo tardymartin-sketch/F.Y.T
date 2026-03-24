@@ -7,6 +7,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { WeekOrganizerLog, AthleteComment } from '../../../types';
 import { Card, CardContent } from '../shared/Card';
+import { RichTextDisplay } from '../common/RichTextDisplay';
 import {
   MessageSquare,
   Megaphone,
@@ -161,9 +162,9 @@ export const CoachMessages: React.FC<Props> = ({
             </div>
 
             {/* Message Content */}
-            <div
+            <RichTextDisplay
               className="prose prose-invert prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: showFullMessage.message }}
+              html={showFullMessage.message}
             />
           </div>
         </div>
@@ -282,9 +283,9 @@ export const CoachMessages: React.FC<Props> = ({
 
                       {expandedPastMessage === message.id && (
                         <div className="px-3 pb-3 border-t border-theme">
-                          <div
+                          <RichTextDisplay
                             className="prose prose-invert prose-sm max-w-none mt-3 text-theme-muted"
-                            dangerouslySetInnerHTML={{ __html: message.message }}
+                            html={message.message}
                           />
                         </div>
                       )}

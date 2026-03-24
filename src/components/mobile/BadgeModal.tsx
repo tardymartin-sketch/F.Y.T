@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trophy, Target, Calendar, Sparkles } from 'lucide-react';
 import type { BadgeWithProgress, BadgeCategory } from '../../../types';
+import { RichTextDisplay } from '../common/RichTextDisplay';
 
 // ===========================================
 // CONSTANTS
@@ -181,9 +182,9 @@ export const BadgeModal: React.FC<Props> = ({ badge, onClose }) => {
                 }
               `}
             >
-              <div
+              <RichTextDisplay
                 className={`w-10 h-10 ${badge.isUnlocked ? 'text-white' : 'text-theme-muted'}`}
-                dangerouslySetInnerHTML={{ __html: badge.iconSvg }}
+                html={badge.iconSvg}
               />
 
               {/* Sparkle effect pour les badges débloqués */}

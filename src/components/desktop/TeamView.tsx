@@ -18,6 +18,7 @@ import {
 } from "../../../types";
 import type { AthleteGroupWithCount, VisibilityType } from "../../../types";
 import { LexicalRichTextEditor } from "./LexicalEditor";
+import { RichTextDisplay } from "../common/RichTextDisplay";
 import { AthleteGroupsManager } from "./AthleteGroupsManager";
 import { VisibilitySelector } from "./VisibilitySelector";
 import { StravaHistoryCard } from "./StravaHistoryCard";
@@ -684,9 +685,9 @@ export const TeamView: React.FC<Props> = ({
                       <Users className="w-3 h-3" />
                       {getVisibilityText(log)}
                     </p>
-                    <div
+                    <RichTextDisplay
                       className="text-sm text-theme-secondary prose prose-sm max-w-none line-clamp-3"
-                      dangerouslySetInnerHTML={{ __html: log.message }}
+                      html={log.message}
                     />
                   </div>
                   <button
