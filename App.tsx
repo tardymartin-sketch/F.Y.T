@@ -83,7 +83,6 @@ import { DemoTourManager } from './src/components/common/DemoTourManager';
 import { BottomNav } from './src/components/mobile/BottomNav';
 import { HomeMobile } from './src/components/mobile/HomeMobile';
 import { ActiveSessionMobile } from './src/components/mobile/ActiveSessionMobile';
-// [DEAD CODE] import { AddSessionMobile } from './src/components/mobile/AddSessionMobile';
 import { HistoryMobile } from './src/components/mobile/HistoryMobile';
 import { CoachTab } from './src/components/mobile/CoachTab';
 import { ProfileTab } from './src/components/mobile/ProfileTab';
@@ -514,60 +513,6 @@ const App: React.FC = () => {
     }
   };
 
-  // ===========================================
-  // [DEAD CODE] ADD SESSION HANDLERS (Séance manuelle)
-  // ===========================================
-  /*
-  const handleOpenAddSession = () => {
-    // Vérifier s'il y a une session en cours de modification dans localStorage
-    try {
-      const saved = localStorage.getItem('F.Y.T_add_session');
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.isEditMode && data.editingSessionId) {
-          // Trouver la session dans l'historique
-          const session = history.find(s => s.id === data.editingSessionId);
-          if (session) {
-            setEditingManualSession(session);
-            setCurrentView('addSession');
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Erreur restauration session:', e);
-    }
-
-    // Par défaut: nouvelle session
-    setEditingManualSession(null);
-    setCurrentView('addSession');
-  };
-
-  const handleEditManualSession = (session: SessionLog) => {
-    setEditingManualSession(session);
-    setCurrentView('addSession');
-  };
-
-  const handleSaveManualSession = async (log: SessionLog) => {
-    try {
-      await saveSessionLog(log, currentUser!.id);
-      // Refresh history depuis exercise_logs
-      const updatedHistory = await fetchSessionLogsFromExerciseLogs(currentUser!.id);
-      setHistory(updatedHistory);
-      setEditingManualSession(null);
-      setCurrentView('history');
-    } catch (error) {
-      console.error('Erreur sauvegarde séance manuelle:', error);
-      throw error;
-    }
-  };
-
-  const handleCancelAddSession = () => {
-    setEditingManualSession(null);
-    setCurrentView('home');
-  };
-  */
-
   const handleFetchTeam = async (coachId: string) => {
     return await fetchTeamAthletes(coachId);
   };
@@ -798,8 +743,6 @@ const App: React.FC = () => {
     setActiveSessionData(null);
     setHasActiveSession(false);
     setEditingSession(null);
-    // [DEAD CODE] setEditingManualSession(null);
-    // [DEAD CODE] setHasAddSession(false);
   }, []);
 
   // Replier le bloc exercice via un événement custom
@@ -897,7 +840,6 @@ const App: React.FC = () => {
                 userRole={isAdmin ? 'admin' : isCoachByRole ? 'coach' : 'athlete'}
                 userId={currentUser.id}
                 hasActiveSession={hasActiveSession}
-              // [DEAD CODE] hasAddSession={hasAddSession}
               />
             )}
 
@@ -943,8 +885,6 @@ const App: React.FC = () => {
                           setTargetMessageId(messageId || null);
                           setCurrentView('coach');
                         }}
-                      // [DEAD CODE] onAddSession={handleOpenAddSession}
-                      // [DEAD CODE] hasAddSession={hasAddSession}
                       />
                     )}
 
@@ -960,8 +900,6 @@ const App: React.FC = () => {
                         pastWeekOrganizers={pastWeekOrganizers}
                         hasActiveSession={hasActiveSession}
                         onResumeSession={handleResumeSession}
-                      // [DEAD CODE] hasAddSession={hasAddSession}
-                      // [DEAD CODE] onAddSession={handleOpenAddSession}
                       />
                     )}
 
@@ -1000,7 +938,6 @@ const App: React.FC = () => {
                         onDelete={handleDeleteSession}
                         onEdit={handleEditSession}
                         userId={currentUser.id}
-                        // [DEAD CODE] onEditManualSession={handleEditManualSession}
                         targetSessionLogId={targetSessionLogId}
                         targetExerciseName={targetHistoryExerciseName}
                         targetDate={targetHistoryDate}
@@ -1018,7 +955,6 @@ const App: React.FC = () => {
                         onDelete={handleDeleteSession}
                         onEdit={handleEditSession}
                         userId={currentUser.id}
-                        // [DEAD CODE] onEditManualSession={handleEditManualSession}
                         targetSessionLogId={targetSessionLogId}
                         targetExerciseName={targetHistoryExerciseName}
                         targetDate={targetHistoryDate}
@@ -1051,15 +987,6 @@ const App: React.FC = () => {
                       />
                     )}
 
-                    {/* [DEAD CODE] V3: Vue Ajout de séance manuelle */}
-                    {/* currentView === 'addSession' && (
-                <AddSessionMobile
-                  onSave={handleSaveManualSession}
-                  onCancel={handleCancelAddSession}
-                  initialLog={editingManualSession}
-                  userId={currentUser.id}
-                />
-              ) */}
 
                     {/* V3 DESKTOP ADAPTATION: Vue Coach - même composant pour tous les profils */}
                     {/* Mobile: CoachConversationsView pour tous */}

@@ -29,7 +29,6 @@ interface SidebarProps {
   userId?: string;
   // Session active indicators
   hasActiveSession?: boolean;
-  // [DEAD CODE] hasAddSession?: boolean;
 }
 
 // Menus avec restrictions par rôle (voir plan section 7)
@@ -60,7 +59,6 @@ export function Sidebar({
   userRole = 'athlete', // Desktop adaptation - default preserves safety (athlete sees less)
   userId,
   hasActiveSession,
-  // [DEAD CODE] hasAddSession
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { count: unreadCount } = useUnreadCount(userId);
@@ -233,7 +231,6 @@ export function Sidebar({
                 const showBadgeCount = item.showBadge && unreadCount > 0;
                 // Session active indicator sur le menu Accueil
                 const showActiveSessionDot = item.id === 'home' && hasActiveSession;
-                // [DEAD CODE] const showAddSessionDot = item.id === 'home' && hasAddSession;
 
                 return (
                   <li key={item.id}>
@@ -270,14 +267,6 @@ export function Sidebar({
                             aria-label="Séance en cours"
                           />
                         )}
-
-                        {/* [DEAD CODE] Add session indicator (blue-purple) - décalé si les deux sont actifs */}
-                        {/* showAddSessionDot && (
-                          <div
-                            className={`absolute w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse ${showActiveSessionDot ? '-top-1 right-2' : '-top-1 -right-1'}`}
-                            aria-label="Ajout de séance en cours"
-                          />
-                        ) */}
                       </div>
 
                       <span className="text-sm font-medium">{item.label}</span>

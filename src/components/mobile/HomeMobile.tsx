@@ -30,8 +30,7 @@ import {
   Check,
   FolderOpen,
   ArrowLeft,
-  Eye,
-  PlusCircle
+  Eye
 } from 'lucide-react';
 import { useDemoTour } from '../../contexts/DemoTourContext';
 
@@ -49,8 +48,6 @@ interface Props {
   hasActiveSession?: boolean;
   onSelectSession?: () => void;
   onViewCoachMessages?: (messageId?: string) => void;
-  // [DEAD CODE] onAddSession?: () => void;
-  // [DEAD CODE] hasAddSession?: boolean;
 }
 
 interface SessionChip {
@@ -179,8 +176,6 @@ export const HomeAthlete: React.FC<Props> = ({
   hasActiveSession = false,
   onSelectSession,
   onViewCoachMessages,
-  // [DEAD CODE] onAddSession,
-  // [DEAD CODE] hasAddSession = false,
 }) => {
   // ===========================================
   // STATE
@@ -1044,45 +1039,6 @@ export const HomeAthlete: React.FC<Props> = ({
           </button>
         );
       })()}
-
-      {/* [DEAD CODE] Carte Ajout/Modification de Séance en cours */}
-      {/* hasAddSession && onAddSession && (() => {
-        // Déterminer si c'est un ajout ou une modification
-        let isEditMode = false;
-        try {
-          const saved = localStorage.getItem('F.Y.T_add_session');
-          if (saved) {
-            const data = JSON.parse(saved);
-            isEditMode = data.isEditMode === true;
-          }
-        } catch (e) {
-          // ignore
-        }
-
-        return (
-          <button
-            onClick={onAddSession}
-            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 shadow-lg shadow-blue-500/25 animate-pulse-slow"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                  <PlusCircle className="w-6 h-6 text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="text-white font-semibold">
-                    {isEditMode ? 'Modification de séance en cours' : 'Ajout de séance en cours'}
-                  </p>
-                  <p className="text-white/80 text-sm">
-                    {isEditMode ? 'Reprendre la modification' : 'Reprendre l\'ajout de ta séance'}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-6 h-6 text-white" />
-            </div>
-          </button>
-        );
-      })() */}
 
       {/* Zone FIXE - Messages coach */}
       {activeWeekOrganizers.length > 0 && (

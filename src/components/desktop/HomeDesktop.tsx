@@ -25,7 +25,6 @@ import {
   Dumbbell,
   MessageSquare,
   Timer,
-  PlusCircle,
   Home as HomeIcon
 } from 'lucide-react';
 
@@ -46,8 +45,6 @@ interface Props {
   // Session active indicators (comportement mobile)
   hasActiveSession?: boolean;
   onResumeSession?: () => void;
-  // [DEAD CODE] hasAddSession?: boolean;
-  // [DEAD CODE] onAddSession?: () => void;
 }
 
 interface WeekInfo {
@@ -154,8 +151,6 @@ export const Home: React.FC<Props> = ({
   onNavigateToHistory,
   hasActiveSession,
   onResumeSession,
-  // [DEAD CODE] hasAddSession,
-  // [DEAD CODE] onAddSession
 }) => {
   const [showPastOrganizers, setShowPastOrganizers] = useState(false);
 
@@ -410,45 +405,6 @@ export const Home: React.FC<Props> = ({
             </button>
           );
         })()}
-
-        {/* [DEAD CODE] Carte Ajout/Modification de Séance en cours */}
-        {/* hasAddSession && onAddSession && (() => {
-          // Déterminer si c'est un ajout ou une modification
-          let isEditMode = false;
-          try {
-            const saved = localStorage.getItem('F.Y.T_add_session');
-            if (saved) {
-              const data = JSON.parse(saved);
-              isEditMode = data.isEditMode === true;
-            }
-          } catch (e) {
-            // ignore
-          }
-
-          return (
-            <button
-              onClick={onAddSession}
-              className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 shadow-lg shadow-blue-500/25 animate-pulse-slow hover:scale-[1.01] transition-transform"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                    <PlusCircle className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-white font-semibold">
-                      {isEditMode ? 'Modification de séance en cours' : 'Ajout de séance en cours'}
-                    </p>
-                    <p className="text-white/80 text-sm">
-                      {isEditMode ? 'Reprendre la modification' : 'Reprendre l\'ajout de ta séance'}
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="w-6 h-6 text-white" />
-              </div>
-            </button>
-          );
-        })() */}
       </div>
 
       {/* Week Organizers actifs */}

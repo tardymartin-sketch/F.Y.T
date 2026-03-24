@@ -12,7 +12,6 @@ export { FloatingActionButton } from './FloatingActionButton';
 export { HomeMobile } from './HomeMobile';
 export { ActiveSessionMobile } from './ActiveSessionMobile';
 export { HistoryMobile } from './HistoryMobile';
-export { AddSessionMobile } from './AddSessionMobile';
 export { StatsPage } from './StatsPage';
 export { CoachTab } from './CoachTab';
 export { ProfileTab } from './ProfileTab';
