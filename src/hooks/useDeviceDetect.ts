@@ -111,7 +111,7 @@ function detectDevice(): DeviceInfo {
   // - Mobile si UA dit mobile OU (touch sans mouse)
   // - Desktop si pas mobile ET a une souris
   const isMobile = mobileFromUA || (hasTouch && !hasMouse);
-  const isDesktop = !isMobile && hasMouse;
+  const isDesktop = !isMobile;
 
   return {
     isMobile,

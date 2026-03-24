@@ -17,16 +17,17 @@ export class CoachDashboardPage {
 
     async openSidebar() {
         // En desktop, la sidebar peut être masquée (mode replié)
-        // On vérifie si un élément du menu est visible, sinon on ouvre via le hamburger
-        const isMenuVisible = await this.libraryTab.isVisible();
-        if (!isMenuVisible) {
-            // On essaie de cliquer sur le hamburger s'il est là
-            if (await this.hamburgerButton.isVisible()) {
+        // On vérifie l'attribut aria-expanded du bouton hamburger
+        if (await this.hamburgerButton.isVisible()) {
+            const isExpanded = await this.hamburgerButton.getAttribute('aria-expanded');
+            if (isExpanded !== 'true') {
                 await this.hamburgerButton.click();
             }
         }
         // On attend que la navigation soit prête
         await expect(this.libraryTab).toBeVisible({ timeout: 10000 });
+        // Petit délai pour l'animation CSS (transition-transform duration-300)
+        await this.page.waitForTimeout(400);
     }
 
     async goToLibrary() {
