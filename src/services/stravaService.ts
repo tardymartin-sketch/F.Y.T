@@ -535,103 +535,115 @@ class StravaService {
     userId: string,
     activityIds: string[]
   ): Promise<{ success: number; failed: number }> {
-    let success = 0;
-    let failed = 0;
+    try {
+      // Step 2.1: Batch fetch activities
+      const { data: activities, error: fetchError } = await supabase
+        .from('strava_activities')
+        .select('*')
+        .in('id', activityIds)
+        .eq('user_id', userId);
 
-    for (const activityId of activityIds) {
-      try {
-        const { data: activity, error: fetchError } = await supabase
-          .from('strava_activities')
-          .select('*')
-          .eq('id', activityId)
-          .eq('user_id', userId)
-          .single();
+      if (fetchError || !activities) {
+        console.error('Failed to fetch activities:', fetchError);
+        return { success: 0, failed: activityIds.length };
+      }
 
-        if (fetchError || !activity) {
-          console.error('Failed to fetch activity:', fetchError);
-          failed++;
-          continue;
+      const sessionLogsToInsert: any[] = [];
+      const stravaActivitiesToUpdate: any[] = [];
+      const now = new Date();
+      const importDateStr = now.toLocaleDateString('fr-FR');
+      const importTimestamp = now.toISOString();
+
+      // Step 2.2: Prepare batch data
+      for (const activity of activities) {
+        try {
+          const logId = crypto.randomUUID();
+
+          // Construire les notes détaillées
+          const detailsNotes = [
+            activity.sport_type,
+            activity.distance ? formatDistance(activity.distance) : null,
+            activity.total_elevation_gain ? formatElevation(activity.total_elevation_gain) : null,
+            activity.average_heartrate ? `FC moy: ${Math.round(activity.average_heartrate)} bpm` : null,
+            activity.max_heartrate ? `FC max: ${activity.max_heartrate} bpm` : null,
+          ].filter(Boolean).join(' • ');
+
+          const sessionLogData = {
+            id: logId,
+            user_id: userId,
+            date: activity.start_date_local?.split('T')[0] || activity.start_date.split('T')[0],
+            duration_minutes: Math.round(activity.moving_time / 60),
+            session_key_year: new Date(activity.start_date).getFullYear(),
+            session_key_week: this.getWeekNumber(new Date(activity.start_date)),
+            session_key_name: `Strava: ${activity.sport_type}`,
+            exercises: [
+              {
+                exerciseName: activity.name,
+                originalSession: `Strava - ${activity.sport_type}`,
+                sets: [
+                  {
+                    setNumber: 1,
+                    reps: activity.distance ? `${(activity.distance / 1000).toFixed(2)} km` : formatDuration(activity.moving_time),
+                    weight: '',
+                    completed: true,
+                  }
+                ],
+                notes: detailsNotes,
+              }
+            ],
+            comments: `🔸 Importé depuis Strava le ${importDateStr}\n📊 ${detailsNotes}`,
+          };
+
+          sessionLogsToInsert.push(sessionLogData);
+          stravaActivitiesToUpdate.push({
+            id: activity.id,
+            is_imported_to_history: true,
+            imported_at: importTimestamp,
+            session_log_id: logId,
+          });
+        } catch (err) {
+          console.error(`Error preparing activity ${activity.id}:`, err);
         }
+      }
 
-        // Construire les notes détaillées
-        const detailsNotes = [
-          activity.sport_type,
-          activity.distance ? formatDistance(activity.distance) : null,
-          activity.total_elevation_gain ? formatElevation(activity.total_elevation_gain) : null,
-          activity.average_heartrate ? `FC moy: ${Math.round(activity.average_heartrate)} bpm` : null,
-          activity.max_heartrate ? `FC max: ${activity.max_heartrate} bpm` : null,
-        ].filter(Boolean).join(' • ');
-
-        // Créer une entrée dans session_logs avec la structure exacte attendue
-        const sessionLogData = {
-          id: crypto.randomUUID(),
-          user_id: userId,
-          date: activity.start_date_local?.split('T')[0] || activity.start_date.split('T')[0],
-          duration_minutes: Math.round(activity.moving_time / 60),
-          session_key_year: new Date(activity.start_date).getFullYear(),
-          session_key_week: this.getWeekNumber(new Date(activity.start_date)),
-          session_key_name: `Strava: ${activity.sport_type}`,
-          exercises: [
-            {
-              exerciseName: activity.name,
-              originalSession: `Strava - ${activity.sport_type}`,
-              sets: [
-                {
-                  setNumber: 1,
-                  reps: activity.distance ? `${(activity.distance / 1000).toFixed(2)} km` : formatDuration(activity.moving_time),
-                  weight: '',
-                  completed: true,
-                }
-              ],
-              notes: detailsNotes,
-            }
-          ],
-          comments: `🔸 Importé depuis Strava le ${new Date().toLocaleDateString('fr-FR')}\n📊 ${detailsNotes}`,
-        };
-
-        const { data: newLog, error: insertError } = await supabase
+      if (sessionLogsToInsert.length > 0) {
+        // Step 2.3: Batch insert session logs
+        const { error: insertError } = await supabase
           .from('session_logs')
-          .insert(sessionLogData)
-          .select()
-          .single();
+          .insert(sessionLogsToInsert);
 
         if (insertError) {
-          console.error('Failed to create session log:', insertError);
-          console.error('Data attempted:', sessionLogData);
-          failed++;
-          continue;
+          console.error('Failed to batch insert session logs:', insertError);
+          return { success: 0, failed: activityIds.length };
         }
 
-        // Marquer l'activité Strava comme importée
+        // Step 2.4: Batch update strava activities
         const { error: updateError } = await supabase
           .from('strava_activities')
-          .update({
-            is_imported_to_history: true,
-            imported_at: new Date().toISOString(),
-            session_log_id: newLog.id,
-          })
-          .eq('id', activityId);
+          .upsert(stravaActivitiesToUpdate);
 
         if (updateError) {
-          console.error('Failed to update strava activity:', updateError);
+          console.error('Failed to batch update strava activities:', updateError);
         }
-
-        success++;
-      } catch (error) {
-        console.error(`Failed to import activity ${activityId}:`, error);
-        failed++;
       }
-    }
 
-    if (success > 0) {
-      try {
-        await syncUserBadgesProgress(userId);
-      } catch (badgeError) {
-        console.error('[StravaService] Erreur sync badges:', badgeError);
+      const successCount = sessionLogsToInsert.length;
+      const failedCount = activityIds.length - successCount;
+
+      // Step 2.5: Single badge sync
+      if (successCount > 0) {
+        try {
+          await syncUserBadgesProgress(userId);
+        } catch (badgeError) {
+          console.error('[StravaService] Erreur sync badges:', badgeError);
+        }
       }
-    }
 
-    return { success, failed };
+      return { success: successCount, failed: failedCount };
+    } catch (error) {
+      console.error('Failed to import activities to history:', error);
+      return { success: 0, failed: activityIds.length };
+    }
   }
 
   private getWeekNumber(date: Date): number {
