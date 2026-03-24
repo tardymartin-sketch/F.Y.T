@@ -65,6 +65,10 @@ import { Popover } from "../common/Popover";
 import { VideoModal } from "../common/VideoModal";
 import { SupersetInfoModal } from "../common/SupersetInfoModal";
 import { SupersetExerciseBlock } from "../common/SupersetExerciseBlock";
+import { ExerciseSelectionModal } from "../common/ExerciseSelectionModal";
+import { ExerciseSubstitutionReasonModal } from "../common/ExerciseSubstitutionReasonModal";
+import { fetchExercises } from "../../services/supabaseService"; // Needed for exercise list
+
 import { useDemoTour } from "../../contexts/DemoTourContext";
 
 // ===========================================
@@ -571,6 +575,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [globalExercises, setGlobalExercises] = useState<Exercise[]>([]);
+  useEffect(() => {
+    fetchExercises().then(setGlobalExercises).catch(console.error);
+  }, []);
 
   // Mode focus state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
@@ -616,6 +624,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     Record<number, boolean>
   >({});
   const [showForceFinishModal, setShowForceFinishModal] = useState(false);
+  const [showExerciseSelectionModal, setShowExerciseSelectionModal] = useState<{
+    index: number; // index of the exercise to replace
+  } | null>(null);
+  const [showSubstitutionReasonModal, setShowSubstitutionReasonModal] = useState<{
+    index: number;
+    newExerciseId: string;
+    newExerciseName: string;
+  } | null>(null);
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+
   const [showHistoryModal, setShowHistoryModal] = useState<{
     index: number;
     anchorEl: HTMLElement | null;
@@ -1264,6 +1282,81 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     },
     [logs, currentExerciseIndex, currentSetIndex],
   );
+
+
+  const handleReplaceExerciseSelect = async (newExerciseId: string) => {
+    if (!showExerciseSelectionModal) return;
+
+    // Find the new exercise details from the DB (simulated here by fetching from Supabase, or we can just fetch it directly)
+    // We should ideally pass the new exercise object from the modal, but the modal only returns the ID.
+    // Let's get the exercise name first to show in the reason modal. We need to fetch it.
+
+    // For now, close selection modal and open reason modal. We will fetch name inside reason modal or pass a default.
+    const idx = showExerciseSelectionModal.index;
+    setShowExerciseSelectionModal(null);
+    setShowSubstitutionReasonModal({
+      index: idx,
+      newExerciseId,
+      newExerciseName: "Nouvel Exercice" // Will be updated when fetched
+    });
+  };
+
+  const handleSubstitutionReasonSubmit = async (reason: string) => {
+    if (!showSubstitutionReasonModal) return;
+    const { index, newExerciseId } = showSubstitutionReasonModal;
+
+    // Fetch new exercise details
+    try {
+      const { supabase } = await import('../../services/supabaseClient');
+      const { data: newEx } = await supabase.from('exercises').select('name').eq('id', newExerciseId).single();
+      const newName = newEx?.name || "Exercice";
+
+      setLogs((prev) => {
+        const next = [...prev];
+        const oldLog = next[index];
+        next[index] = {
+          ...oldLog,
+          exerciseId: newExerciseId,
+          exerciseName: newName,
+          replacedExerciseId: oldLog.exerciseId,
+          substitutionReason: reason || undefined,
+        };
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+    }
+
+    setShowSubstitutionReasonModal(null);
+  };
+
+  const handleAddExerciseSelect = async (newExerciseId: string) => {
+    try {
+      const { supabase } = await import('../../services/supabaseClient');
+      const { data: newEx } = await supabase.from('exercises').select('name').eq('id', newExerciseId).single();
+
+      if (newEx) {
+        setLogs(prev => [
+          ...prev,
+          {
+            exerciseId: newExerciseId,
+            exerciseName: newEx.name,
+            sets: [
+              {
+                setNumber: 1,
+                reps: "8",
+                completed: false,
+                load: { type: "single", unit: "kg", weightKg: null }
+              }
+            ]
+          }
+        ]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setShowAddExerciseModal(false);
+  };
 
   const updateSetForExercise = useCallback(
     (
@@ -2524,6 +2617,17 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                 {exerciseData.repos}s
                               </span>
                             )}
+                              {/* Bouton Remplacer */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowExerciseSelectionModal({ index: exerciseIndex });
+                                }}
+                                className="px-1.5 py-0.5 border border-theme text-theme-muted hover:text-theme hover:border-theme rounded text-[10px] transition-colors whitespace-nowrap"
+                                title="Remplacer l'exercice"
+                              >
+                                Remplacer
+                              </button>
                             {/* Boutons Historique, Consignes, Vidéo */}
                             <button
                               onClick={(e) =>
@@ -4074,6 +4178,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                             {/* Boutons action très agrandis */}
                             <div className="flex items-center gap-2 mt-3">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowExerciseSelectionModal({ index: exerciseIndex });
+                                }}
+                                className="px-3 py-2 border border-theme text-theme hover:text-white hover:bg-theme-secondary rounded-xl text-base font-semibold transition-colors whitespace-nowrap"
+                              >
+                                Remplacer
+                              </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -6857,8 +6970,48 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       {showHistoryModal && renderHistoryModal()}
       {showConsignesModal && renderConsignesModal()}
       {showVideoModal && renderVideoModal()}
+      {showExerciseSelectionModal && (
+        <ExerciseSelectionModal
+          isOpen={true}
+          onClose={() => setShowExerciseSelectionModal(null)}
+          exercises={globalExercises}
+          onSelect={handleReplaceExerciseSelect}
+          title="Remplacer l'exercice"
+        />
+      )}
+      {showSubstitutionReasonModal && (
+        <ExerciseSubstitutionReasonModal
+          isOpen={true}
+          onClose={() => setShowSubstitutionReasonModal(null)}
+          onSubmit={handleSubstitutionReasonSubmit}
+          exerciseName={showSubstitutionReasonModal.newExerciseName}
+        />
+      )}
+      {showAddExerciseModal && (
+        <ExerciseSelectionModal
+          isOpen={true}
+          onClose={() => setShowAddExerciseModal(false)}
+          exercises={globalExercises}
+          onSelect={handleAddExerciseSelect}
+          title="Ajouter un exercice"
+        />
+      )}
+
       {showGhostRecordModal !== null && renderGhostRecordModal()}
 
+
+      {/* Bouton Ajouter un Exercice */}
+      {phase === "focus" && (
+        <div className="max-w-2xl mx-auto px-4 mt-8 mb-4">
+          <button
+            onClick={() => setShowAddExerciseModal(true)}
+            className="w-full flex items-center justify-center gap-2 py-4 bg-theme-secondary/50 hover:bg-theme-secondary border-2 border-dashed border-theme-muted hover:border-theme rounded-2xl text-theme-muted hover:text-theme transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="font-medium">Ajouter un exercice</span>
+          </button>
+        </div>
+      )}
       {/* Modal d'info superset */}
       {showSupersetInfoModal && (
         <SupersetInfoModal
