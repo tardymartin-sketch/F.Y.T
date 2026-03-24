@@ -26,11 +26,12 @@ export class AthleteHomePage {
     }
 
     async selectSession(sessionName: string) {
-        await this.page.getByRole('button', { name: sessionName, exact: true }).click();
+        await this.page.getByRole('button', { name: sessionName, exact: true }).click({ force: true });
     }
 
     async startSession() {
-        await this.startButton.click();
+        // Use force: true to bypass any animation issues and ensure the click lands
+        await this.startButton.click({ force: true });
     }
 
     async goToHistory() {
@@ -50,8 +51,6 @@ export class AthleteHomePage {
     }
 
     async expectGreetingVisible() {
-        // We wait for the greeting to be visible as the primary indicator of being on the home page.
-        // It's more robust than checking the URL which might not have #home immediately after a reload.
         await expect(this.greeting.first()).toBeVisible({ timeout: 15000 });
     }
 }

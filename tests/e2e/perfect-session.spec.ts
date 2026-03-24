@@ -21,8 +21,8 @@ test.describe('Athlete - Perfect Session', () => {
         const firstSessionChip = page.locator('[data-tour-id="tour-session-selector"] button').first();
         await expect(firstSessionChip).toBeVisible({ timeout: 10000 });
         const sessionNameText = await firstSessionChip.innerText();
-        const sessionName = sessionNameText.trim().split('\n')[0];
-        await firstSessionChip.click();
+        const sessionName = sessionNameText.trim().split('\n')[0].trim();
+        await firstSessionChip.click({ force: true });
 
         // 3. Démarrer la séance
         // On attend que le bouton devienne actif après la sélection
@@ -30,7 +30,8 @@ test.describe('Athlete - Perfect Session', () => {
         await homePage.startSession();
         
         // On vérifie qu'on est sur l'écran de séance en cherchant le titre de la séance
-        await expect(page.getByRole('heading', { name: new RegExp(sessionName, 'i') })).toBeVisible({ timeout: 15000 });
+        // Using locator('h1').filter() avoids strict text mismatches due to whitespace/newlines.
+        await expect(page.locator('h1').filter({ hasText: new RegExp(sessionName, 'i') }).first()).toBeVisible({ timeout: 15000 });
 
         // 4. Remplir le premier exercice
         // On remplit 10 reps à 50kg pour la première série

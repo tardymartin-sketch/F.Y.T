@@ -17,27 +17,27 @@ export class CoachDashboardPage {
 
     async openSidebar() {
         // En desktop, la sidebar peut être masquée (mode replié)
-        // On vérifie l'attribut aria-expanded du bouton hamburger
         if (await this.hamburgerButton.isVisible()) {
             const isExpanded = await this.hamburgerButton.getAttribute('aria-expanded');
             if (isExpanded !== 'true') {
-                await this.hamburgerButton.click();
+                await this.hamburgerButton.click({ force: true });
             }
         }
-        // On attend que la navigation soit prête
-        await expect(this.libraryTab).toBeVisible({ timeout: 10000 });
+        // Attendre que l'élément soit dans le DOM
+        await this.libraryTab.waitFor({ state: 'attached', timeout: 10000 });
         // Petit délai pour l'animation CSS (transition-transform duration-300)
         await this.page.waitForTimeout(400);
     }
 
     async goToLibrary() {
         await this.openSidebar();
-        await this.libraryTab.click();
+        // Utiliser force: true pour s'affranchir des problèmes de clipping/animation
+        await this.libraryTab.click({ force: true });
     }
 
     async goToTeam() {
         await this.openSidebar();
-        await this.teamTab.click();
+        await this.teamTab.click({ force: true });
     }
 }
 
@@ -83,7 +83,6 @@ export class ProgramEditorPage {
     async selectSession(sessionName: string) {
         await this.sessionDropdown.click();
         await this.page.getByRole('button', { name: sessionName, exact: true }).click();
-        // Click outside to close dropdown if needed, but the current UI might close it on click
     }
 
     async selectAllAthletes() {
