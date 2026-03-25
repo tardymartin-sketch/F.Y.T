@@ -297,16 +297,10 @@ export const PersonalRecordsList: React.FC<Props> = ({ userId, onViewSession, la
       { id: 'recent', icon: <History className="w-7 h-7" strokeWidth={2.5} />, title: 'Récents' },
     ];
 
-    // TODO: Remettre ce filtre après les tests
-    // allCategoryFilters.forEach(filter => {
-    //   if (filter.id && userCategoryCodes.has(filter.id)) {
-    //     visibleFilters.push(filter);
-    //   }
-    // });
-
-    // TEMPORAIRE: Afficher toutes les catégories pour les tests
     allCategoryFilters.forEach(filter => {
-      visibleFilters.push(filter);
+      if (filter.id && userCategoryCodes.has(filter.id)) {
+        visibleFilters.push(filter);
+      }
     });
 
     return visibleFilters;
