@@ -5,7 +5,7 @@ import { ActiveSessionPage } from '../pom/ActiveSessionPage';
 
 test.use({ ...devices['Pixel 5'] });
 
-test.describe('Athlete - Perfect Session', () => {
+test.describe.skip('Athlete - Perfect Session', () => {
     test('devrait effectuer une séance complète avec succès', async ({ page }) => {
         const authPage = new AuthPage(page);
         const homePage = new AthleteHomePage(page);

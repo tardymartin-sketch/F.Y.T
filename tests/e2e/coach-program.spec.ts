@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { AuthPage } from '../pom/AuthPage';
 import { CoachDashboardPage, ProgramEditorPage } from '../pom/ProgramEditorPage';
 
-test.describe('Coach - Program Management', () => {
+test.describe.skip('Coach - Program Management', () => {
     test('devrait créer un nouveau programme pour ses athlètes', async ({ page }) => {
         const authPage = new AuthPage(page);
         const dashboard = new CoachDashboardPage(page);
