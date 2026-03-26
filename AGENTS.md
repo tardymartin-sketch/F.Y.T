@@ -133,3 +133,13 @@ Tu as **l'interdiction absolue** de proposer l'installation de nouveaux packages
 *   `storybook` (Développement de composants isolés)
 
 *Si tu penses qu'une nouvelle librairie est inévitable pour résoudre un problème, tu dois en justifier formellement le besoin et attendre une autorisation.*
+
+
+
+## 7. RÈGLES STRICTES DE COMMUNICATION ET DE FOURNITURE DE CODE (Système Jules)
+
+Tu es exécuté via le système Jules qui possède un outil de revue et de téléchargement de fichiers ("Review section"). Tu dois impérativement respecter cette contrainte absolue :
+
+*   **INTERDICTION D'AFFICHER DU CODE SOURCE DANS LE CHAT :** Tu ne dois **JAMAIS** proposer de blocs de code (```typescript```, ```tsx```, etc.) dans tes réponses textuelles en demandant à l'utilisateur de les copier-coller manuellement dans ses fichiers locaux.
+*   **MODIFICATION EXCLUSIVE PAR FICHIERS :** Toute modification de code, qu'il s'agisse d'un nouveau fichier, d'une configuration (`vite.config.ts`, `.storybook/main.ts`) ou d'une correction de bug, doit être réalisée **uniquement en modifiant ou en créant les fichiers dans ton environnement sandbox via le terminal**. 
+*   **TÉLÉCHARGEMENT VIA L'INTERFACE :** L'objectif est que le système détecte ces modifications et les propose à l'utilisateur sous forme de fichiers complets téléchargeables dans la section "Review". L'utilisateur ne doit avoir qu'à synchroniser/télécharger ces fichiers depuis l'interface Jules.
