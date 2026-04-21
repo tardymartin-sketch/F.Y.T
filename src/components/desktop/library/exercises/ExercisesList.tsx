@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ChevronRight, Globe, Lock } from 'lucide-react';
-import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory, parseExerciseName } from '../../../../../types';
+import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory } from '../../../../../types';
 import { ExerciseDetail } from './ExerciseDetail';
 import {
   createExerciseForCoach,
@@ -21,12 +21,6 @@ interface ExercisesListProps {
   onCreateMovementPattern?: (name:string) => Promise<MovementPattern>;
   selectedItemId?: string | null;
   onItemSelectionHandled?: () => void;
-}
-
-// Normalize exercise name for grouping - uses parseExerciseName to get base name
-function normalizeExerciseName(name: string): string {
-  const { baseName } = parseExerciseName(name);
-  return baseName.toLowerCase().trim();
 }
 
 // Generate unique copy name for a duplicated exercise — canonical naming, no ::
@@ -85,12 +79,12 @@ export function ExercisesList({
   // When creating new, duplicating, or editing, deselect any selected exercise
   const isShowingDetail = selectedExerciseName && !isCreatingNew && !isDuplicating && !isEditing;
 
-  // Group exercises by base name (using :: separator for variants)
+  // Group exercises by name
   const exerciseGroups = useMemo(() => {
     const groups = new Map<string, ExerciseGroup>();
 
     exercises.forEach(exercise => {
-      const { baseName } = parseExerciseName(exercise.name);
+      const baseName = exercise.name;
       const normalizedName = baseName.toLowerCase().trim();
       const existing = groups.get(normalizedName);
 
@@ -125,8 +119,7 @@ export function ExercisesList({
     if (selectedItemId && onItemSelectionHandled) {
       const foundExercise = exercises.find(ex => ex.id === selectedItemId);
       if (foundExercise) {
-        const { baseName } = parseExerciseName(foundExercise.name);
-        handleSelectExercise(baseName);
+        handleSelectExercise(foundExercise.name);
       }
       onItemSelectionHandled();
     }
@@ -142,17 +135,14 @@ export function ExercisesList({
   // Get selected group's variants (using base name for matching)
   const selectedVariants = useMemo(() => {
     if (!selectedExerciseName) return [];
-    const { baseName } = parseExerciseName(selectedExerciseName);
-    const normalizedSelected = baseName.toLowerCase().trim();
+    const normalizedSelected = selectedExerciseName.toLowerCase().trim();
     const group = exerciseGroups.find(g => g.name === normalizedSelected);
     return group?.variants || [];
   }, [selectedExerciseName, exerciseGroups]);
 
   // Get display name for selected exercise (base name)
   const selectedDisplayName = useMemo(() => {
-    if (!selectedExerciseName) return '';
-    const { baseName } = parseExerciseName(selectedExerciseName);
-    return baseName;
+    return selectedExerciseName || '';
   }, [selectedExerciseName]);
 
   // Get all existing exercise names for duplicate checking

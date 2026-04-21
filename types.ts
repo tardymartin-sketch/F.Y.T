@@ -1485,61 +1485,6 @@ export function areExerciseVariants(a: Exercise, b: Exercise): boolean {
 }
 
 // ===========================================
-// EXERCISE VARIANT NAMING
-// ===========================================
-
-// Separator used to distinguish base name from variant name
-export const VARIANT_NAME_SEPARATOR = ' :: ';
-export const DEFAULT_VARIANT_NAME = 'Ma variante';
-
-/**
- * Parse an exercise full name into base name and variant name
- * Example: "Squat :: Force" -> { baseName: "Squat", variantName: "Force" }
- * Example: "Squat" -> { baseName: "Squat", variantName: undefined }
- */
-export function parseExerciseName(fullName: string): { baseName: string; variantName?: string } {
-  const separatorIndex = fullName.indexOf(VARIANT_NAME_SEPARATOR);
-  if (separatorIndex === -1) {
-    return { baseName: fullName.trim() };
-  }
-  return {
-    baseName: fullName.substring(0, separatorIndex).trim(),
-    variantName: fullName.substring(separatorIndex + VARIANT_NAME_SEPARATOR.length).trim() || undefined
-  };
-}
-
-/**
- * Build a full exercise name from base name and variant name
- * Example: buildExerciseName("Squat", "Force") -> "Squat :: Force"
- * Example: buildExerciseName("Squat") -> "Squat"
- */
-export function buildExerciseName(baseName: string, variantName?: string): string {
-  if (!variantName || variantName.trim() === '') {
-    return baseName.trim();
-  }
-  return `${baseName.trim()}${VARIANT_NAME_SEPARATOR}${variantName.trim()}`;
-}
-
-/**
- * Get display name for an exercise variant tab
- * If has variant name, show just the variant name
- * If no variant name, show "Ma variante" for personal or date for common
- */
-export function getExerciseVariantDisplayName(exercise: Exercise, isPersonal: boolean): string {
-  const { variantName } = parseExerciseName(exercise.name);
-  if (variantName) {
-    return variantName;
-  }
-  // Default display based on ownership
-  if (isPersonal) {
-    return DEFAULT_VARIANT_NAME;
-  }
-  // For common exercises, use creation date
-  if (exercise.createdAt) {
-    return new Date(exercise.createdAt).toLocaleDateString('fr-FR');
-  }
-  return 'Originale';
-}
 
 // Helper: Regroupe les lignes training_plans par (coach_id, seance_type, dates)
 export function groupTrainingPlansToSessions(rows: WorkoutRow[]): SessionTemplate[] {

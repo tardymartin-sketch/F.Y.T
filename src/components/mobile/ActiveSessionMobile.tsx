@@ -186,10 +186,9 @@ type SessionPhase = "recap" | "focus";
 // UTILITY FUNCTIONS
 // ===========================================
 
-/** Extrait le nom principal d'un exercice (sans la variante ":: xxx") */
+/** Retourne le nom de l'exercice */
 function getExerciseDisplayName(fullName: string): string {
-  const idx = fullName.indexOf(" :: ");
-  return idx >= 0 ? fullName.substring(0, idx) : fullName;
+  return fullName;
 }
 
 function formatTime(seconds: number): string {

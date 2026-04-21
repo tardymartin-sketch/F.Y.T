@@ -25,8 +25,6 @@ import {
   SessionTemplate,
   SessionExercise,
   Exercise,
-  parseExerciseName,
-  getExerciseVariantDisplayName,
   ExecutionMode,
   EXECUTION_MODES,
 } from "../../../../../types";
@@ -124,13 +122,13 @@ function findMatchingExercise(
   }
 
   // Otherwise, look for any exercise with matching criteria
-  const { baseName } = parseExerciseName(sessionExercise.exerciseName);
+  const baseName = sessionExercise.exerciseName;
 
   for (const exercise of allExercises) {
     // Only match exercises owned by coach or public ones
     if (exercise.coachId && exercise.coachId !== coachId) continue;
 
-    const { baseName: exBaseName } = parseExerciseName(exercise.name);
+    const exBaseName = exercise.name;
     if (normalizeString(exBaseName) !== normalizeString(baseName)) continue;
 
     // Only video differentiates exercise variants
@@ -173,7 +171,7 @@ function findClosestExercise(
   allExercises: Exercise[],
   coachId: string,
 ): Exercise | undefined {
-  const { baseName } = parseExerciseName(sessionExercise.exerciseName);
+  const baseName = sessionExercise.exerciseName;
 
   // First try to find the original exercise by ID
   const original = allExercises.find(
@@ -181,10 +179,10 @@ function findClosestExercise(
   );
   if (original) return original;
 
-  // Otherwise find first exercise with same base name
+  // Otherwise find first exercise with same name
   return allExercises.find((ex) => {
     if (ex.coachId && ex.coachId !== coachId) return false;
-    const { baseName: exBaseName } = parseExerciseName(ex.name);
+    const exBaseName = ex.name;
     return normalizeString(exBaseName) === normalizeString(baseName);
   });
 }
@@ -584,12 +582,10 @@ function SessionDetailPanel({
     const currentExercise = exercises.find((ex) => ex.id === exerciseId);
     if (!currentExercise) return [];
 
-    const { baseName } = parseExerciseName(currentExercise.name);
-    const normalizedBase = normalizeString(baseName);
+    const normalizedBase = normalizeString(currentExercise.name);
 
     return exercises.filter((ex) => {
-      const { baseName: exBaseName } = parseExerciseName(ex.name);
-      return normalizeString(exBaseName) === normalizedBase;
+      return normalizeString(ex.name) === normalizedBase;
     });
   };
 
@@ -1411,7 +1407,7 @@ function SessionDetailPanel({
                   ex.videoUrl || getExerciseVideoUrl(ex.exerciseId);
                 const variants = getExerciseVariants(ex.exerciseId);
                 const hasMultipleVariants = variants.length > 1;
-                const { baseName } = parseExerciseName(ex.exerciseName);
+                const baseName = ex.exerciseName;
                 const isInSuperset = !!(
                   ex.executionGroupId && ex.executionMode === "superset"
                 );
@@ -1508,9 +1504,7 @@ function SessionDetailPanel({
                             groupEx.exerciseId,
                           );
                           const groupHasVariants = groupVariants.length > 1;
-                          const { baseName: groupBaseName } = parseExerciseName(
-                            groupEx.exerciseName,
-                          );
+                          const groupBaseName = groupEx.exerciseName;
                           const letter = String.fromCharCode(65 + posIndex); // A, B, C...
 
                           return (
@@ -1564,11 +1558,7 @@ function SessionDetailPanel({
                                             groupIdx && (
                                             <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
                                               {groupVariants.map((variant) => {
-                                                const variantDisplay =
-                                                  getExerciseVariantDisplayName(
-                                                    variant,
-                                                    variant.coachId === coachId,
-                                                  );
+                                                const variantDisplay = variant.name;
                                                 const isSelected =
                                                   variant.id ===
                                                   groupEx.exerciseId;
@@ -1784,11 +1774,7 @@ function SessionDetailPanel({
                                 {variantDropdownIndex === idx && (
                                   <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
                                     {variants.map((variant) => {
-                                      const variantDisplay =
-                                        getExerciseVariantDisplayName(
-                                          variant,
-                                          variant.coachId === coachId,
-                                        );
+                                      const variantDisplay = variant.name;
                                       const isSelected =
                                         variant.id === ex.exerciseId;
                                       return (

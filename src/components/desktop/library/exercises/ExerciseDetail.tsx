@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Copy, Trash2, Play, Pencil, Check, Search, Plus, Save, Globe, Lock, Edit3 } from 'lucide-react';
-import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory, parseExerciseName, buildExerciseName, getExerciseVariantDisplayName, DEFAULT_VARIANT_NAME } from '../../../../../types';
+import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory } from '../../../../../types';
 
 interface ExerciseDetailProps {
   exerciseName: string;
@@ -505,8 +505,6 @@ export function ExerciseDetail({
   const [variantToDuplicate, setVariantToDuplicate] = useState<Exercise | null>(null);
 
   // Variant name editing
-  const [editingVariantNameIndex, setEditingVariantNameIndex] = useState<number | null>(null);
-  const [variantNameInput, setVariantNameInput] = useState('');
 
   const currentExercise = sortedVariants[activeTabIndex];
   const isCommon = !currentExercise?.coachId;
@@ -736,35 +734,6 @@ export function ExerciseDetail({
     setHasChanges(true);
   };
 
-  // Handle variant name editing
-  const handleStartEditVariantName = (index: number) => {
-    const variant = sortedVariants[index];
-    const { variantName } = parseExerciseName(variant.name);
-    setVariantNameInput(variantName || DEFAULT_VARIANT_NAME);
-    setEditingVariantNameIndex(index);
-  };
-
-  const handleSaveVariantName = async () => {
-    if (editingVariantNameIndex === null) return;
-    const variant = sortedVariants[editingVariantNameIndex];
-    if (!variant || variant.coachId !== coachId) return; // Can only edit own variants
-
-    const { baseName } = parseExerciseName(variant.name);
-    const newFullName = buildExerciseName(baseName, variantNameInput.trim() || undefined);
-
-    if (newFullName !== variant.name) {
-      const updatedExercise = { ...variant, name: newFullName };
-      await onSave(updatedExercise, false);
-    }
-
-    setEditingVariantNameIndex(null);
-    setVariantNameInput('');
-  };
-
-  const handleCancelEditVariantName = () => {
-    setEditingVariantNameIndex(null);
-    setVariantNameInput('');
-  };
 
   const handleDeleteClick = (exercise: Exercise) => {
     setDeletingExercise(exercise);
@@ -853,9 +822,6 @@ export function ExerciseDetail({
           >
             {sortedVariants.map((variant, index) => {
               const variantIsCommon = !variant.coachId;
-              const variantIsMine = variant.coachId === coachId;
-              const displayName = getExerciseVariantDisplayName(variant, variantIsMine);
-              const isEditingThisVariant = editingVariantNameIndex === index;
 
               return (
                 <div
@@ -865,48 +831,16 @@ export function ExerciseDetail({
                       ? 'bg-theme-secondary text-theme'
                       : 'text-theme-muted hover:bg-theme-tertiary hover:text-theme'
                   }`}
-                  onClick={() => !isEditingThisVariant && setActiveTabIndex(index)}
+                  onClick={() => setActiveTabIndex(index)}
                 >
                   {variantIsCommon ? (
                     <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
                   ) : (
                     <Lock className="w-3 h-3 text-[var(--color-accent)] flex-shrink-0" />
                   )}
-
-                  {/* Variant name - editable for own variants */}
-                  {isEditingThisVariant ? (
-                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        value={variantNameInput}
-                        onChange={(e) => setVariantNameInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveVariantName();
-                          if (e.key === 'Escape') handleCancelEditVariantName();
-                        }}
-                        className="w-24 px-1 py-0.5 bg-theme border border-theme rounded text-sm text-theme focus:outline-none focus:border-[var(--color-primary)]"
-                        autoFocus
-                      />
-                      <button
-                        onClick={handleSaveVariantName}
-                        className="p-0.5 text-[var(--color-primary)] hover:text-[var(--color-primary-light)] rounded"
-                        title="Valider"
-                      >
-                        <Check className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={handleCancelEditVariantName}
-                        className="p-0.5 text-theme-muted hover:text-theme rounded"
-                        title="Annuler"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-sm truncate max-w-32">
-                      {displayName}
-                    </span>
-                  )}
+                  <span className="text-sm truncate max-w-32">
+                    {variant.name}
+                  </span>
                 </div>
               );
             })}

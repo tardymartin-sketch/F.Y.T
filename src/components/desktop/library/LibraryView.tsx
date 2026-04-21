@@ -174,10 +174,9 @@ export function LibraryView({ coachId }: LibraryViewProps) {
     const normalized = normalizeString(term);
 
     // --- Exercices ---
-    // Grouper par nom de base (avant ' :: ') pour dédupliquer les variantes
     const baseNameMap = new Map<string, Exercise[]>();
     exercises.forEach(ex => {
-      const base = ex.name.split(' :: ')[0].trim();
+      const base = ex.name;
       if (!baseNameMap.has(base)) baseNameMap.set(base, []);
       baseNameMap.get(base)!.push(ex);
     });
