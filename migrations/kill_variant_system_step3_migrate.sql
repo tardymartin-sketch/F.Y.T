@@ -37,15 +37,51 @@ WHERE tp.exercise_id = variant.id
 
 -- -----------------------------------------------
 -- Étape 5 : Consolider exercise_usage (historique de poids)
+-- NOTE : pas de TEMP TABLE — le SQL editor Supabase exécute chaque
+-- instruction dans un contexte séparé, donc une TEMP TABLE créée dans
+-- une instruction n'est plus visible dans la suivante.
+-- Approche : supprimer d'abord les doublons, puis renommer.
 -- -----------------------------------------------
 
--- 5a. Noms canoniques affectés
-CREATE TEMP TABLE affected_canonical_names AS
-SELECT DISTINCT split_part(exercise_name, ' :: ', 1) AS canonical_name
-FROM exercise_usage
-WHERE exercise_name LIKE '% :: %';
+-- 5a. Supprimer toutes les lignes en trop pour les noms affectés.
+--     Pour chaque (user_id, nom_canonique), on garde la ligne la plus récente
+--     parmi TOUTES les variantes ET l'éventuelle ligne canonique existante.
+--     Les exercices non concernés (sans variante ::) ne sont pas touchés.
+DELETE FROM exercise_usage
+WHERE id NOT IN (
+  -- La ligne à conserver : la plus récente par (user_id, nom_canonique)
+  SELECT DISTINCT ON (
+    user_id,
+    CASE WHEN exercise_name LIKE '% :: %'
+         THEN split_part(exercise_name, ' :: ', 1)
+         ELSE exercise_name END
+  ) id
+  FROM exercise_usage
+  WHERE exercise_name LIKE '% :: %'
+     OR exercise_name IN (
+       SELECT DISTINCT split_part(exercise_name, ' :: ', 1)
+       FROM exercise_usage eu2
+       WHERE eu2.exercise_name LIKE '% :: %'
+     )
+  ORDER BY
+    user_id,
+    CASE WHEN exercise_name LIKE '% :: %'
+         THEN split_part(exercise_name, ' :: ', 1)
+         ELSE exercise_name END,
+    used_at DESC,
+    id DESC
+)
+AND (
+  -- Périmètre : uniquement les lignes variantes ou leurs canoniques associées
+  exercise_name LIKE '% :: %'
+  OR exercise_name IN (
+    SELECT DISTINCT split_part(exercise_name, ' :: ', 1)
+    FROM exercise_usage eu2
+    WHERE eu2.exercise_name LIKE '% :: %'
+  )
+);
 
--- 5b. Renommer les lignes variantes → noms canoniques
+-- 5b. Renommer les lignes variantes restantes → noms canoniques
 UPDATE exercise_usage
 SET
   exercise_name = split_part(exercise_name, ' :: ', 1),
@@ -56,23 +92,6 @@ SET
     LIMIT 1
   )
 WHERE exercise_name LIKE '% :: %';
-
--- 5c. Déduplication : garder uniquement la ligne la plus récente
---     par (user_id, exercise_name) pour les noms canoniques affectés
-DELETE FROM exercise_usage eu
-WHERE eu.exercise_name IN (SELECT canonical_name FROM affected_canonical_names)
-  AND EXISTS (
-    SELECT 1 FROM exercise_usage newer
-    WHERE newer.user_id       = eu.user_id
-      AND newer.exercise_name = eu.exercise_name
-      AND newer.id            != eu.id
-      AND (
-        newer.used_at > eu.used_at
-        OR (newer.used_at = eu.used_at AND newer.id > eu.id)
-      )
-  );
-
-DROP TABLE affected_canonical_names;
 
 -- -----------------------------------------------
 -- Étape 5.5 : Nettoyer les noms :: dans session_logs JSONB
