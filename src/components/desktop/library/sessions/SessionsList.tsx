@@ -27,7 +27,6 @@ import {
   Exercise,
   parseExerciseName,
   getExerciseVariantDisplayName,
-  buildExerciseName,
   ExecutionMode,
   EXECUTION_MODES,
 } from "../../../../../types";
@@ -1079,20 +1078,19 @@ function SessionDetailPanel({
     setVariantNames(newNames);
   };
 
-  // Handle create variant decision
+  // Handle create exercise decision (formerly "create variant")
   const handleCreateVariant = () => {
     if (currentUnmatchedIndex === null) return;
 
     const unmatched = unmatchedExercises[currentUnmatchedIndex];
-    const variantName =
-      variantNames.get(currentUnmatchedIndex) || "Ma variante";
-    const { baseName } = parseExerciseName(
-      unmatched.sessionExercise.exerciseName,
-    );
+    // Use the coach-typed name directly as the canonical exercise name.
+    // Fall back to the session exercise name if the field was left empty.
+    const exerciseName = (variantNames.get(currentUnmatchedIndex) || "").trim()
+      || unmatched.sessionExercise.exerciseName;
 
     // Store the exercise to create
     const newExercise: Omit<Exercise, "id" | "createdAt" | "updatedAt"> = {
-      name: buildExerciseName(baseName, variantName),
+      name: exerciseName,
       coachId,
       tempo: unmatched.sessionExercise.tempo,
       videoUrl: unmatched.sessionExercise.videoUrl,
@@ -2139,7 +2137,7 @@ function SessionDetailPanel({
         />
       )}
 
-      {/* NEW: Unmatched Exercise Popup - Create Variant */}
+      {/* NEW: Unmatched Exercise Popup - Create Exercise */}
       {currentUnmatchedIndex !== null &&
         unmatchedExercises[currentUnmatchedIndex] && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -2155,19 +2153,17 @@ function SessionDetailPanel({
 
               {(() => {
                 const unmatched = unmatchedExercises[currentUnmatchedIndex];
-                const { baseName } = parseExerciseName(
-                  unmatched.sessionExercise.exerciseName,
-                );
+                const exerciseDisplayName = unmatched.sessionExercise.exerciseName;
 
                 return (
                   <>
                     <p className="text-[var(--color-primary)] font-medium mb-2">
-                      {baseName}
+                      {exerciseDisplayName}
                     </p>
 
                     <p className="text-theme-secondary text-sm mb-3">
-                      Cet exercice a des caractéristiques différentes de celles
-                      enregistrées. Voulez-vous créer une nouvelle variante ?
+                      Cet exercice n'existe pas encore dans votre bibliothèque.
+                      Choisissez un nom pour le créer.
                     </p>
 
                     {/* Show differences */}
@@ -2198,10 +2194,10 @@ function SessionDetailPanel({
                       </div>
                     )}
 
-                    {/* Variant name input */}
+                    {/* Exercise name input */}
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-theme-secondary mb-1">
-                        Nom de la variante
+                        Nom de l'exercice
                       </label>
                       <input
                         type="text"
@@ -2209,14 +2205,16 @@ function SessionDetailPanel({
                         onChange={(e) =>
                           handleVariantNameChange(e.target.value)
                         }
-                        placeholder="Ma variante"
+                        placeholder={unmatched.sessionExercise.exerciseName}
                         className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
                         autoFocus
                       />
                       <p className="text-theme-muted text-xs mt-1">
-                        Sera enregistré comme : {baseName} ::{" "}
-                        {variantNames.get(currentUnmatchedIndex) ||
-                          "Ma variante"}
+                        Sera enregistré comme :{" "}
+                        <span className="text-theme">
+                          {(variantNames.get(currentUnmatchedIndex) || "").trim()
+                            || unmatched.sessionExercise.exerciseName}
+                        </span>
                       </p>
                     </div>
                   </>
@@ -2234,7 +2232,7 @@ function SessionDetailPanel({
                   onClick={handleCreateVariant}
                   className="px-3 py-1.5 rounded text-sm font-medium bg-[var(--color-primary)] hover:bg-[var(--color-primary-light)] text-white"
                 >
-                  Créer la variante
+                  Créer l'exercice
                 </button>
               </div>
             </div>

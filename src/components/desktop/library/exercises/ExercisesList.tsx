@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ChevronRight, Globe, Lock } from 'lucide-react';
-import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory, parseExerciseName, buildExerciseName } from '../../../../../types';
+import { Exercise, MuscleGroup, MovementPattern, ExerciseCategory, parseExerciseName } from '../../../../../types';
 import { ExerciseDetail } from './ExerciseDetail';
 import {
   createExerciseForCoach,
@@ -29,33 +29,25 @@ function normalizeExerciseName(name: string): string {
   return baseName.toLowerCase().trim();
 }
 
-// Generate unique copy name based on existing exercises (using :: separator)
+// Generate unique copy name for a duplicated exercise — canonical naming, no ::
+// "Squat" → "Squat 2", "Squat 2" → "Squat 3", etc.
 function generateUniqueCopyName(baseName: string, existingNames: string[]): string {
-  // Get clean base name (without variant suffix)
-  const { baseName: cleanBase } = parseExerciseName(baseName);
-  const normalizedBase = cleanBase.toLowerCase().trim();
+  // Strip any legacy :: suffix to get the clean canonical base
+  const cleanBase = baseName.includes(' :: ')
+    ? baseName.split(' :: ')[0].trim()
+    : baseName.trim();
 
-  // Pattern for variant names like "copie", "copie 2", etc.
-  const copyVariantPattern = /^copie(?:\s+(\d+))?$/i;
-
-  // Find the highest copy number for this base name
-  let maxCopy = 0;
+  // Find the highest existing numeric suffix: "Squat 2", "Squat 3", etc.
+  const numSuffixPattern = new RegExp(`^${cleanBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`, 'i');
+  let maxNum = 1;
   existingNames.forEach(name => {
-    const { baseName: exBase, variantName } = parseExerciseName(name);
-    if (exBase.toLowerCase().trim() === normalizedBase && variantName) {
-      const match = variantName.match(copyVariantPattern);
-      if (match) {
-        const num = match[1] ? parseInt(match[1]) : 1;
-        maxCopy = Math.max(maxCopy, num);
-      }
+    const match = name.trim().match(numSuffixPattern);
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1]));
     }
   });
 
-  // Generate the next name using :: separator
-  if (maxCopy === 0) {
-    return buildExerciseName(cleanBase, 'copie');
-  }
-  return buildExerciseName(cleanBase, `copie ${maxCopy + 1}`);
+  return `${cleanBase} ${maxNum + 1}`;
 }
 
 // Group exercises by name
