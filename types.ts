@@ -1461,29 +1461,6 @@ export interface Program {
   sourceTemplateId?: string;     // Référence au template source (session_templates.id)
 }
 
-// Variante d'exercice (exercices avec même nom mais données primaires différentes)
-export interface ExerciseVariant {
-  exercise: Exercise;
-  isDifferentVideo: boolean;
-  isDifferentMuscleGroup: boolean;
-  isDifferentMovementPattern: boolean;
-  isDifferentLimbType: boolean;
-}
-
-// Helper: Vérifie si deux exercices sont des variantes (données primaires différentes)
-export function areExerciseVariants(a: Exercise, b: Exercise): boolean {
-  if (a.name !== b.name) return false;  // Pas même nom = pas variante
-  if (a.id === b.id) return false;       // Même exercice = pas variante
-
-  // Au moins une donnée primaire doit être différente
-  return (
-    a.videoUrl !== b.videoUrl ||
-    a.primaryMuscleGroupId !== b.primaryMuscleGroupId ||
-    a.movementPatternId !== b.movementPatternId ||
-    a.limbType !== b.limbType
-  );
-}
-
 // ===========================================
 
 // Helper: Regroupe les lignes training_plans par (coach_id, seance_type, dates)

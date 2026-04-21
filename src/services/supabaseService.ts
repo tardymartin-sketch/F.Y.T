@@ -52,7 +52,6 @@ import {
   SessionTemplate,
   SessionExercise,
   Program,
-  ExerciseVariant,
   groupTrainingPlansToSessions,
   ExecutionMode,
   // Nouvelles fonctions de mapping pour session_templates
@@ -3177,65 +3176,6 @@ export async function fetchExerciseByName(name: string, coachId: string): Promis
   return data ? mapExerciseRowToExercise(data) : null;
 }
 
-/**
- * Récupère les variantes d'un exercice (même nom, données primaires différentes)
- */
-export async function fetchExerciseVariants(
-  exerciseId: string,
-  coachId: string
-): Promise<ExerciseVariant[]> {
-  // D'abord récupérer l'exercice de référence
-  const { data: refData, error: refError } = await supabase
-    .from('exercises')
-    .select('*')
-    .eq('id', exerciseId)
-    .single();
-
-  if (refError || !refData) {
-    console.error('Error fetching reference exercise:', refError);
-    return [];
-  }
-
-  const reference = mapExerciseRowToExercise(refData);
-
-  // Ensuite chercher les exercices avec le même nom
-  const { data, error } = await supabase
-    .from('exercises')
-    .select('*')
-    .eq('name', reference.name)
-    .neq('id', exerciseId)
-    .or(`coach_id.is.null,coach_id.eq.${coachId}`)
-    .is('deleted_at', null);
-
-  if (error) {
-    console.error('Error fetching exercise variants:', error);
-    return [];
-  }
-
-  // Filtrer pour ne garder que les vraies variantes (données primaires différentes)
-  const variants: ExerciseVariant[] = [];
-  for (const row of data || []) {
-    const exercise = mapExerciseRowToExercise(row);
-
-    const isDifferentVideo = exercise.videoUrl !== reference.videoUrl;
-    const isDifferentMuscleGroup = exercise.primaryMuscleGroupId !== reference.primaryMuscleGroupId;
-    const isDifferentMovementPattern = exercise.movementPatternId !== reference.movementPatternId;
-    const isDifferentLimbType = exercise.limbType !== reference.limbType;
-
-    // Au moins une donnée primaire doit être différente pour être une variante
-    if (isDifferentVideo || isDifferentMuscleGroup || isDifferentMovementPattern || isDifferentLimbType) {
-      variants.push({
-        exercise,
-        isDifferentVideo,
-        isDifferentMuscleGroup,
-        isDifferentMovementPattern,
-        isDifferentLimbType,
-      });
-    }
-  }
-
-  return variants;
-}
 
 /**
  * Crée un exercice pour un coach (avec son coach_id)
