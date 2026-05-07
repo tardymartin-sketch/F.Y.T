@@ -506,7 +506,6 @@ function generateDemoSessionHistory(now: Date): SessionLog[] {
       history.push({
         id: crypto.randomUUID(),
         date: sessionDate.toISOString().split('T')[0],
-        durationMinutes: 45 + Math.floor(Math.random() * 30),
         sessionKey: {
           annee: year.toString(),
           moisNum: month.toString(),
@@ -992,8 +991,7 @@ export function getDemoStreakTolerant(): number {
  */
 export function getDemoCumulativeHours(): number {
   const history = getDemoSessionHistory();
-  const totalMinutes = history.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
-  return Math.floor(totalMinutes / 60);
+  return history.length; // Duration no longer tracked; return session count as proxy
 }
 
 /**

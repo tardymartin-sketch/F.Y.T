@@ -52,6 +52,7 @@ import {
   SessionTemplate,
   SessionExercise,
   Program,
+  ExerciseVariant,
   groupTrainingPlansToSessions,
   ExecutionMode,
   // Nouvelles fonctions de mapping pour session_templates
@@ -1006,17 +1007,16 @@ export async function fetchSessionLogsFromExerciseLogs(userId: string): Promise<
   const sessionIds = [...new Set(exerciseLogs.map(el => el.session_log_id))];
   const { data: sessionsData, error: sessionsError } = await supabase
     .from('session_logs')
-    .select('id, duration_minutes, comments, session_rpe')
+    .select('id, comments, session_rpe')
     .in('id', sessionIds);
 
   if (sessionsError) {
     console.error('Error fetching session metadata:', sessionsError);
   }
 
-  const sessionsMap = new Map<string, { durationMinutes?: number; comments?: string; sessionRpe?: number }>();
+  const sessionsMap = new Map<string, { comments?: string; sessionRpe?: number }>();
   (sessionsData || []).forEach((s: any) => {
     sessionsMap.set(s.id, {
-      durationMinutes: s.duration_minutes,
       comments: s.comments,
       sessionRpe: s.session_rpe,
     });
@@ -1063,7 +1063,6 @@ export async function fetchSessionLogsFromExerciseLogs(userId: string): Promise<
       id: sessionId,
       userId: firstLog.user_id,
       date: firstLog.date,
-      durationMinutes: sessionMeta.durationMinutes,
       sessionKey: {
         annee: firstLog.year.toString(),
         moisNum: '',
@@ -1140,7 +1139,6 @@ export async function fetchMonthlyStatsFromExerciseLogs(
   month: number
 ): Promise<{
   totalSessions: number;
-  totalDuration: number;
   totalVolume: number;
   avgRpe: number;
   exerciseCount: number;
@@ -1162,7 +1160,7 @@ export async function fetchMonthlyStatsFromExerciseLogs(
   }
 
   if (!data || data.length === 0) {
-    return { totalSessions: 0, totalDuration: 0, totalVolume: 0, avgRpe: 0, exerciseCount: 0 };
+    return { totalSessions: 0, totalVolume: 0, avgRpe: 0, exerciseCount: 0 };
   }
 
   // Nombre de sessions uniques
@@ -1178,18 +1176,8 @@ export async function fetchMonthlyStatsFromExerciseLogs(
     : 0;
 
   // Récupérer la durée totale depuis session_logs
-  let totalDuration = 0;
-  if (uniqueSessions.size > 0) {
-    const { data: sessionsData } = await supabase
-      .from('session_logs')
-      .select('duration_minutes')
-      .in('id', Array.from(uniqueSessions));
-    totalDuration = (sessionsData || []).reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
-  }
-
   return {
     totalSessions: uniqueSessions.size,
-    totalDuration,
     totalVolume,
     avgRpe: Math.round(avgRpe * 10) / 10,
     exerciseCount: data.length,
@@ -3176,6 +3164,65 @@ export async function fetchExerciseByName(name: string, coachId: string): Promis
   return data ? mapExerciseRowToExercise(data) : null;
 }
 
+/**
+ * Récupère les variantes d'un exercice (même nom, données primaires différentes)
+ */
+export async function fetchExerciseVariants(
+  exerciseId: string,
+  coachId: string
+): Promise<ExerciseVariant[]> {
+  // D'abord récupérer l'exercice de référence
+  const { data: refData, error: refError } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('id', exerciseId)
+    .single();
+
+  if (refError || !refData) {
+    console.error('Error fetching reference exercise:', refError);
+    return [];
+  }
+
+  const reference = mapExerciseRowToExercise(refData);
+
+  // Ensuite chercher les exercices avec le même nom
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('name', reference.name)
+    .neq('id', exerciseId)
+    .or(`coach_id.is.null,coach_id.eq.${coachId}`)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.error('Error fetching exercise variants:', error);
+    return [];
+  }
+
+  // Filtrer pour ne garder que les vraies variantes (données primaires différentes)
+  const variants: ExerciseVariant[] = [];
+  for (const row of data || []) {
+    const exercise = mapExerciseRowToExercise(row);
+
+    const isDifferentVideo = exercise.videoUrl !== reference.videoUrl;
+    const isDifferentMuscleGroup = exercise.primaryMuscleGroupId !== reference.primaryMuscleGroupId;
+    const isDifferentMovementPattern = exercise.movementPatternId !== reference.movementPatternId;
+    const isDifferentLimbType = exercise.limbType !== reference.limbType;
+
+    // Au moins une donnée primaire doit être différente pour être une variante
+    if (isDifferentVideo || isDifferentMuscleGroup || isDifferentMovementPattern || isDifferentLimbType) {
+      variants.push({
+        exercise,
+        isDifferentVideo,
+        isDifferentMuscleGroup,
+        isDifferentMovementPattern,
+        isDifferentLimbType,
+      });
+    }
+  }
+
+  return variants;
+}
 
 /**
  * Crée un exercice pour un coach (avec son coach_id)
