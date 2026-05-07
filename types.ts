@@ -574,17 +574,26 @@ export interface SessionKey {
   seance: string;
 }
 
+// Session lifecycle state machine
+export type SessionStatus = 'draft' | 'active' | 'complete' | 'abandoned';
+
 // Type utilisé dans l'application
 export interface SessionLog {
   id: string;
   userId?: string;
   athleteName?: string;
   date: string;
-  durationMinutes?: number;
   sessionKey: SessionKey;
   exercises: ExerciseLog[];
   comments?: string;
   sessionRpe?: number;
+  momentumScore?: number;
+  // Phase 1: Template support
+  status?: SessionStatus;
+  isTemplate?: boolean;
+  templateName?: string;
+  pinned?: boolean;
+  createdFromTemplateId?: string;
 }
 
 // Type brut depuis Supabase session_logs
@@ -592,7 +601,6 @@ export interface SessionLogRow {
   id: string;
   user_id: string;
   date: string;
-  duration_minutes: number | null;
   session_key_year: number | null;
   session_key_week: number | null;
   session_key_name: string | null;
@@ -600,7 +608,54 @@ export interface SessionLogRow {
   comments: string | null;
   created_at: string;
   session_rpe: number | null;
+  momentum_score: number | null;
   seance_type?: string | null;
+  // Phase 1: Template support
+  status: string | null;
+  is_template: boolean | null;
+  template_name: string | null;
+  pinned: boolean | null;
+  created_from_template_id: string | null;
+}
+
+// ===========================================
+// DEFAULT TEMPLATES (pre-built, stored in Supabase)
+// ===========================================
+
+export interface DefaultTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  emoji: string;
+  category: string;
+  exercises: ExerciseLog[];
+  pinned: boolean;
+  sort_order: number;
+}
+
+// ===========================================
+// EXERCISE USAGE (Phase 1 — Most-Used Feature)
+// ===========================================
+
+/** Row from the exercise_usage table */
+export interface ExerciseUsageRow {
+  id: string;
+  user_id: string;
+  session_id: string;
+  exercise_id: string | null;
+  exercise_name: string;
+  weight_kg: number | null;
+  reps: number | null;
+  set_count: number | null;
+  used_at: string;
+}
+
+/** Deduplicated entry for the exercise picker's "most used" section */
+export interface MostUsedExercise {
+  exerciseId: string | null;
+  exerciseName: string;
+  lastWeightKg: number | null;
+  lastUsedAt: string;
 }
 
 // Mapping SessionLog DB -> App
@@ -609,7 +664,6 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
     id: row.id,
     userId: row.user_id,
     date: row.date,
-    durationMinutes: row.duration_minutes ?? undefined,
     sessionKey: {
       annee: row.session_key_year?.toString() ?? '',
       moisNum: '',
@@ -619,6 +673,13 @@ export function mapSessionLogRowToSessionLog(row: SessionLogRow): SessionLog {
     exercises: row.exercises ?? [],
     comments: row.comments ?? undefined,
     sessionRpe: row.session_rpe ?? undefined,
+    momentumScore: row.momentum_score ?? undefined,
+    // Phase 1: Template fields
+    status: (row.status as SessionStatus) ?? 'complete',
+    isTemplate: row.is_template ?? false,
+    templateName: row.template_name ?? undefined,
+    pinned: row.pinned ?? false,
+    createdFromTemplateId: row.created_from_template_id ?? undefined,
   };
 }
 
@@ -633,13 +694,19 @@ export function mapSessionLogToRow(log: SessionLog, userId: string): Omit<Sessio
     id: log.id,
     user_id: userId,
     date: log.date,
-    duration_minutes: log.durationMinutes ?? null,
     session_key_year: isNaN(keyYear as number) ? null : keyYear,
     session_key_week: isNaN(keyWeek as number) ? null : keyWeek,
     session_key_name: log.sessionKey.seance || null,
     exercises: log.exercises,
     comments: log.comments ?? null,
     session_rpe: log.sessionRpe ?? null,
+    momentum_score: log.momentumScore ?? null,
+    // Phase 1: Template fields
+    status: log.status ?? 'complete',
+    is_template: log.isTemplate ?? false,
+    template_name: log.templateName ?? null,
+    pinned: log.pinned ?? false,
+    created_from_template_id: log.createdFromTemplateId ?? null,
   };
 }
 
@@ -1407,6 +1474,27 @@ export interface SessionTemplateExerciseRow {
   execution_group_position: number | null;
 }
 
+// Types DB pour session_text_blocks
+export interface SessionTextBlockRow {
+  id: string;
+  session_template_id: string;
+  content: string; // JSON Lexical (ou HTML)
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Bloc de texte riche dans une séance
+export interface SessionTextBlock {
+  id: string;
+  sessionTemplateId: string;
+  content: string; // État Lexical sérialisé (JSON string)
+  position: number;
+  isTextBlock: true; // Toujours vrai pour ce type
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // Exercice dans une séance (avec paramètres d'exécution)
 export interface SessionExercise {
   id: string;                    // UUID de session_template_exercises
@@ -1418,11 +1506,21 @@ export interface SessionExercise {
   restTimeSec?: number;
   tempo?: string;
   notes?: string;
-  isTextBlock?: boolean; // Indicateur pour bloc de texte riche
+  isTextBlock?: false;           // Toujours faux pour ce type
   executionMode?: ExecutionMode;        // Défaut: 'straight'
   executionGroupId?: string;            // UUID partagé par les exos d'un superset
   executionGroupPosition?: number;      // 0 = premier, 1 = second
   videoUrl?: string;                    // URL vidéo de l'exercice
+}
+
+// Union type pour les items d'une séance
+export type SessionItem = SessionExercise | SessionTextBlock;
+
+/**
+ * Type Guard pour vérifier si un item est un bloc de texte
+ */
+export function isTextBlock(item: SessionItem): item is SessionTextBlock {
+  return item.isTextBlock === true;
 }
 
 // Template de séance (nouvelle architecture avec table session_templates)
@@ -1432,7 +1530,8 @@ export interface SessionTemplate {
   seanceType: string;            // = name dans la table session_templates
   description?: string;
   category?: string;             // 'force', 'cardio', 'mobilite', etc.
-  exercises: SessionExercise[];
+  exercises: SessionExercise[];  // Conservé pour compatibilité legacy
+  items?: SessionItem[];         // Liste ordonnée d'exercices et de blocs de texte
   // Période de validité
   validityYear?: number;
   validityMonth?: number;
@@ -1457,11 +1556,90 @@ export interface Program {
   endDate?: string;              // Format YYYY-MM-DD
   athleteTarget: string[];       // UUIDs des athlètes assignés
   groupTarget?: string[];        // UUIDs des groupes assignés (optionnel, pour affichage)
-  exercises: SessionExercise[];
+  exercises: SessionExercise[];  // Conservé pour compatibilité
+  items?: SessionItem[];         // Liste ordonnée
   sourceTemplateId?: string;     // Référence au template source (session_templates.id)
 }
 
+// Variante d'exercice (exercices avec même nom mais données primaires différentes)
+export interface ExerciseVariant {
+  exercise: Exercise;
+  isDifferentVideo: boolean;
+  isDifferentMuscleGroup: boolean;
+  isDifferentMovementPattern: boolean;
+  isDifferentLimbType: boolean;
+}
+
+// Helper: Vérifie si deux exercices sont des variantes (données primaires différentes)
+export function areExerciseVariants(a: Exercise, b: Exercise): boolean {
+  if (a.name !== b.name) return false;  // Pas même nom = pas variante
+  if (a.id === b.id) return false;       // Même exercice = pas variante
+
+  // Au moins une donnée primaire doit être différente
+  return (
+    a.videoUrl !== b.videoUrl ||
+    a.primaryMuscleGroupId !== b.primaryMuscleGroupId ||
+    a.movementPatternId !== b.movementPatternId ||
+    a.limbType !== b.limbType
+  );
+}
+
 // ===========================================
+// EXERCISE VARIANT NAMING
+// ===========================================
+
+// Separator used to distinguish base name from variant name
+export const VARIANT_NAME_SEPARATOR = ' :: ';
+export const DEFAULT_VARIANT_NAME = 'Ma variante';
+
+/**
+ * Parse an exercise full name into base name and variant name
+ * Example: "Squat :: Force" -> { baseName: "Squat", variantName: "Force" }
+ * Example: "Squat" -> { baseName: "Squat", variantName: undefined }
+ */
+export function parseExerciseName(fullName: string): { baseName: string; variantName?: string } {
+  const separatorIndex = fullName.indexOf(VARIANT_NAME_SEPARATOR);
+  if (separatorIndex === -1) {
+    return { baseName: fullName.trim() };
+  }
+  return {
+    baseName: fullName.substring(0, separatorIndex).trim(),
+    variantName: fullName.substring(separatorIndex + VARIANT_NAME_SEPARATOR.length).trim() || undefined
+  };
+}
+
+/**
+ * Build a full exercise name from base name and variant name
+ * Example: buildExerciseName("Squat", "Force") -> "Squat :: Force"
+ * Example: buildExerciseName("Squat") -> "Squat"
+ */
+export function buildExerciseName(baseName: string, variantName?: string): string {
+  if (!variantName || variantName.trim() === '') {
+    return baseName.trim();
+  }
+  return `${baseName.trim()}${VARIANT_NAME_SEPARATOR}${variantName.trim()}`;
+}
+
+/**
+ * Get display name for an exercise variant tab
+ * If has variant name, show just the variant name
+ * If no variant name, show "Ma variante" for personal or date for common
+ */
+export function getExerciseVariantDisplayName(exercise: Exercise, isPersonal: boolean): string {
+  const { variantName } = parseExerciseName(exercise.name);
+  if (variantName) {
+    return variantName;
+  }
+  // Default display based on ownership
+  if (isPersonal) {
+    return DEFAULT_VARIANT_NAME;
+  }
+  // For common exercises, use creation date
+  if (exercise.createdAt) {
+    return new Date(exercise.createdAt).toLocaleDateString('fr-FR');
+  }
+  return 'Originale';
+}
 
 // Helper: Regroupe les lignes training_plans par (coach_id, seance_type, dates)
 export function groupTrainingPlansToSessions(rows: WorkoutRow[]): SessionTemplate[] {

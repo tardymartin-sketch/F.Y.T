@@ -11,6 +11,10 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@excalidraw/excalidraw": "^0.18.0",
     "@lexical/history": "^0.40.0",
     "@lexical/html": "^0.40.0",
     "@lexical/list": "^0.40.0",
@@ -22,12 +26,16 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-query-devtools": "^5.91.3",
+    "@types/react-window": "^1.8.8",
+    "framer-motion": "^12.38.0",
     "lexical": "^0.40.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "react-dev-inspector": "^2.0.1",
     "react-dom": "^19.2.1",
+    "react-window": "^2.2.7",
     "recharts": "^2.15.0",
+    "vaul": "^1.1.2",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
