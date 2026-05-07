@@ -148,12 +148,6 @@ export const SessionHeaderWithRpe: React.FC<{ log: SessionLog; isExpanded: boole
             <span>{log.exercises.length} exos</span>
             <span>•</span>
             <span>{completedSets}/{totalSets} séries</span>
-            {log.durationMinutes && (
-              <>
-                <span>•</span>
-                <span>{log.durationMinutes}min</span>
-              </>
-            )}
           </div>
         </div>
       </div>

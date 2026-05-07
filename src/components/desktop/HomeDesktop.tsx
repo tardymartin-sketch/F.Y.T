@@ -16,7 +16,6 @@ import {
   Play,
   Calendar,
   TrendingUp,
-  Clock,
   Flame,
   Target,
   ChevronRight,
@@ -87,26 +86,6 @@ function getCurrentProgramWeek(): number {
   return Math.ceil(diff / oneWeek);
 }
 
-function estimateSessionDuration(exercises: WorkoutRow[]): number {
-  let totalMinutes = 0;
-  exercises.forEach(exercise => {
-    const sets = parseInt(exercise.series) || 3;
-    const effortTime = sets * 0.75;
-    const restSeconds = parseInt(exercise.repos) || 90;
-    const restTime = (sets - 1) * (restSeconds / 60);
-    const transitionTime = 1;
-    totalMinutes += effortTime + restTime + transitionTime;
-  });
-  return Math.round(totalMinutes / 5) * 5;
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `~${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `~${hours}h`;
-  return `~${hours}h${mins.toString().padStart(2, '0')}`;
-}
 
 function calculateStreak(logs: SessionLog[]): number {
   if (logs.length === 0) return 0;
@@ -250,12 +229,9 @@ export const Home: React.FC<Props> = ({
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
 
-    const totalDuration = thisMonth.reduce((acc, h) => acc + (h.durationMinutes || 0), 0);
-
     return {
       weekSessions: thisWeek.length,
       monthSessions: thisMonth.length,
-      totalHours: Math.round(totalDuration / 60),
       streak: calculateStreak(history),
     };
   }, [history]);
@@ -282,17 +258,15 @@ export const Home: React.FC<Props> = ({
 
   const selectedStats = useMemo(() => {
     let totalExercises = 0;
-    let totalDuration = 0;
 
     selectedOrder.forEach(name => {
       const exercises = sessionExercisesMap.get(name);
       if (exercises) {
         totalExercises += exercises.length;
-        totalDuration += estimateSessionDuration(exercises);
       }
     });
 
-    return { totalExercises, totalDuration };
+    return { totalExercises };
   }, [selectedOrder, sessionExercisesMap]);
 
   // ===========================================
@@ -498,11 +472,6 @@ export const Home: React.FC<Props> = ({
           <span className="text-lg font-bold text-theme">{stats.monthSessions}</span>
           <span className="text-xs text-theme-muted">ce mois</span>
         </div>
-        <div className="flex items-center justify-center gap-2 px-3 py-2 bg-[var(--color-warning)]/10 rounded-xl">
-          <Clock className="w-4 h-4 text-[var(--color-warning)] flex-shrink-0" />
-          <span className="text-lg font-bold text-theme">{stats.totalHours}h</span>
-          <span className="text-xs text-theme-muted">total mois</span>
-        </div>
         <div className="flex items-center justify-center gap-2 px-3 py-2 bg-[var(--color-danger)]/10 rounded-xl">
           <Flame className="w-4 h-4 text-[var(--color-danger)] flex-shrink-0" />
           <span className="text-lg font-bold text-theme">{stats.streak}</span>
@@ -553,10 +522,6 @@ export const Home: React.FC<Props> = ({
                 <span className="flex items-center gap-1.5 text-theme-muted">
                   <Dumbbell className="w-4 h-4" />
                   {selectedStats.totalExercises} exercices
-                </span>
-                <span className="flex items-center gap-1.5 text-theme-muted">
-                  <Clock className="w-4 h-4" />
-                  {formatDuration(selectedStats.totalDuration)}
                 </span>
               </div>
               <span className="text-[var(--color-primary)] font-medium">

@@ -976,12 +976,6 @@ export const TeamView: React.FC<Props> = ({
                                   <span>
                                     {completedSets}/{totalSets} séries
                                   </span>
-                                  {session.durationMinutes && (
-                                    <>
-                                      <span>•</span>
-                                      <span>{session.durationMinutes} min</span>
-                                    </>
-                                  )}
                                 </div>
                               </div>
                             </div>
