@@ -236,7 +236,6 @@ interface SessionRpeModalProps {
   onSubmit: (rpe: number) => void;
   onSkip: () => void;
   sessionName: string;
-  durationMinutes: number;
   exerciseCount: number;
 }
 
@@ -244,7 +243,6 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
   onSubmit,
   onSkip,
   sessionName,
-  durationMinutes,
   exerciseCount
 }) => {
   const [selectedRpe, setSelectedRpe] = useState<number | undefined>();
@@ -258,15 +256,6 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
     }
   };
 
-  const formatDuration = (minutes: number): string => {
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hrs > 0) {
-      return `${hrs}h${mins > 0 ? ` ${mins}min` : ''}`;
-    }
-    return `${mins}min`;
-  };
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-theme border border-theme rounded-2xl max-w-md w-full shadow-2xl animate-fade-in">
@@ -276,7 +265,7 @@ export const SessionRpeModal: React.FC<SessionRpeModalProps> = ({
           </div>
           <h3 className="text-xl font-bold text-theme mb-2">Séance terminée !</h3>
           <p className="text-theme-muted text-sm">
-            {sessionName} • {formatDuration(durationMinutes)} • {exerciseCount} exercices
+            {sessionName} • {exerciseCount} exercices
           </p>
         </div>
 
