@@ -12,7 +12,6 @@ import {
   Settings,
   LogOut,
   Calendar,
-  Clock,
   Activity,
   TrendingUp,
   Award,
@@ -42,14 +41,6 @@ function getInitials(user: User): string {
   return user.username.substring(0, 2).toUpperCase();
 }
 
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours === 0) return `${mins}min`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h${mins}`;
-}
-
 // ===========================================
 // COMPONENT
 // ===========================================
@@ -67,8 +58,7 @@ export const ProfileAthlete: React.FC<Props> = ({
   
   const stats = useMemo(() => {
     const totalSessions = history.length;
-    const totalMinutes = history.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
-    
+
     // RPE moyen (uniquement sessions avec RPE)
     const sessionsWithRpe = history.filter(s => s.sessionRpe !== undefined && s.sessionRpe !== null);
     const avgRpe = sessionsWithRpe.length > 0
@@ -104,7 +94,6 @@ export const ProfileAthlete: React.FC<Props> = ({
     
     return {
       totalSessions,
-      totalMinutes,
       avgRpe,
       totalSets,
       currentStreak
@@ -179,19 +168,6 @@ export const ProfileAthlete: React.FC<Props> = ({
               <div>
                 <p className="text-2xl font-bold text-theme">{stats.totalSessions}</p>
                 <p className="text-xs text-theme-muted">séances</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Total Time */}
-          <Card variant="default" className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[var(--color-success)]/20 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-[var(--color-success)]" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-theme">{formatDuration(stats.totalMinutes)}</p>
-                <p className="text-xs text-theme-muted">total</p>
               </div>
             </div>
           </Card>

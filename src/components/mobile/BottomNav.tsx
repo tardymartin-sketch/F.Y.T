@@ -1,4 +1,4 @@
-import { Home, History, MessageSquare, User, BarChart3 } from 'lucide-react';
+import { Home, History, User, BarChart3 } from 'lucide-react';
 import { useUnreadCount } from '../../hooks/useUnreadCount';
 import { useDemoTour } from '../../contexts/DemoTourContext';
 
@@ -22,7 +22,6 @@ const tabs: Tab[] = [
   { id: 'home', icon: Home, label: 'Accueil' },
   { id: 'history', icon: History, label: 'Historique' },
   { id: 'stats', icon: BarChart3, label: 'Stats' },
-  { id: 'coach', icon: MessageSquare, label: 'Coach', showBadge: true },
   { id: 'profile', icon: User, label: 'Profil' },
 ];
 
@@ -60,7 +59,7 @@ export function BottomNav({ activeTab, onTabChange, userId, hidden = false }: Bo
       role="navigation"
       aria-label="Navigation principale"
     >
-      <div className="grid grid-cols-5 h-full">
+      <div className="grid grid-cols-4 h-full">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

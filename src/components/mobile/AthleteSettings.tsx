@@ -5,7 +5,7 @@
 // ============================================================
 
 import React from 'react';
-import { Settings, Clock, FileText, Timer } from 'lucide-react';
+import { Settings, Clock } from 'lucide-react';
 import { useTempData } from '../../hooks/useUIState';
 
 // ===========================================
@@ -14,14 +14,10 @@ import { useTempData } from '../../hooks/useUIState';
 
 export interface AthletePreferences {
   showTempo: boolean;
-  showCoachNotes: boolean;
-  autoRestTimer: boolean;
 }
 
 const DEFAULT_PREFERENCES: AthletePreferences = {
   showTempo: true,
-  showCoachNotes: true,
-  autoRestTimer: false
 };
 
 interface Props {
@@ -123,21 +119,6 @@ export const AthleteSettings: React.FC<Props> = ({ className = '' }) => {
           onChange={(checked) => updatePreference('showTempo', checked)}
         />
 
-        <Toggle
-          label="Notes du coach"
-          description="Affiche les notes et conseils de votre coach"
-          icon={<FileText className="w-5 h-5 text-theme-muted" />}
-          checked={prefs.showCoachNotes}
-          onChange={(checked) => updatePreference('showCoachNotes', checked)}
-        />
-
-        <Toggle
-          label="Timer repos automatique"
-          description="Lance automatiquement le timer de repos après chaque série"
-          icon={<Timer className="w-5 h-5 text-theme-muted" />}
-          checked={prefs.autoRestTimer}
-          onChange={(checked) => updatePreference('autoRestTimer', checked)}
-        />
       </div>
     </div>
   );

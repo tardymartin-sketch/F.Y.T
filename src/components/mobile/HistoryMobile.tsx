@@ -7,7 +7,6 @@
 import React, { useState, useMemo, useRef, TouchEvent, useEffect } from 'react';
 import { SessionLog, getRpeColor, getRpeBgColor, getRpeInfo, SetLog, SetLoad, groupExerciseLogs, isExerciseLogGroup, ExerciseLog, ExerciseLogGroup, EXECUTION_MODES } from '../../../types';
 import {
-  Clock,
   ChevronDown,
   ChevronUp,
   Dumbbell,
@@ -21,18 +20,21 @@ import {
   X,
   Calendar,
   Download,
-  Link2
+  Link2,
+  RefreshCw
 } from 'lucide-react';
 import { RpeBadge } from '../common/RpeSelector';
 import { StravaHistoryCard } from '../desktop/StravaHistoryCard';
 import { HistoryKPICard } from './HistoryKPICard';
 import { DeleteConfirmModal } from '../common/history/DeleteConfirmModal';
 import { EditConfirmModal } from '../common/history/EditConfirmModal';
+import { RelaunchConfirmModal } from '../common/history/RelaunchConfirmModal';
 
 interface Props {
   history: SessionLog[];
   onDelete: (id: string) => void;
   onEdit: (log: SessionLog) => void;
+  onRelaunch?: (session: SessionLog) => void;
   userId?: string;
   // [DEAD CODE] onEditManualSession?: (session: SessionLog) => void;
   // Navigation depuis Stats (pour voir la seance d'un PR)
@@ -131,6 +133,7 @@ export const HistoryMobile: React.FC<Props> = ({
   history,
   onDelete,
   onEdit,
+  onRelaunch,
   userId,
   // [DEAD CODE] onEditManualSession,
   targetSessionLogId,
@@ -142,6 +145,7 @@ export const HistoryMobile: React.FC<Props> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmEditId, setConfirmEditId] = useState<string | null>(null);
+  const [confirmRelaunchSession, setConfirmRelaunchSession] = useState<SessionLog | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -440,9 +444,21 @@ export const HistoryMobile: React.FC<Props> = ({
                           <span className="text-theme font-semibold">
                             {log.sessionKey.seance}
                           </span>
-                          {/* Boutons edit/delete visibles uniquement quand déplié */}
+                          {/* Boutons edit/delete/relaunch visibles uniquement quand déplié */}
                           {isExpanded && (
                             <>
+                              {onRelaunch && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmRelaunchSession(log);
+                                  }}
+                                  className="p-1.5 hover:bg-[var(--color-accent)]/20 rounded-lg transition-colors"
+                                  title="Relancer cette séance"
+                                >
+                                  <RefreshCw className="w-4 h-4 text-[var(--color-accent)]" />
+                                </button>
+                              )}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -466,12 +482,6 @@ export const HistoryMobile: React.FC<Props> = ({
                         </div>
                         <div className="flex items-center gap-3 text-sm text-theme-muted">
                           <span>{formatDate(log.date)}</span>
-                          {log.durationMinutes && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5" />
-                              {log.durationMinutes}min
-                            </span>
-                          )}
                         </div>
                       </div>
 
@@ -661,6 +671,18 @@ export const HistoryMobile: React.FC<Props> = ({
           />
         );
       })()}
+
+      {/* Pop-up confirmation de relance */}
+      {confirmRelaunchSession && (
+        <RelaunchConfirmModal
+          session={confirmRelaunchSession}
+          onConfirm={() => {
+            onRelaunch?.(confirmRelaunchSession);
+            setConfirmRelaunchSession(null);
+          }}
+          onCancel={() => setConfirmRelaunchSession(null)}
+        />
+      )}
     </div>
   );
 };

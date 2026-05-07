@@ -57,7 +57,6 @@ interface SessionChip {
   name: string;
   exercises: WorkoutRow[];
   exerciseCount: number;
-  estimatedDuration: number;
   isCompleted: boolean;
   completedDate?: string;
   isSuggested: boolean;
@@ -106,26 +105,7 @@ function getCurrentProgramWeek(): number {
   return Math.ceil(diff / oneWeek);
 }
 
-function estimateSessionDuration(exercises: WorkoutRow[]): number {
-  let totalMinutes = 0;
-  exercises.forEach(exercise => {
-    const sets = parseInt(exercise.series) || 3;
-    const effortTime = sets * 0.75;
-    const restSeconds = parseInt(exercise.repos) || 90;
-    const restTime = (sets - 1) * (restSeconds / 60);
-    const transitionTime = 1;
-    totalMinutes += effortTime + restTime + transitionTime;
-  });
-  return Math.round(totalMinutes / 5) * 5;
-}
 
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `~${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `~${hours}h`;
-  return `~${hours}h${mins.toString().padStart(2, '0')}`;
-}
 
 function formatDateRange(startDate?: string, endDate?: string): string {
   if (!startDate || !endDate) return '';
@@ -361,7 +341,6 @@ export const HomeAthlete: React.FC<Props> = ({
         name: sessionType,
         exercises,
         exerciseCount: exercises.length,
-        estimatedDuration: estimateSessionDuration(exercises),
         isCompleted: false, // Sera recalculé par SessionBadgesGrid avec parsing des séances combinées
         isSuggested: false,
       };
@@ -669,16 +648,14 @@ export const HomeAthlete: React.FC<Props> = ({
 
   const selectedStats = useMemo(() => {
     let totalExercises = 0;
-    let totalDuration = 0;
 
     sessionChips.forEach(chip => {
       if (selectedSessions.has(chip.name)) {
         totalExercises += chip.exerciseCount;
-        totalDuration += chip.estimatedDuration;
       }
     });
 
-    return { totalExercises, totalDuration };
+    return { totalExercises };
   }, [selectedSessions, sessionChips]);
 
   // Exercices pour le modal (séances sélectionnées)

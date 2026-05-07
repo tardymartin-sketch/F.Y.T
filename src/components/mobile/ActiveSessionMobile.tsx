@@ -48,8 +48,30 @@ import {
   Edit2,
   Trash2,
   Link2,
+  Unlink2,
   FileText,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { RichTextDisplay } from "../common/RichTextDisplay";
 import { RpeSelector, SessionRpeModal, RpeBadge } from "../common/RpeSelector";
 import { Card, CardContent } from "../shared/Card";
@@ -66,6 +88,107 @@ import { VideoModal } from "../common/VideoModal";
 import { SupersetInfoModal } from "../common/SupersetInfoModal";
 import { SupersetExerciseBlock } from "../common/SupersetExerciseBlock";
 import { useDemoTour } from "../../contexts/DemoTourContext";
+import { MomentumRing } from "../common/MomentumRing";
+import { useActiveSessionStore } from "../../stores/useActiveSessionStore";
+import { useMomentumScore } from "../../hooks/useMomentumScore";
+import { sessionsApi } from "../../services/api/sessions.api";
+import { SetAsTemplateModal } from "./SetAsTemplateModal";
+import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
+import { useAthletePreferences } from "./AthleteSettings";
+
+// ===========================================
+// DND HELPERS
+// ===========================================
+
+function getDndId(item: ExerciseLog | ExerciseLogGroup): string {
+  if (isExerciseLogGroup(item)) return `group-${item.groupId}`;
+  const ex = item as ExerciseLog;
+  return `ex-${ex.exerciseName.replace(/\s+/g, '_')}-${ex.executionGroupId ?? 'solo'}`;
+}
+
+function getExecutionModeForCount(count: number): ExecutionMode {
+  if (count <= 1) return 'straight';
+  if (count === 2) return 'superset';
+  if (count === 3) return 'triset';
+  return 'giant_set';
+}
+
+interface SortableExerciseItemProps {
+  id: string;
+  isDragActive: boolean;
+  isMergeTarget: boolean;
+  className?: string;
+  children: React.ReactNode;
+}
+
+function SortableExerciseItem({
+  id,
+  isDragActive,
+  isMergeTarget,
+  className,
+  children,
+}: SortableExerciseItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.3 : 1,
+        position: 'relative',
+      }}
+      className={className}
+    >
+      {/* Drag handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          padding: 4,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          touchAction: 'none',
+          zIndex: 20,
+          color: 'var(--color-text-muted)',
+          opacity: isDragActive ? 0.7 : 0.25,
+          borderRadius: 6,
+        }}
+        onClick={(e) => e.stopPropagation()}
+        title="Déplacer"
+      >
+        <GripVertical size={15} />
+      </div>
+
+      {/* Merge target highlight */}
+      {isMergeTarget && !isDragging && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: 12,
+            border: '2px solid var(--color-accent)',
+            boxShadow: '0 0 10px var(--color-accent)',
+            pointerEvents: 'none',
+            zIndex: 30,
+          }}
+        />
+      )}
+
+      {children}
+    </div>
+  );
+}
 
 // ===========================================
 // TYPES
@@ -186,9 +309,10 @@ type SessionPhase = "recap" | "focus";
 // UTILITY FUNCTIONS
 // ===========================================
 
-/** Retourne le nom de l'exercice */
+/** Extrait le nom principal d'un exercice (sans la variante ":: xxx") */
 function getExerciseDisplayName(fullName: string): string {
-  return fullName;
+  const idx = fullName.indexOf(" :: ");
+  return idx >= 0 ? fullName.substring(0, idx) : fullName;
 }
 
 function formatTime(seconds: number): string {
@@ -211,14 +335,6 @@ function estimateSessionDuration(exercises: WorkoutRow[]): number {
     totalMinutes += effortTime + restTime + transitionTime;
   });
   return Math.round(totalMinutes / 5) * 5;
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `~${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `~${hours}h`;
-  return `~${hours}h${mins.toString().padStart(2, "0")}`;
 }
 
 function getSuggestedWeight(
@@ -562,14 +678,21 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 }) => {
   // Layout helpers
   const isDesktop = layout === "desktop";
+  // Preferences (e.g. showTempo)
+  const { showTempo } = useAthletePreferences();
   // ===========================================
   // STATE
   // ===========================================
   const [phase, setPhase] = useState<SessionPhase>("focus");
   const [logs, setLogs] = useState<ExerciseLog[]>([]);
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // Momentum score
+  const previousSession = useMemo(() => {
+    if (!history || history.length === 0) return null;
+    return history[0]; // Most recent previous session
+  }, [history]);
+  const { breakdown: momentumBreakdown, recordRest } = useMomentumScore({ previousSession });
 
   // Mode focus state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
@@ -587,6 +710,14 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [pendingSessionLog, setPendingSessionLog] = useState<SessionLog | null>(
     null,
   );
+
+  // Template save prompt (shown after RPE, before final onSave)
+  const [showTemplateSavePrompt, setShowTemplateSavePrompt] = useState(false);
+  const [showTemplateNameModal, setShowTemplateNameModal] = useState(false);
+  const [pendingFinalLog, setPendingFinalLog] = useState<SessionLog | null>(null);
+
+  // Add exercise mid-session
+  const [showAddExercisePicker, setShowAddExercisePicker] = useState(false);
 
   // Comments
   const [exerciseComments, setExerciseComments] = useState<
@@ -666,6 +797,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [expandedSupersets, setExpandedSupersets] = useState<
     Record<string, boolean>
   >({});
+  // DnD state (recap phase reorder + superset merge)
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
   const toInputDateValue = (iso: string): string => {
     const d = new Date(iso);
     const y = d.getFullYear();
@@ -722,7 +856,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           if (savedSessionIds === currentSessionIds) {
             setLogs(normalizeExerciseLogs(parsed.logs));
             setPhase("focus"); // Toujours démarrer directement en mode saisie
-            setStartTime(parsed.startTime || null);
             setCurrentExerciseIndex(parsed.currentExerciseIndex || 0);
             setCurrentSetIndex(parsed.currentSetIndex || 0);
             setCurrentSetIndexes(parsed.currentSetIndexes || {});
@@ -739,7 +872,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     if (initialLog) {
       setLogs(normalizeExerciseLogs(initialLog.exercises));
       setPhase("focus");
-      setStartTime(Date.now());
     } else {
       // Créer les logs depuis sessionData, en préservant l'ordre original
       // pour les supersets (ne pas grouper par nom d'exercice)
@@ -822,20 +954,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [logs, currentExerciseIndex]);
 
   // ===========================================
-  // TIMER
-  // ===========================================
-
-  useEffect(() => {
-    if (phase !== "focus" || !startTime) return;
-
-    const interval = setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [phase, startTime]);
-
-  // ===========================================
   // PERSISTENCE
   // ===========================================
 
@@ -849,7 +967,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         semaine: s.semaine,
       })),
       phase,
-      startTime,
       currentExerciseIndex,
       currentSetIndex,
       currentSetIndexes,
@@ -862,7 +979,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     logs,
     sessionData,
     phase,
-    startTime,
     currentExerciseIndex,
     currentSetIndex,
     currentSetIndexes,
@@ -999,6 +1115,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       if (!isLastSet) {
         // Passer à la série suivante pour le groupe
         setSupersetSetIndexForGroup(groupId, setIdx + 1);
+
+        // (rest timer removed)
       } else {
         // Dernière série: vérifier si RPE déjà rempli -> auto-collapse
         const hasRpe = typeof firstEx.rpe === "number";
@@ -1010,7 +1128,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         }
       }
     },
-    [logs, getSupersetSetIndex, setSupersetSetIndexForGroup],
+    [logs, getSupersetSetIndex, setSupersetSetIndexForGroup, sessionData],
   );
 
   // Toggle validation d'une série pour un groupe superset
@@ -1211,6 +1329,152 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     return groupExerciseLogs(logs);
   }, [logs]);
 
+  // DnD sensors
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setDragActiveId(String(event.active.id));
+    setMergeTargetId(null);
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) { setMergeTargetId(null); return; }
+    const activeRect = active.rect.current.translated;
+    const overRect = over.rect;
+    if (activeRect && overRect) {
+      const activeCenterY = activeRect.top + activeRect.height / 2;
+      if (activeCenterY > overRect.top + overRect.height * 0.25 &&
+          activeCenterY < overRect.top + overRect.height * 0.75) {
+        setMergeTargetId(String(over.id));
+        return;
+      }
+    }
+    setMergeTargetId(null);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setDragActiveId(null);
+    setMergeTargetId(null);
+    if (!over || active.id === over.id) return;
+
+    const activeItemId = String(active.id);
+    const overItemId = String(over.id);
+
+    // Detect merge vs reorder via center-zone overlap
+    const activeRect = active.rect.current.translated;
+    const overRect = over.rect;
+    let isMerge = false;
+    if (activeRect && overRect) {
+      const activeCenterY = activeRect.top + activeRect.height / 2;
+      isMerge =
+        activeCenterY > overRect.top + overRect.height * 0.25 &&
+        activeCenterY < overRect.top + overRect.height * 0.75;
+    }
+
+    if (isMerge) {
+      // Gather exercises belonging to each DnD item
+      const getExercisesForDndId = (dndId: string): ExerciseLog[] => {
+        const found = groupedLogs.find((i) => getDndId(i) === dndId);
+        if (!found) return [];
+        if (isExerciseLogGroup(found)) return found.exercises;
+        return [found as ExerciseLog];
+      };
+      const overExercises = getExercisesForDndId(overItemId);
+      const activeExercises = getExercisesForDndId(activeItemId);
+      if (!overExercises.length || !activeExercises.length) return;
+
+      const allGroupExercises = [...overExercises, ...activeExercises];
+      const newGroupId = crypto.randomUUID();
+      const newMode = getExecutionModeForCount(allGroupExercises.length);
+
+      // Build lookup keys
+      const makeKey = (e: ExerciseLog) => `${e.exerciseName}|${e.executionGroupId ?? ''}`;
+      const positionMap = new Map(allGroupExercises.map((e, i) => [makeKey(e), i]));
+
+      setLogs((prev) =>
+        prev.map((log) => {
+          const pos = positionMap.get(makeKey(log));
+          if (pos === undefined) return log;
+          return {
+            ...log,
+            executionGroupId: newGroupId,
+            executionMode: newMode,
+            executionGroupPosition: pos,
+          };
+        }),
+      );
+    } else {
+      // Reorder: move item in groupedLogs, then flatten back to logs
+      const activeIdx = groupedLogs.findIndex((i) => getDndId(i) === activeItemId);
+      const overIdx = groupedLogs.findIndex((i) => getDndId(i) === overItemId);
+      if (activeIdx === -1 || overIdx === -1) return;
+
+      const newGrouped = arrayMove([...groupedLogs], activeIdx, overIdx);
+      const newLogs = newGrouped.flatMap((item) =>
+        isExerciseLogGroup(item) ? item.exercises : [item as ExerciseLog],
+      );
+      setLogs(newLogs);
+    }
+  }, [groupedLogs]);
+
+  // Sortir un exercice d'un superset/triset
+  const handleUngroupExercise = useCallback(
+    (exerciseName: string, groupId: string) => {
+      setLogs((prev) => {
+        const groupMembers = prev.filter((l) => l.executionGroupId === groupId);
+        const remaining = groupMembers.filter(
+          (l) => l.exerciseName !== exerciseName,
+        );
+        const dissolve = remaining.length <= 1;
+        const newMode = dissolve
+          ? ("straight" as ExecutionMode)
+          : getExecutionModeForCount(remaining.length);
+
+        return prev.map((log) => {
+          if (
+            log.exerciseName === exerciseName &&
+            log.executionGroupId === groupId
+          ) {
+            // Cet exercice quitte le groupe
+            return {
+              ...log,
+              executionMode: "straight" as ExecutionMode,
+              executionGroupId: undefined,
+              executionGroupPosition: undefined,
+            };
+          }
+          if (log.executionGroupId === groupId) {
+            if (dissolve) {
+              // Un seul restant → il redevient straight aussi
+              return {
+                ...log,
+                executionMode: "straight" as ExecutionMode,
+                executionGroupId: undefined,
+                executionGroupPosition: undefined,
+              };
+            }
+            // Recalculer la position dans le groupe réduit
+            const newPos = remaining.findIndex(
+              (r) => r.exerciseName === log.exerciseName,
+            );
+            return {
+              ...log,
+              executionMode: newMode,
+              executionGroupPosition: newPos >= 0 ? newPos : 0,
+            };
+          }
+          return log;
+        });
+      });
+    },
+    [],
+  );
+
   // Map pour retrouver l'index original d'un exercice depuis le groupement
   const getOriginalExerciseIndex = useCallback(
     (exerciseName: string, executionGroupId?: string): number => {
@@ -1229,7 +1493,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
   const handleStartSession = useCallback(() => {
     setPhase("focus");
-    setStartTime(Date.now());
     setCurrentExerciseIndex(0);
     setCurrentSetIndex(0);
     setTimeout(() => {
@@ -1490,6 +1753,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       getSetIndexForExercise,
       setSetIndexForExercise,
       scrollToExerciseCard,
+      sessionData,
     ],
   );
 
@@ -1716,7 +1980,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           };
         }),
       })),
-      durationMinutes: Math.round(elapsedTime / 60),
       sessionRpe: undefined,
     };
 
@@ -1725,56 +1988,121 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [
     sessionData,
     logs,
-    elapsedTime,
     isEditMode,
     initialLog,
     saveCurrentExerciseCommentIfNeeded,
   ]);
 
+  // ─── Shared save helper (called after template decision) ──────────────────
+  const executeFinalSave = useCallback(
+    async (logToSave: SessionLog) => {
+      setSaving(true);
+      try {
+        await onSave(logToSave);
+        clearLocalStorage();
+        // Record exercise usage non-blocking (best-effort)
+        if (userId) {
+          sessionsApi
+            .recordExerciseUsage(logToSave.id, userId, logToSave.exercises)
+            .catch(err => console.warn('[recordExerciseUsage]', err));
+        }
+      } catch (error) {
+        console.error("Erreur sauvegarde:", error);
+        throw error;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [onSave, clearLocalStorage, userId],
+  );
+
   const handleSessionRpeSubmit = useCallback(
     async (sessionRpe: number) => {
       if (!pendingSessionLog) return;
-
-      setSaving(true);
       const finalLog = { ...pendingSessionLog, sessionRpe };
-
-      try {
-        await onSave(finalLog);
-        clearLocalStorage();
-      } catch (error) {
-        console.error("Erreur sauvegarde:", error);
-      } finally {
-        setSaving(false);
-        setShowSessionRpeModal(false);
+      setShowSessionRpeModal(false);
+      // Only show template prompt for new sessions, not edits
+      if (!isEditMode) {
+        setPendingFinalLog(finalLog);
+        setShowTemplateSavePrompt(true);
+      } else {
+        await executeFinalSave(finalLog);
       }
     },
-    [pendingSessionLog, onSave, clearLocalStorage],
+    [pendingSessionLog, isEditMode, executeFinalSave],
   );
 
   const handleSkipSessionRpe = useCallback(async () => {
     if (!pendingSessionLog) return;
-
-    setSaving(true);
-    try {
-      // Conserver le RPE existant si présent (mode édition)
-      const finalLog =
-        initialLog?.sessionRpe !== undefined
-          ? { ...pendingSessionLog, sessionRpe: initialLog.sessionRpe }
-          : pendingSessionLog;
-      await onSave(finalLog);
-      clearLocalStorage();
-    } catch (error) {
-      console.error("Erreur sauvegarde:", error);
-    } finally {
-      setSaving(false);
-      setShowSessionRpeModal(false);
+    // Preserve existing RPE in edit mode
+    const finalLog =
+      initialLog?.sessionRpe !== undefined
+        ? { ...pendingSessionLog, sessionRpe: initialLog.sessionRpe }
+        : pendingSessionLog;
+    setShowSessionRpeModal(false);
+    if (!isEditMode) {
+      setPendingFinalLog(finalLog);
+      setShowTemplateSavePrompt(true);
+    } else {
+      await executeFinalSave(finalLog);
     }
-  }, [pendingSessionLog, initialLog, onSave, clearLocalStorage]);
+  }, [pendingSessionLog, initialLog, isEditMode, executeFinalSave]);
+
+  // ─── Template prompt handlers ─────────────────────────────────────────────
+
+  /** User tapped "Non, terminer" */
+  const handleSkipTemplate = useCallback(async () => {
+    if (!pendingFinalLog) return;
+    setShowTemplateSavePrompt(false);
+    await executeFinalSave(pendingFinalLog);
+    setPendingFinalLog(null);
+  }, [pendingFinalLog, executeFinalSave]);
+
+  /** User confirmed template name + pinned */
+  const handleConfirmTemplate = useCallback(
+    async (templateName: string, pinned: boolean) => {
+      if (!pendingFinalLog) return;
+      setShowTemplateNameModal(false);
+      setShowTemplateSavePrompt(false);
+      const logWithTemplate: SessionLog = {
+        ...pendingFinalLog,
+        isTemplate: true,
+        templateName,
+        pinned,
+        status: 'complete',
+      };
+      await executeFinalSave(logWithTemplate);
+      setPendingFinalLog(null);
+    },
+    [pendingFinalLog, executeFinalSave],
+  );
 
   const handleCancel = useCallback(() => {
     clearLocalStorage();
     onCancel();
   }, [clearLocalStorage, onCancel]);
+
+  // ─── Add exercise mid-session ─────────────────────────────────────────────
+  const handleAddExercises = useCallback(
+    (picks: PickedExercise[]) => {
+      const newLogs: ExerciseLog[] = picks.map(picked => ({
+        exerciseId: picked.id ?? undefined,
+        exerciseName: picked.name,
+        sets: [
+          {
+            setNumber: 1,
+            reps: '',
+            weight: picked.lastWeightKg != null ? String(picked.lastWeightKg) : '',
+            completed: false,
+          },
+        ],
+        executionMode: 'straight' as const,
+      }));
+      setLogs(prev => [...prev, ...newLogs]);
+      setShowAddExercisePicker(false);
+    },
+    [],
+  );
 
   const handleSendComment = useCallback(
     async (exerciseName: string) => {
@@ -1875,17 +2203,33 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           </h2>
 
           {/* Desktop: grille 4 colonnes avec tuiles carrées */}
-          <div
-            className={
-              isDesktop
-                ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
-                : "space-y-2"
-            }
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
           >
-            {groupedLogs.map((item, groupIndex) => {
-              // Cas Superset
-              if (isExerciseLogGroup(item)) {
-                const group = item;
+            <SortableContext
+              items={groupedLogs.map(getDndId)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div
+                className={
+                  isDesktop
+                    ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
+                    : "space-y-2"
+                }
+              >
+                {groupedLogs.map((item) => {
+                  const _dndId = getDndId(item);
+                  const _isDragActive = dragActiveId !== null;
+                  const _isMergeTarget = mergeTargetId === _dndId;
+                  let _wrapperClass = '';
+
+                  // Cas Superset
+                  if (isExerciseLogGroup(item)) {
+                    const group = item;
                 const modeInfo = EXECUTION_MODES[group.executionMode];
                 const firstExerciseData = sessionData.find(
                   (d) => d.exercice === group.exercises[0]?.exerciseName,
@@ -1904,11 +2248,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                   };
                   const colSpanClass =
                     COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
+                  _wrapperClass = colSpanClass;
 
                   return (
+                    <SortableExerciseItem
+                      key={_dndId}
+                      id={_dndId}
+                      isDragActive={_isDragActive}
+                      isMergeTarget={_isMergeTarget}
+                      className={_wrapperClass}
+                    >
                     <div
-                      key={`group-${group.groupId}`}
-                      className={`${colSpanClass} bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden`}
+                      className="bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden"
                     >
                       {/* Header Superset */}
                       <div className="bg-[var(--color-primary)]/10 px-4 py-2 flex items-center gap-2">
@@ -1991,13 +2342,19 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                         </button>
                       </div>
                     </div>
+                    </SortableExerciseItem>
                   );
                 }
 
                 // Mobile: Bloc superset
                 return (
+                  <SortableExerciseItem
+                    key={_dndId}
+                    id={_dndId}
+                    isDragActive={_isDragActive}
+                    isMergeTarget={_isMergeTarget}
+                  >
                   <div
-                    key={`group-${group.groupId}`}
                     className="bg-theme-tertiary border-2 border-[var(--color-primary)] rounded-xl overflow-hidden"
                   >
                     {/* Header Superset */}
@@ -2071,6 +2428,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       </button>
                     </div>
                   </div>
+                  </SortableExerciseItem>
                 );
               }
 
@@ -2087,8 +2445,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
               if (isDesktop) {
                 return (
+                  <SortableExerciseItem
+                    key={_dndId}
+                    id={_dndId}
+                    isDragActive={_isDragActive}
+                    isMergeTarget={_isMergeTarget}
+                  >
                   <div
-                    key={`single-${index}`}
                     className="aspect-square bg-theme-tertiary border border-theme rounded-xl p-4 flex flex-col"
                   >
                     {/* Nom exercice - gros pour remplir */}
@@ -2147,11 +2510,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       )}
                     </div>
                   </div>
+                  </SortableExerciseItem>
                 );
               }
 
               return (
-                <Card key={`single-${index}`} variant="default" className="p-3">
+                <SortableExerciseItem
+                  key={_dndId}
+                  id={_dndId}
+                  isDragActive={_isDragActive}
+                  isMergeTarget={_isMergeTarget}
+                >
+                <Card variant="default" className="p-3">
                   <div className="min-w-0">
                     <h3 className="font-medium text-theme line-clamp-3">
                       {getExerciseDisplayName(exercise.exerciseName)}
@@ -2206,9 +2576,39 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     </div>
                   </div>
                 </Card>
+                </SortableExerciseItem>
               );
             })}
-          </div>
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              {dragActiveId ? (
+                <div
+                  style={{
+                    background: 'var(--color-bg-secondary)',
+                    border: '2px solid var(--color-primary)',
+                    borderRadius: 12,
+                    padding: '10px 14px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                    opacity: 0.95,
+                    minWidth: 120,
+                    maxWidth: 220,
+                    transform: 'rotate(1.5deg)',
+                  }}
+                >
+                  <div className="text-sm font-medium text-theme truncate">
+                    {(() => {
+                      const item = groupedLogs.find((i) => getDndId(i) === dragActiveId);
+                      if (!item) return '';
+                      if (isExerciseLogGroup(item))
+                        return `${EXECUTION_MODES[(item as ExerciseLogGroup).executionMode].labelShort} (${(item as ExerciseLogGroup).exercises.length})`;
+                      return (item as ExerciseLog).exerciseName;
+                    })()}
+                  </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       </div>
 
@@ -2234,7 +2634,77 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
   const renderFocusPhase = () => {
     if (logs.length === 0) {
-      return <div className="p-4 text-theme">Chargement...</div>;
+      return (
+        <div className="min-h-screen bg-theme flex flex-col">
+          {/* Header */}
+          <div className="sticky top-0 z-10 bg-theme/95 backdrop-blur-sm border-b border-theme px-4 py-3 flex items-center justify-between">
+            <h1 className="text-lg font-semibold text-theme">{sessionTitle}</h1>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowAddExercisePicker(true)}
+                className="p-2 text-theme-muted hover:text-theme transition-colors"
+                title="Ajouter un exercice"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="p-2 -mr-2 text-theme-muted hover:text-theme transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+          {/* Empty state */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                background: 'rgba(217,119,6,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Dumbbell className="w-7 h-7" style={{ color: 'var(--color-accent)' }} />
+            </div>
+            <p className="text-theme-muted text-sm leading-relaxed">
+              Ta séance est vide.<br />Ajoute ton premier exercice pour commencer.
+            </p>
+            <button
+              onClick={() => setShowAddExercisePicker(true)}
+              style={{
+                padding: '13px 24px',
+                fontFamily: 'var(--font-display)',
+                fontSize: 15,
+                fontWeight: 700,
+                color: '#fff',
+                background: 'var(--color-accent)',
+                border: 'none',
+                borderRadius: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Plus size={18} />
+              Ajouter un exercice
+            </button>
+          </div>
+          {/* Cancel modal + picker still need to be reachable */}
+          {showCancelModal && renderCancelModal()}
+          {showAddExercisePicker && userId && (
+            <ExercisePicker
+              userId={userId}
+              onConfirm={handleAddExercises}
+              onClose={() => setShowAddExercisePicker(false)}
+            />
+          )}
+        </div>
+      );
     }
 
     return (
@@ -2256,6 +2726,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 <span className="text-sm text-theme-muted w-12 text-right">
                   {progress}%
                 </span>
+                <MomentumRing breakdown={momentumBreakdown} size={32} strokeWidth={3} />
               </div>
             </div>
           )}
@@ -2310,18 +2781,31 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setShowCancelModal(true)}
-              className="p-2 -mr-2 text-theme-muted hover:text-theme transition-colors"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="p-2 -mr-2 text-theme-muted hover:text-theme transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Main Content */}
         <div className="flex-1 p-4 overflow-y-auto" ref={scrollContainerRef}>
           {/* Desktop: grille de tuiles carrées (max 4 colonnes) / Mobile: liste verticale */}
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={groupedLogs.map(getDndId)}
+              strategy={verticalListSortingStrategy}
+            >
           <div
             className={
               isDesktop
@@ -3081,11 +3565,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                       COL_SPAN_MAP[Math.min(exCount, 4)] || COL_SPAN_MAP[4];
                     const gridColsClass =
                       GRID_COLS_MAP[Math.min(exCount, 4)] || GRID_COLS_MAP[4];
+                    const _dndIdDesktopSS = getDndId(item);
 
                     renderedElements.push(
+                      <SortableExerciseItem
+                        key={_dndIdDesktopSS}
+                        id={_dndIdDesktopSS}
+                        isDragActive={dragActiveId !== null}
+                        isMergeTarget={mergeTargetId === _dndIdDesktopSS}
+                        className={colSpanClass}
+                      >
                       <div
-                        key={`superset-${group.groupId}`}
-                        className={`${colSpanClass} relative`}
+                        className="relative"
                       >
                         {/* Bordure superset */}
                         <div className="absolute inset-0 border-2 border-[var(--color-primary)] rounded-xl pointer-events-none z-10" />
@@ -3115,7 +3606,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             );
                           })}
                         </div>
-                      </div>,
+                      </div>
+                      </SortableExerciseItem>,
                     );
                   } else {
                     // =====================================================
@@ -3138,9 +3630,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     // RPE du groupe (prendre le premier exercice comme référence)
                     const groupRpe = firstExercise?.rpe;
 
+                    const _dndIdMobileSS = getDndId(item);
                     renderedElements.push(
+                      <SortableExerciseItem
+                        key={_dndIdMobileSS}
+                        id={_dndIdMobileSS}
+                        isDragActive={dragActiveId !== null}
+                        isMergeTarget={mergeTargetId === _dndIdMobileSS}
+                      >
                       <div
-                        key={`superset-${groupId}`}
                         className="relative"
                         ref={(el) => {
                           focusCardRefs.current[exerciseIndices[0]] = el;
@@ -3202,12 +3700,28 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                                     return (
                                       <div key={exIdx}>
-                                        {/* Ligne nom exercice avec bullet CSS dans la marge (texte aligné avec les autres blocs) */}
-                                        <h3 className="font-bold text-theme text-base leading-tight relative before:content-[''] before:absolute before:-left-3 before:top-[0.45em] before:w-1.5 before:h-1.5 before:rounded-full before:bg-[var(--color-primary)]">
-                                          {getExerciseDisplayName(
-                                            exercise.exerciseName,
-                                          )}
-                                        </h3>
+                                        {/* Ligne nom exercice + bouton retirer */}
+                                        <div className="flex items-start justify-between gap-2">
+                                          <h3 className="font-bold text-theme text-base leading-tight relative before:content-[''] before:absolute before:-left-3 before:top-[0.45em] before:w-1.5 before:h-1.5 before:rounded-full before:bg-[var(--color-primary)] flex-1 min-w-0">
+                                            {getExerciseDisplayName(
+                                              exercise.exerciseName,
+                                            )}
+                                          </h3>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUngroupExercise(
+                                                exercise.exerciseName,
+                                                groupId,
+                                              );
+                                            }}
+                                            className="flex-shrink-0 p-1 rounded-lg text-theme-muted hover:text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 transition-colors"
+                                            type="button"
+                                            title="Retirer du superset"
+                                          >
+                                            <Unlink2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
                                         {/* Badges individuels en dessous (masqués si expanded) */}
                                         {!isGroupExpanded && (
                                           <div className="flex items-center gap-1 mt-1">
@@ -3275,7 +3789,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         {firstExerciseData.repos}s repos
                                       </span>
                                     )}
-                                    {firstExerciseData?.tempoRpe && (
+                                    {showTempo && firstExerciseData?.tempoRpe && (
                                       <span className="px-2 py-1 border border-theme text-theme-muted rounded-lg text-xs">
                                         {firstExerciseData.tempoRpe}
                                       </span>
@@ -3973,7 +4487,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                             )}
                           </CardContent>
                         </Card>
-                      </div>,
+                      </div>
+                      </SortableExerciseItem>,
                     );
                   }
                   return;
@@ -4010,9 +4525,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
                 // Desktop: tuile carrée avec format flip card (recto/verso)
                 if (isDesktop) {
+                  const _dndIdDesktopEx = getDndId(item);
                   renderedElements.push(
+                    <SortableExerciseItem
+                      key={_dndIdDesktopEx}
+                      id={_dndIdDesktopEx}
+                      isDragActive={dragActiveId !== null}
+                      isMergeTarget={mergeTargetId === _dndIdDesktopEx}
+                    >
                     <div
-                      key={exerciseIndex}
                       className="relative"
                       ref={(el) => {
                         focusCardRefs.current[exerciseIndex] = el;
@@ -4698,13 +5219,20 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           </div>
                         )}
                       </div>
-                    </div>,
+                    </div>
+                    </SortableExerciseItem>,
                   );
                 } else {
                   // Mobile: layout complet (desktop géré par flip card ci-dessus)
+                  const _dndIdMobileEx = getDndId(item);
                   renderedElements.push(
+                    <SortableExerciseItem
+                      key={_dndIdMobileEx}
+                      id={_dndIdMobileEx}
+                      isDragActive={dragActiveId !== null}
+                      isMergeTarget={mergeTargetId === _dndIdMobileEx}
+                    >
                     <div
-                      key={exerciseIndex}
                       className="relative"
                       ref={(el) => {
                         focusCardRefs.current[exerciseIndex] = el;
@@ -4772,7 +5300,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           {exerciseData.repos}s
                                         </div>
                                       )}
-                                      {exerciseData?.tempoRpe && (
+                                      {showTempo && exerciseData?.tempoRpe && (
                                         <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold whitespace-nowrap">
                                           {exerciseData.tempoRpe}
                                         </div>
@@ -4838,7 +5366,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                             {exerciseData.repos}s
                                           </div>
                                         )}
-                                        {exerciseData?.tempoRpe && (
+                                        {showTempo && exerciseData?.tempoRpe && (
                                           <div className="px-3 py-1.5 border border-[var(--color-success)]/40 text-[var(--color-success)] rounded-lg text-xs font-semibold">
                                             {exerciseData.tempoRpe}
                                           </div>
@@ -6316,7 +6844,8 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                           )}
                         </CardContent>
                       </Card>
-                    </div>,
+                    </div>
+                    </SortableExerciseItem>,
                   );
                 }
               });
@@ -6337,6 +6866,60 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               );
             })()}
           </div>
+            </SortableContext>
+            <DragOverlay>
+              {dragActiveId ? (
+                <div
+                  style={{
+                    background: 'var(--color-bg-secondary)',
+                    border: '2px solid var(--color-primary)',
+                    borderRadius: 12,
+                    padding: '10px 14px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                    opacity: 0.95,
+                    minWidth: 120,
+                    maxWidth: 220,
+                    transform: 'rotate(1.5deg)',
+                  }}
+                >
+                  <div className="text-sm font-medium text-theme truncate">
+                    {(() => {
+                      const item = groupedLogs.find((i) => getDndId(i) === dragActiveId);
+                      if (!item) return '';
+                      if (isExerciseLogGroup(item))
+                        return `${EXECUTION_MODES[(item as ExerciseLogGroup).executionMode].labelShort} (${(item as ExerciseLogGroup).exercises.length})`;
+                      return (item as ExerciseLog).exerciseName;
+                    })()}
+                  </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+
+          {/* ─── Add exercise — always visible at bottom of list ─── */}
+          <button
+            onClick={() => setShowAddExercisePicker(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              width: '100%',
+              marginTop: 12,
+              padding: '13px',
+              fontFamily: 'var(--font-display)',
+              fontSize: 15,
+              fontWeight: 700,
+              color: '#fff',
+              background: 'var(--color-accent)',
+              border: 'none',
+              borderRadius: 12,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={18} />
+            Ajouter un exercice
+          </button>
         </div>
 
         <div
@@ -6873,8 +7456,119 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           onSubmit={handleSessionRpeSubmit}
           onSkip={handleSkipSessionRpe}
           sessionName={sessionTitle}
-          durationMinutes={pendingSessionLog.durationMinutes || 0}
           exerciseCount={logs.length}
+        />
+      )}
+
+      {/* ─── Template save prompt ─── */}
+      {showTemplateSavePrompt && pendingFinalLog && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--color-surface)',
+              borderRadius: '16px 16px 0 0',
+              padding: '24px 20px 32px',
+              width: '100%',
+              maxWidth: 480,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 20,
+                fontWeight: 800,
+                color: 'var(--color-text)',
+                marginBottom: 6,
+                letterSpacing: '-0.03em',
+              }}
+            >
+              Séance terminée 💪
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 14,
+                color: 'var(--color-text-muted)',
+                marginBottom: 20,
+              }}
+            >
+              Tu veux garder cette séance comme template pour la réutiliser&nbsp;?
+            </div>
+
+            <button
+              onClick={() => {
+                setShowTemplateSavePrompt(false);
+                setShowTemplateNameModal(true);
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '14px',
+                fontFamily: 'var(--font-display)',
+                fontSize: 15,
+                fontWeight: 700,
+                color: '#fff',
+                background: 'var(--color-accent)',
+                border: 'none',
+                borderRadius: 12,
+                cursor: 'pointer',
+                marginBottom: 10,
+              }}
+            >
+              Sauvegarder comme template
+            </button>
+
+            <button
+              onClick={handleSkipTemplate}
+              disabled={saving}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '13px',
+                fontFamily: 'var(--font-body)',
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--color-text-muted)',
+                background: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 12,
+                cursor: saving ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {saving ? 'Sauvegarde…' : 'Non, terminer'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Template name modal ─── */}
+      {showTemplateNameModal && pendingFinalLog && (
+        <SetAsTemplateModal
+          onConfirm={handleConfirmTemplate}
+          onClose={() => {
+            // Go back to the prompt if user closes without confirming
+            setShowTemplateNameModal(false);
+            setShowTemplateSavePrompt(true);
+          }}
+        />
+      )}
+
+      {/* ─── Add exercise picker ─── */}
+      {showAddExercisePicker && userId && (
+        <ExercisePicker
+          userId={userId}
+          onConfirm={handleAddExercises}
+          onClose={() => setShowAddExercisePicker(false)}
         />
       )}
     </>
