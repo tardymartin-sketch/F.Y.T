@@ -196,7 +196,6 @@ export const STORAGE_KEYS = {
 export interface ActiveSessionData {
   sessionData: any[];
   logs: any;
-  startTime: number;
   currentExerciseIndex: number;
 }
 

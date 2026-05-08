@@ -10,7 +10,6 @@ import { SessionLog, WorkoutRow, groupExerciseLogs, isExerciseLogGroup, Exercise
 import { Card } from '../shared/Card';
 import {
   Calendar,
-  Clock,
   Dumbbell,
   Search,
   X,
@@ -31,7 +30,6 @@ import { EditConfirmModal } from '../common/history/EditConfirmModal';
 // Fonctions utilitaires factorisées
 import {
   formatDateFull,
-  formatDuration,
   formatSetWeight,
   getCompletionRate,
   isManualSession,
@@ -188,7 +186,6 @@ export const HistoryDesktop: React.FC<Props> = ({
     thisMonth.setHours(0, 0, 0, 0);
 
     const monthSessions = history.filter(s => new Date(s.date) >= thisMonth);
-    const totalMinutes = monthSessions.reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
     const sessionsWithRpe = monthSessions.filter(s => s.sessionRpe);
     const avgRpe = sessionsWithRpe.length > 0
       ? sessionsWithRpe.reduce((acc, s) => acc + (s.sessionRpe || 0), 0) / sessionsWithRpe.length
@@ -196,7 +193,6 @@ export const HistoryDesktop: React.FC<Props> = ({
 
     return {
       sessionsThisMonth: monthSessions.length,
-      totalMinutes,
       avgRpe
     };
   }, [history]);
@@ -408,11 +404,6 @@ export const HistoryDesktop: React.FC<Props> = ({
                 {session.sessionKey.seance.replace(/\+/g, ' + ')}
               </h3>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-theme-muted flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {formatDuration(session.durationMinutes || 0)}
-                </span>
-                <span className="text-xs text-theme-muted">•</span>
                 <span className="text-xs text-theme-muted">
                   {session.exercises.length} exos
                 </span>
@@ -517,11 +508,6 @@ export const HistoryDesktop: React.FC<Props> = ({
                 <span className="flex items-center gap-1.5">
                   <Calendar className="w-4 h-4" />
                   {dateInfo.full}
-                </span>
-                <span className="text-theme-muted">•</span>
-                <span className="flex items-center gap-1.5">
-                  <Clock className="w-4 h-4" />
-                  {formatDuration(selectedSession.durationMinutes || 0)}
                 </span>
                 <span className="text-theme-muted">•</span>
                 <span className="flex items-center gap-1.5">
@@ -698,15 +684,6 @@ export const HistoryDesktop: React.FC<Props> = ({
               <Card variant="default" className="px-4 py-2 text-center">
                 <p className="text-lg font-bold text-theme">{globalStats.sessionsThisMonth}</p>
                 <p className="text-[10px] text-theme-muted uppercase">ce mois</p>
-              </Card>
-              <Card variant="default" className="px-4 py-2 text-center">
-                <p className="text-lg font-bold text-theme">
-                  {globalStats.totalMinutes > 60
-                    ? `${Math.floor(globalStats.totalMinutes / 60)}h`
-                    : `${globalStats.totalMinutes}m`
-                  }
-                </p>
-                <p className="text-[10px] text-theme-muted uppercase">temps</p>
               </Card>
               <Card variant="default" className="px-4 py-2 text-center">
                 <p className={`text-lg font-bold ${

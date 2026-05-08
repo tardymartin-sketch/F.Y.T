@@ -1,5 +1,78 @@
 import { supabase } from '../../supabaseClient';
-import { SessionLog } from '../../../types';
+import { SessionLog, ExerciseLog, MostUsedExercise, DefaultTemplate, mapSessionLogRowToSessionLog, mapSessionLogToRow } from '../../../types';
+
+// ─── Private helpers ─────────────────────────────────────────────────────────
+
+/** ISO week number (1–53) for a given date. */
+function getISOWeek(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+/**
+ * Deduplicate exercise_usage rows by exercise_name (keep first = most recent).
+ * Returns up to 8 unique entries.
+ */
+function deduplicateMostUsed(
+  rows: Array<{ exercise_id: string | null; exercise_name: string; weight_kg: number | null; used_at: string }>
+): MostUsedExercise[] {
+  const seen = new Set<string>();
+  const result: MostUsedExercise[] = [];
+  for (const row of rows) {
+    const key = row.exercise_name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({
+        exerciseId: row.exercise_id,
+        exerciseName: row.exercise_name,
+        lastWeightKg: row.weight_kg,
+        lastUsedAt: row.used_at,
+      });
+      if (result.length >= 8) break;
+    }
+  }
+  return result;
+}
+
+/**
+ * Given a list of exercises, look up the most recent weight_kg for each
+ * from exercise_usage and return the exercises with prefilled set weights.
+ * Only updates exercises that have a matching usage record.
+ */
+async function prefillWeightsFromUsage(
+  userId: string,
+  exercises: ExerciseLog[],
+): Promise<ExerciseLog[]> {
+  if (exercises.length === 0) return exercises;
+
+  const names = exercises.map(ex => ex.exerciseName);
+  const { data, error } = await supabase
+    .from('exercise_usage')
+    .select('exercise_name, weight_kg')
+    .eq('user_id', userId)
+    .in('exercise_name', names)
+    .order('used_at', { ascending: false });
+
+  if (error || !data || data.length === 0) return exercises;
+
+  // Build map: name → most recent weight (first occurrence per name after sort)
+  const weightMap = new Map<string, number | null>();
+  for (const row of data) {
+    const key = row.exercise_name.toLowerCase();
+    if (!weightMap.has(key)) weightMap.set(key, row.weight_kg);
+  }
+
+  return exercises.map(ex => {
+    const lastWeight = weightMap.get(ex.exerciseName.toLowerCase());
+    if (lastWeight == null || !ex.sets || ex.sets.length === 0) return ex;
+    return {
+      ...ex,
+      sets: ex.sets.map(s => ({ ...s, weight: String(lastWeight) })),
+    };
+  });
+}
 
 /**
  * Service pour la gestion des logs de sessions et d'exercices
@@ -28,7 +101,7 @@ export const sessionsApi = {
     if (sessionLogIds.length > 0) {
       const { data: sessionsData } = await supabase
         .from('session_logs')
-        .select('id, duration_minutes, comments, session_rpe')
+        .select('id, comments, session_rpe, momentum_score')
         .in('id', sessionLogIds);
 
       (sessionsData || []).forEach((s: any) => {
@@ -53,7 +126,6 @@ export const sessionsApi = {
         id: sessionId,
         userId: firstLog.user_id,
         date: firstLog.date,
-        durationMinutes: sessionMeta.duration_minutes,
         sessionKey: {
           annee: firstLog.year ? firstLog.year.toString() : '',
           moisNum: firstLog.month_num ? firstLog.month_num.toString() : '',
@@ -75,6 +147,7 @@ export const sessionsApi = {
         })),
         comments: sessionMeta.comments,
         sessionRpe: sessionMeta.session_rpe,
+        momentumScore: sessionMeta.momentum_score ?? undefined,
       });
     });
 
@@ -82,7 +155,18 @@ export const sessionsApi = {
   },
 
   async saveSession(log: SessionLog, userId: string): Promise<void> {
-    // On garde l'upsert pour exercise_logs
+    // 1. Upsert session_logs first (required by FK on exercise_logs.session_log_id)
+    const sessionRow = mapSessionLogToRow(log, userId);
+    const { error: sessionError } = await supabase
+      .from('session_logs')
+      .upsert(sessionRow, { onConflict: 'id' });
+
+    if (sessionError) throw sessionError;
+
+    // 2. Upsert exercise_logs rows
+    if (log.exercises.length === 0) return;
+
+    const now = new Date(log.date);
     const exerciseLogs = log.exercises.map((ex, idx) => ({
       user_id: userId,
       session_log_id: log.id,
@@ -90,11 +174,10 @@ export const sessionsApi = {
       sets_detail: ex.sets,
       notes: ex.notes,
       date: log.date,
-      year: parseInt(log.sessionKey.annee) || new Date(log.date).getFullYear(),
-      month_num: parseInt(log.sessionKey.moisNum) || new Date(log.date).getMonth() + 1,
-      week: parseInt(log.sessionKey.semaine) || 1,
+      year: parseInt(log.sessionKey.annee) || now.getFullYear(),
+      week: parseInt(log.sessionKey.semaine) || getISOWeek(now),
       session_name: log.sessionKey.seance,
-      exercise_order: idx
+      exercise_order: idx,
     }));
 
     const { error } = await supabase
@@ -106,5 +189,189 @@ export const sessionsApi = {
 
   async deleteSession(sessionId: string, userId: string): Promise<void> {
     await supabase.from('exercise_logs').delete().eq('session_log_id', sessionId).eq('user_id', userId);
-  }
+  },
+
+  // ─── Phase 1: Template API ───────────────────────────────────────────────
+
+  /**
+   * Fetch the user's templates (session_logs where is_template = true).
+   * Returns pinned first, then sorted by date desc.
+   */
+  async getTemplates(userId: string): Promise<SessionLog[]> {
+    const { data, error } = await supabase
+      .from('session_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_template', true)
+      .order('pinned', { ascending: false })
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []).map(mapSessionLogRowToSessionLog);
+  },
+
+  /**
+   * Mark a completed session as a template.
+   * Converts session in-place (no duplicate row).
+   */
+  async setAsTemplate(
+    sessionId: string,
+    userId: string,
+    templateName: string,
+    pinned = false,
+  ): Promise<void> {
+    const { error } = await supabase
+      .from('session_logs')
+      .update({ is_template: true, template_name: templateName, pinned })
+      .eq('id', sessionId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Clone a template session into a new draft session.
+   * Returns the new session's ID.
+   * On failure, cleans up the created row (rollback via delete).
+   *
+   * Optimistic pattern: caller should update Zustand immediately after calling
+   * this and receiving the new ID, before awaiting the full completion.
+   */
+  async cloneSession(
+    templateId: string,
+    userId: string,
+    cloneRequestId: string,
+  ): Promise<{ sessionId: string; exercises: ExerciseLog[] }> {
+    // 1. Fetch the template
+    const { data: template, error: fetchErr } = await supabase
+      .from('session_logs')
+      .select('*')
+      .eq('id', templateId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchErr || !template) throw new Error('Template not found');
+
+    const exercises: ExerciseLog[] = template.exercises ?? [];
+    const today = new Date().toISOString().split('T')[0];
+    const newId = crypto.randomUUID();
+
+    // 2. Create the new draft session
+    const { error: insertErr } = await supabase
+      .from('session_logs')
+      .insert({
+        id: newId,
+        user_id: userId,
+        date: today,
+        exercises,
+        status: 'draft',
+        is_template: false,
+        created_from_template_id: templateId,
+        session_key_name: template.template_name ?? template.session_key_name,
+        session_key_year: new Date().getFullYear(),
+        session_key_week: getISOWeek(new Date()),
+      });
+
+    if (insertErr) {
+      // Rollback: nothing to clean up since insert failed
+      throw insertErr;
+    }
+
+    // 3. Prefill weights from exercise_usage (best-effort — don't fail clone if this errors)
+    try {
+      const prefilled = await prefillWeightsFromUsage(userId, exercises);
+      if (prefilled.length > 0) {
+        await supabase
+          .from('session_logs')
+          .update({ exercises: prefilled })
+          .eq('id', newId)
+          .eq('user_id', userId);
+        return { sessionId: newId, exercises: prefilled };
+      }
+    } catch {
+      // Weight prefill failed — proceed with original weights, don't block the clone
+    }
+
+    return { sessionId: newId, exercises };
+  },
+
+  /**
+   * Insert exercise_usage rows after a session is completed.
+   * Called from the store's updateMostUsedCache action.
+   * One row per exercise, capturing the last weight/reps logged.
+   */
+  async recordExerciseUsage(
+    sessionId: string,
+    userId: string,
+    exercises: ExerciseLog[],
+  ): Promise<void> {
+    if (exercises.length === 0) return;
+
+    const rows = exercises
+      .filter(ex => ex.sets && ex.sets.length > 0)
+      .map(ex => {
+        // Find the last completed set for weight/reps
+        const completedSets = ex.sets.filter(s => s.completed);
+        const lastSet = completedSets[completedSets.length - 1] ?? ex.sets[ex.sets.length - 1];
+        const weightKg = lastSet ? parseFloat(String(lastSet.weight)) || null : null;
+        const reps = lastSet ? parseInt(String(lastSet.reps)) || null : null;
+
+        return {
+          user_id: userId,
+          session_id: sessionId,
+          exercise_id: ex.exerciseId ?? null,
+          exercise_name: ex.exerciseName,
+          weight_kg: weightKg,
+          reps,
+          set_count: ex.sets.length,
+          used_at: new Date().toISOString(),
+        };
+      });
+
+    if (rows.length === 0) return;
+
+    const { error } = await supabase.from('exercise_usage').insert(rows);
+    if (error) throw error;
+  },
+
+  /**
+   * Fetch pre-built default templates from the default_templates table.
+   * Readable by all authenticated users (RLS: read-only).
+   * Returns templates sorted by sort_order (pinned ones come first by convention).
+   */
+  async getDefaultTemplates(): Promise<DefaultTemplate[]> {
+    const { data, error } = await supabase
+      .from('default_templates')
+      .select('*')
+      .order('sort_order', { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      emoji: row.emoji ?? '🏋️',
+      category: row.category ?? '',
+      exercises: row.exercises ?? [],
+      pinned: row.pinned ?? false,
+      sort_order: row.sort_order ?? 0,
+    }));
+  },
+
+  /**
+   * Fetch the user's most-used exercises.
+   * Query: top 20 rows by recency, deduplicate by exercise_name in JS.
+   * Returns up to 8 unique exercises.
+   */
+  async getMostUsedExercises(userId: string): Promise<MostUsedExercise[]> {
+    const { data, error } = await supabase
+      .from('exercise_usage')
+      .select('exercise_id, exercise_name, weight_kg, used_at')
+      .eq('user_id', userId)
+      .order('used_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    return deduplicateMostUsed(data ?? []);
+  },
 };

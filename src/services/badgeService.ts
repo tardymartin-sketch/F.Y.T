@@ -175,28 +175,9 @@ export async function calculateCumulativeSessions(userId: string): Promise<numbe
 /**
  * Calcule le temps total d'entraînement en heures
  */
-export async function calculateCumulativeHours(userId: string): Promise<number> {
-  try {
-    const stats = await fetchAthleteStats(userId);
-    const statsMinutes = stats?.cumulative_minutes;
-    if (typeof statsMinutes === 'number') {
-      return Math.floor(statsMinutes / 60);
-    }
-
-    const { data, error } = await supabase
-      .from('session_logs')
-      .select('duration_minutes')
-      .eq('user_id', userId);
-
-    if (error) throw error;
-    if (!data) return 0;
-
-    const totalMinutes = data.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
-    return Math.floor(totalMinutes / 60);
-  } catch (error) {
-    console.error('Error calculating cumulative hours:', error);
-    return 0;
-  }
+export async function calculateCumulativeHours(_userId: string): Promise<number> {
+  // Duration tracking removed — always returns 0
+  return 0;
 }
 
 // ============================================

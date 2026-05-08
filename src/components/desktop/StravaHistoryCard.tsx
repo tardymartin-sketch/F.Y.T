@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Clock, MapPin, Heart, TrendingUp, Zap, ChevronDown, ChevronUp,
+  MapPin, Heart, TrendingUp, Zap, ChevronDown, ChevronUp,
   Trash2, ExternalLink, Activity, BarChart3, Loader2
 } from 'lucide-react';
 import { SessionLog } from '../../../types';
@@ -156,12 +156,6 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({
         <div className="flex items-center gap-3">
           {/* Métriques clés */}
           <div className="hidden sm:flex items-center gap-3">
-            {log.durationMinutes && (
-              <div className="flex items-center gap-1.5 text-theme-muted bg-theme-tertiary px-3 py-1.5 rounded-lg">
-                <Clock className="w-4 h-4" />
-                <span className="text-sm">{log.durationMinutes} min</span>
-              </div>
-            )}
             {distance && (
               <div className="flex items-center gap-1.5 text-theme-muted bg-theme-tertiary px-3 py-1.5 rounded-lg">
                 <MapPin className="w-4 h-4" />
@@ -197,12 +191,6 @@ export const StravaHistoryCard: React.FC<StravaHistoryCardProps> = ({
         <div className="px-5 pb-5 space-y-4 border-t border-theme pt-4">
           {/* Métriques mobiles */}
           <div className="sm:hidden flex flex-wrap gap-2">
-            {log.durationMinutes && (
-              <div className="flex items-center gap-1.5 text-theme-muted bg-theme-tertiary px-3 py-1.5 rounded-lg text-sm">
-                <Clock className="w-4 h-4" />
-                <span>{log.durationMinutes} min</span>
-              </div>
-            )}
             {distance && (
               <div className="flex items-center gap-1.5 text-theme-muted bg-theme-tertiary px-3 py-1.5 rounded-lg text-sm">
                 <MapPin className="w-4 h-4" />

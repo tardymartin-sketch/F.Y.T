@@ -14,6 +14,7 @@ import {
   FileText,
   Check,
   Video,
+  List,
   ChevronDown,
   Link2,
   Dumbbell,
@@ -24,6 +25,8 @@ import {
   SessionTemplate,
   SessionExercise,
   Exercise,
+  parseExerciseName,
+  getExerciseVariantDisplayName,
   ExecutionMode,
   EXECUTION_MODES,
 } from "../../../../../types";
@@ -121,13 +124,13 @@ function findMatchingExercise(
   }
 
   // Otherwise, look for any exercise with matching criteria
-  const baseName = sessionExercise.exerciseName;
+  const { baseName } = parseExerciseName(sessionExercise.exerciseName);
 
   for (const exercise of allExercises) {
     // Only match exercises owned by coach or public ones
     if (exercise.coachId && exercise.coachId !== coachId) continue;
 
-    const exBaseName = exercise.name;
+    const { baseName: exBaseName } = parseExerciseName(exercise.name);
     if (normalizeString(exBaseName) !== normalizeString(baseName)) continue;
 
     // Only video differentiates exercise variants
@@ -170,7 +173,7 @@ function findClosestExercise(
   allExercises: Exercise[],
   coachId: string,
 ): Exercise | undefined {
-  const baseName = sessionExercise.exerciseName;
+  const { baseName } = parseExerciseName(sessionExercise.exerciseName);
 
   // First try to find the original exercise by ID
   const original = allExercises.find(
@@ -178,10 +181,10 @@ function findClosestExercise(
   );
   if (original) return original;
 
-  // Otherwise find first exercise with same name
+  // Otherwise find first exercise with same base name
   return allExercises.find((ex) => {
     if (ex.coachId && ex.coachId !== coachId) return false;
-    const exBaseName = ex.name;
+    const { baseName: exBaseName } = parseExerciseName(ex.name);
     return normalizeString(exBaseName) === normalizeString(baseName);
   });
 }
@@ -439,6 +442,11 @@ function SessionDetailPanel({
   // Video modal state - tracks exercise index
   const [videoModalIndex, setVideoModalIndex] = useState<number | null>(null);
 
+  // Variant selector dropdown state
+  const [variantDropdownIndex, setVariantDropdownIndex] = useState<
+    number | null
+  >(null);
+
   // Superset/Execution mode state
   const [executionModeDropdownIndex, setExecutionModeDropdownIndex] = useState<
     number | null
@@ -569,6 +577,42 @@ function SessionDetailPanel({
   const getExerciseVideoUrl = (exerciseId: string): string | undefined => {
     const exercise = exercises.find((ex) => ex.id === exerciseId);
     return exercise?.videoUrl;
+  };
+
+  // Get all variants of an exercise based on base name
+  const getExerciseVariants = (exerciseId: string): Exercise[] => {
+    const currentExercise = exercises.find((ex) => ex.id === exerciseId);
+    if (!currentExercise) return [];
+
+    const { baseName } = parseExerciseName(currentExercise.name);
+    const normalizedBase = normalizeString(baseName);
+
+    return exercises.filter((ex) => {
+      const { baseName: exBaseName } = parseExerciseName(ex.name);
+      return normalizeString(exBaseName) === normalizedBase;
+    });
+  };
+
+  // Handle variant selection change
+  const handleVariantChange = (
+    exerciseIndex: number,
+    newExerciseId: string,
+  ) => {
+    const newExercise = exercises.find((ex) => ex.id === newExerciseId);
+    if (!newExercise) return;
+
+    const updated = [...sessionExercises];
+    updated[exerciseIndex] = {
+      ...updated[exerciseIndex],
+      exerciseId: newExerciseId,
+      exerciseName: newExercise.name,
+      videoUrl: newExercise.videoUrl,
+      tempo: newExercise.tempo,
+      notes: newExercise.coachInstructions,
+    };
+    setSessionExercises(updated);
+    setHasChanges(true);
+    setVariantDropdownIndex(null);
   };
 
   const handleAddExercise = (exercise: Exercise) => {
@@ -1365,7 +1409,9 @@ function SessionDetailPanel({
 
                 const exerciseVideoUrl =
                   ex.videoUrl || getExerciseVideoUrl(ex.exerciseId);
-                const baseName = ex.exerciseName;
+                const variants = getExerciseVariants(ex.exerciseId);
+                const hasMultipleVariants = variants.length > 1;
+                const { baseName } = parseExerciseName(ex.exerciseName);
                 const isInSuperset = !!(
                   ex.executionGroupId && ex.executionMode === "superset"
                 );
@@ -1458,7 +1504,13 @@ function SessionDetailPanel({
                           const groupVideoUrl =
                             groupEx.videoUrl ||
                             getExerciseVideoUrl(groupEx.exerciseId);
-                          const groupBaseName = groupEx.exerciseName;
+                          const groupVariants = getExerciseVariants(
+                            groupEx.exerciseId,
+                          );
+                          const groupHasVariants = groupVariants.length > 1;
+                          const { baseName: groupBaseName } = parseExerciseName(
+                            groupEx.exerciseName,
+                          );
                           const letter = String.fromCharCode(65 + posIndex); // A, B, C...
 
                           return (
@@ -1491,6 +1543,68 @@ function SessionDetailPanel({
                                       <p className="text-theme text-sm font-medium">
                                         {groupBaseName}
                                       </p>
+                                      {isEditingMode && groupHasVariants && (
+                                        <div className="relative">
+                                          <button
+                                            onClick={() =>
+                                              setVariantDropdownIndex(
+                                                variantDropdownIndex ===
+                                                  groupIdx
+                                                  ? null
+                                                  : groupIdx,
+                                              )
+                                            }
+                                            className="p-1 text-theme-muted hover:text-theme rounded hover:bg-theme-tertiary flex items-center gap-0.5"
+                                            title="Choisir une variante"
+                                          >
+                                            <List className="w-3 h-3" />
+                                            <ChevronDown className="w-3 h-3" />
+                                          </button>
+                                          {variantDropdownIndex ===
+                                            groupIdx && (
+                                            <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
+                                              {groupVariants.map((variant) => {
+                                                const variantDisplay =
+                                                  getExerciseVariantDisplayName(
+                                                    variant,
+                                                    variant.coachId === coachId,
+                                                  );
+                                                const isSelected =
+                                                  variant.id ===
+                                                  groupEx.exerciseId;
+                                                return (
+                                                  <button
+                                                    key={variant.id}
+                                                    onClick={() =>
+                                                      handleVariantChange(
+                                                        groupIdx,
+                                                        variant.id,
+                                                      )
+                                                    }
+                                                    className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                                                      isSelected
+                                                        ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                                        : "text-theme hover:bg-theme-tertiary"
+                                                    }`}
+                                                  >
+                                                    {variant.coachId ? (
+                                                      <Lock className="w-3 h-3 text-[var(--color-accent)] flex-shrink-0" />
+                                                    ) : (
+                                                      <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
+                                                    )}
+                                                    <span className="truncate">
+                                                      {variantDisplay}
+                                                    </span>
+                                                    {isSelected && (
+                                                      <Check className="w-3 h-3 ml-auto flex-shrink-0" />
+                                                    )}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-1">
                                       <button
@@ -1652,6 +1766,61 @@ function SessionDetailPanel({
                             <p className="text-theme text-sm font-medium">
                               {baseName}
                             </p>
+                            {/* Variant selector */}
+                            {isEditingMode && hasMultipleVariants && (
+                              <div className="relative">
+                                <button
+                                  onClick={() =>
+                                    setVariantDropdownIndex(
+                                      variantDropdownIndex === idx ? null : idx,
+                                    )
+                                  }
+                                  className="p-1 text-theme-muted hover:text-theme rounded hover:bg-theme-tertiary flex items-center gap-0.5"
+                                  title="Choisir une variante"
+                                >
+                                  <List className="w-3 h-3" />
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                                {variantDropdownIndex === idx && (
+                                  <div className="absolute top-full left-0 mt-1 bg-theme-secondary border border-theme rounded-lg shadow-xl z-20 min-w-48 max-h-48 overflow-y-auto">
+                                    {variants.map((variant) => {
+                                      const variantDisplay =
+                                        getExerciseVariantDisplayName(
+                                          variant,
+                                          variant.coachId === coachId,
+                                        );
+                                      const isSelected =
+                                        variant.id === ex.exerciseId;
+                                      return (
+                                        <button
+                                          key={variant.id}
+                                          onClick={() =>
+                                            handleVariantChange(idx, variant.id)
+                                          }
+                                          className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                                            isSelected
+                                              ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
+                                              : "text-theme hover:bg-theme-tertiary"
+                                          }`}
+                                        >
+                                          {variant.coachId ? (
+                                            <Lock className="w-3 h-3 text-[var(--color-accent)] flex-shrink-0" />
+                                          ) : (
+                                            <Globe className="w-3 h-3 text-[var(--color-primary)] flex-shrink-0" />
+                                          )}
+                                          <span className="truncate">
+                                            {variantDisplay}
+                                          </span>
+                                          {isSelected && (
+                                            <Check className="w-3 h-3 ml-auto flex-shrink-0" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             {/* Execution mode selector - only in editing mode */}
                             {isEditingMode && (
                               <div className="relative ml-2">

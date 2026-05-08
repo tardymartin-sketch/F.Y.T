@@ -555,7 +555,6 @@ export const AddSession: React.FC<Props> = ({
           weight: s.weight || '-'
         }))
       })),
-      durationMinutes: isEditMode && initialLog?.durationMinutes ? initialLog.durationMinutes : 0,
       // Conserver le RPE existant en mode édition
       sessionRpe: isEditMode && initialLog?.sessionRpe ? initialLog.sessionRpe : undefined,
       // Mark as manual entry (utiliser la constante MANUAL_ENTRY_MARKER)
@@ -1333,7 +1332,6 @@ export const AddSession: React.FC<Props> = ({
           onSubmit={handleSessionRpeSubmit}
           onSkip={handleSkipSessionRpe}
           sessionName={sessionName}
-          durationMinutes={0}
           exerciseCount={logs.length}
         />
       )}

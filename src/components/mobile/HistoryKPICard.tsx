@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
-  Clock,
   Dumbbell,
   TrendingUp,
   TrendingDown,
@@ -30,7 +29,6 @@ interface Props {
 
 interface MonthStats {
   sessions: number;
-  totalMinutes: number;
   avgRpe: number | null;
   uniqueExercises: number;
   bestWeek: {
@@ -41,7 +39,6 @@ interface MonthStats {
 
 interface Comparison {
   sessions: number;
-  minutes: number;
   rpe: number | null;
 }
 
@@ -65,24 +62,6 @@ function getWeekNumber(date: Date): number {
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes}min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h${mins.toString().padStart(2, '0')}`;
-}
-
-function formatDurationDiff(minutes: number): string {
-  if (minutes === 0) return '—';
-  const sign = minutes > 0 ? '+' : '';
-  if (Math.abs(minutes) < 60) return `${sign}${minutes}min`;
-  const hours = Math.floor(Math.abs(minutes) / 60);
-  const mins = Math.abs(minutes) % 60;
-  if (mins === 0) return `${sign}${minutes > 0 ? '' : '-'}${hours}h`;
-  return `${sign}${minutes > 0 ? '' : '-'}${hours}h${mins.toString().padStart(2, '0')}`;
-}
-
 // ===========================================
 // STATS COMPUTATION
 // ===========================================
@@ -95,9 +74,6 @@ function computeMonthStats(history: SessionLog[], year: number, month: number): 
 
   // Sessions count
   const sessions = monthSessions.length;
-
-  // Total time
-  const totalMinutes = monthSessions.reduce((acc, log) => acc + (log.durationMinutes || 0), 0);
 
   // Average RPE
   const sessionsWithRpe = monthSessions.filter(log => log.sessionRpe !== undefined && log.sessionRpe !== null);
@@ -132,7 +108,6 @@ function computeMonthStats(history: SessionLog[], year: number, month: number): 
 
   return {
     sessions,
-    totalMinutes,
     avgRpe,
     uniqueExercises,
     bestWeek
@@ -142,7 +117,6 @@ function computeMonthStats(history: SessionLog[], year: number, month: number): 
 function computeComparison(current: MonthStats, previous: MonthStats): Comparison {
   return {
     sessions: current.sessions - previous.sessions,
-    minutes: current.totalMinutes - previous.totalMinutes,
     rpe: current.avgRpe !== null && previous.avgRpe !== null
       ? Math.round((current.avgRpe - previous.avgRpe) * 10) / 10
       : null
@@ -239,18 +213,12 @@ export const HistoryKPICard: React.FC<Props> = ({ history, className = '' }) => 
           </div>
         </div>
 
-        {/* Stats grid - 3 columns */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Stats grid - 2 columns */}
+        <div className="grid grid-cols-2 gap-3">
           {/* Sessions */}
           <div className="bg-theme-tertiary rounded-xl p-3 text-center">
             <p className="text-2xl font-bold text-[var(--color-primary)]">{currentStats.sessions}</p>
             <p className="text-xs text-theme-muted mt-0.5">séances</p>
-          </div>
-
-          {/* Duration */}
-          <div className="bg-theme-tertiary rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-[var(--color-success)]">{formatDuration(currentStats.totalMinutes)}</p>
-            <p className="text-xs text-theme-muted mt-0.5">temps total</p>
           </div>
 
           {/* RPE */}
@@ -301,22 +269,6 @@ export const HistoryKPICard: React.FC<Props> = ({ history, className = '' }) => 
                 {comparison.sessions !== 0 && (
                   <span className={`text-sm ${comparison.sessions > 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                     ({comparison.sessions > 0 ? '+' : ''}{comparison.sessions} vs {previousMonthName})
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Total Time */}
-            <div className="flex items-center justify-between py-2 border-b border-theme/30">
-              <div className="flex items-center gap-2 text-theme-secondary">
-                <Clock className="w-4 h-4 text-theme-muted" />
-                <span>Temps total</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-theme font-semibold">{formatDuration(currentStats.totalMinutes)}</span>
-                {comparison.minutes !== 0 && (
-                  <span className={`text-sm ${comparison.minutes > 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                    ({formatDurationDiff(comparison.minutes)})
                   </span>
                 )}
               </div>

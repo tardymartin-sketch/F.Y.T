@@ -82,6 +82,7 @@ import { DemoTourManager } from './src/components/common/DemoTourManager';
 // ===========================================
 import { BottomNav } from './src/components/mobile/BottomNav';
 import { HomeMobile } from './src/components/mobile/HomeMobile';
+import { AthleteHomeScreen } from './src/components/mobile/AthleteHomeScreen';
 import { ActiveSessionMobile } from './src/components/mobile/ActiveSessionMobile';
 // [DEAD CODE] import { AddSessionMobile } from './src/components/mobile/AddSessionMobile';
 import { HistoryMobile } from './src/components/mobile/HistoryMobile';
@@ -372,20 +373,18 @@ const App: React.FC = () => {
     );
 
     if (sessionData.length > 0) {
-      setActiveSessionData(sessionData);
-      setEditingSession(null);
+      setActiveSession(sessionData, null);
       setCurrentView('active');
-      setHasActiveSession(true);
     }
   };
 
   // V3: Handler pour démarrer depuis HomeMobile (reçoit directement les exercices)
   const handleStartSessionFromExercises = (exercises?: WorkoutRow[]) => {
     if (exercises && exercises.length > 0) {
-      setActiveSessionData(exercises);
-      setEditingSession(null);
+      // Call setActiveSession directly to avoid stale closure bug
+      // (setActiveSessionData + setEditingSession proxies read stale values)
+      setActiveSession(exercises, null);
       setCurrentView('active');
-      setHasActiveSession(true);
     }
   };
 
@@ -399,10 +398,10 @@ const App: React.FC = () => {
         if (parsed.isEditMode && parsed.editingSessionId) {
           const session = history.find(s => s.id === parsed.editingSessionId);
           if (session) {
-            setEditingSession(session);
             // Récupérer les données de session depuis parsed.sessionData
+            let sessionData: WorkoutRow[] | null = null;
             if (parsed.sessionData) {
-              const sessionData = trainingData.filter(d => {
+              sessionData = trainingData.filter(d => {
                 return parsed.sessionData.some((s: any) =>
                   s.seance === d.seance &&
                   s.annee === d.annee &&
@@ -410,10 +409,10 @@ const App: React.FC = () => {
                   s.semaine === d.semaine
                 );
               });
-              if (sessionData.length > 0) {
-                setActiveSessionData(sessionData);
-              }
+              if (sessionData.length === 0) sessionData = null;
             }
+            // Set both at once to avoid stale closure bug
+            setActiveSession(sessionData, session);
             setCurrentView('active');
             return;
           }
@@ -430,7 +429,7 @@ const App: React.FC = () => {
             );
           });
           if (sessionData.length > 0) {
-            setActiveSessionData(sessionData);
+            setActiveSession(sessionData, null);
             setCurrentView('active');
           }
         }
@@ -486,8 +485,7 @@ const App: React.FC = () => {
     );
 
     if (sessionData.length > 0) {
-      setActiveSessionData(sessionData);
-      setEditingSession(log);
+      setActiveSession(sessionData, log);
       setCurrentView('active');
     } else {
       // Fallback : exercice non trouvé dans training_plans (programme modifié)
@@ -508,8 +506,7 @@ const App: React.FC = () => {
         notes: '',
         video: ''
       }));
-      setActiveSessionData(minimalData);
-      setEditingSession(log);
+      setActiveSession(minimalData, log);
       setCurrentView('active');
     }
   };
@@ -759,10 +756,8 @@ const App: React.FC = () => {
 
       if (demoExercises.length > 0) {
         setShowDemoSessionPreview(false);
-        setActiveSessionData(demoExercises);
-        setEditingSession(null);
+        setActiveSession(demoExercises, null);
         setCurrentView('active');
-        setHasActiveSession(true);
       } else {
         // Fallback: première séance disponible (semaine courante uniquement)
         const firstSession = trainingData[0]?.seance;
@@ -774,10 +769,8 @@ const App: React.FC = () => {
         );
         if (fallbackExercises.length > 0) {
           setShowDemoSessionPreview(false);
-          setActiveSessionData(fallbackExercises);
-          setEditingSession(null);
+          setActiveSession(fallbackExercises, null);
           setCurrentView('active');
-          setHasActiveSession(true);
         }
       }
     }
@@ -785,9 +778,7 @@ const App: React.FC = () => {
 
   // Terminer/annuler la séance en cours pour revenir à l'accueil
   const handleDemoKillSession = useCallback(() => {
-    setActiveSessionData(null);
-    setHasActiveSession(false);
-    setEditingSession(null);
+    setActiveSession(null, null);
   }, []);
 
   // Réinitialiser complètement l'état de la session pour le tour démo
@@ -795,9 +786,7 @@ const App: React.FC = () => {
     // Utiliser la fonction du service pour nettoyer le localStorage
     resetDemoState();
     // Réinitialiser les états React
-    setActiveSessionData(null);
-    setHasActiveSession(false);
-    setEditingSession(null);
+    setActiveSession(null, null);
     // [DEAD CODE] setEditingManualSession(null);
     // [DEAD CODE] setHasAddSession(false);
   }, []);
@@ -930,7 +919,29 @@ const App: React.FC = () => {
                 ) : (
                   <>
                     {/* V3 DESKTOP ADAPTATION: Home basé sur le DEVICE */}
-                    {currentView === 'home' && isMobile && (
+                    {currentView === 'home' && isMobile && behavesAsAthlete && (
+                      <AthleteHomeScreen
+                        user={currentUser}
+                        history={history}
+                        hasActiveSession={hasActiveSession}
+                        onResumeSession={handleResumeSession}
+                        onStartNewSession={(exercises) => {
+                          const today = new Date().toISOString().split('T')[0];
+                          const sessionLog = {
+                            id: crypto.randomUUID(),
+                            userId: currentUser.id,
+                            date: today,
+                            sessionKey: { annee: String(new Date().getFullYear()), moisNum: '', semaine: '', seance: 'Nouvelle séance' },
+                            exercises,
+                            status: 'draft' as const,
+                          };
+                          setActiveSession([], sessionLog);
+                          setCurrentView('active');
+                        }}
+                      />
+                    )}
+
+                    {currentView === 'home' && isMobile && !behavesAsAthlete && (
                       <HomeMobile
                         user={currentUser}
                         trainingData={trainingData}
@@ -974,7 +985,6 @@ const App: React.FC = () => {
                         onCancel={handleCancelSession}
                         initialLog={editingSession}
                         userId={currentUser.id}
-                        onSaveComment={handleSaveAthleteComment}
                       />
                     )}
 
@@ -999,6 +1009,38 @@ const App: React.FC = () => {
                         history={history}
                         onDelete={handleDeleteSession}
                         onEdit={handleEditSession}
+                        onRelaunch={(session) => {
+                          const today = new Date().toISOString().split('T')[0];
+                          const blankExercises = session.exercises.map(ex => ({
+                            exerciseId: ex.exerciseId,
+                            exerciseName: ex.exerciseName,
+                            executionMode: ex.executionMode,
+                            executionGroupId: ex.executionGroupId,
+                            executionGroupPosition: ex.executionGroupPosition,
+                            sets: ex.sets.map((s, i) => ({
+                              setNumber: i + 1,
+                              reps: '',
+                              weight: '',
+                              completed: false,
+                            })),
+                            notes: ex.notes,
+                          }));
+                          const sessionLog = {
+                            id: crypto.randomUUID(),
+                            userId: currentUser.id,
+                            date: today,
+                            sessionKey: {
+                              annee: String(new Date().getFullYear()),
+                              moisNum: '',
+                              semaine: '',
+                              seance: session.sessionKey.seance || 'Nouvelle séance',
+                            },
+                            exercises: blankExercises,
+                            status: 'draft' as const,
+                          };
+                          setActiveSession([], sessionLog);
+                          setCurrentView('active');
+                        }}
                         userId={currentUser.id}
                         // [DEAD CODE] onEditManualSession={handleEditManualSession}
                         targetSessionLogId={targetSessionLogId}

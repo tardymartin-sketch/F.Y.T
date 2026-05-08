@@ -9,7 +9,6 @@ import { SessionLog, SetLoad } from '../../../types';
 import { Card, CardContent } from '../shared/Card';
 import {
   Trophy,
-  Clock,
   Dumbbell,
   TrendingUp,
   Home,
@@ -17,6 +16,8 @@ import {
   Flame
 } from 'lucide-react';
 import { RpeBadge } from '../common/RpeSelector';
+import { MomentumRing } from '../common/MomentumRing';
+import { computeMomentumScore } from '../../utils/momentum';
 
 // ===========================================
 // TYPES
@@ -30,14 +31,6 @@ interface Props {
 // ===========================================
 // UTILITY FUNCTIONS
 // ===========================================
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}min`;
-}
 
 function calculateTotalVolume(exercises: SessionLog['exercises']): number {
   const getLoadTotalKg = (load: SetLoad | undefined): number | null => {
@@ -137,6 +130,15 @@ export const SessionCompletedScreen: React.FC<Props> = ({
     return getMotivationalMessage(sessionLog.sessionRpe);
   }, [sessionLog.sessionRpe]);
 
+  const momentumBreakdown = useMemo(() => {
+    return computeMomentumScore({
+      session: sessionLog,
+      restDurations: {},
+      prescribedRest: {},
+      previousSession: null,
+    });
+  }, [sessionLog]);
+
   // ===========================================
   // RENDER
   // ===========================================
@@ -175,15 +177,6 @@ export const SessionCompletedScreen: React.FC<Props> = ({
             {/* Stats Grid */}
             <div className="p-4">
               <div className="grid grid-cols-2 gap-4 mb-4">
-                {/* Duration */}
-                <div className="bg-theme-tertiary rounded-xl p-3 text-center">
-                  <Clock className="w-5 h-5 text-[var(--color-primary)] mx-auto mb-1" />
-                  <p className="text-xl font-bold text-theme">
-                    {formatDuration(sessionLog.durationMinutes || 0)}
-                  </p>
-                  <p className="text-xs text-theme-muted">Durée</p>
-                </div>
-
                 {/* Exercises */}
                 <div className="bg-theme-tertiary rounded-xl p-3 text-center">
                   <Dumbbell className="w-5 h-5 text-[var(--color-success)] mx-auto mb-1" />
@@ -261,6 +254,37 @@ export const SessionCompletedScreen: React.FC<Props> = ({
             )}
           </div>
         </Card>
+
+        {/* Momentum Score */}
+        {momentumBreakdown.total > 0 && (
+          <Card variant="default" className="p-4">
+            <div className="flex items-center gap-3 mb-4">
+              <MomentumRing breakdown={momentumBreakdown} size={56} strokeWidth={5} />
+              <div>
+                <h3 className="text-sm font-medium text-theme-muted">Score Momentum</h3>
+                <p className="text-2xl font-bold text-theme">{Math.round(momentumBreakdown.total)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-theme-tertiary rounded-lg p-2">
+                <p className="text-xs text-theme-muted">Complétion</p>
+                <p className="text-sm font-semibold text-theme">{Math.round(momentumBreakdown.completion)}%</p>
+              </div>
+              <div className="bg-theme-tertiary rounded-lg p-2">
+                <p className="text-xs text-theme-muted">Records</p>
+                <p className="text-sm font-semibold text-theme">{Math.round(momentumBreakdown.prBonus)}</p>
+              </div>
+              <div className="bg-theme-tertiary rounded-lg p-2">
+                <p className="text-xs text-theme-muted">Repos</p>
+                <p className="text-sm font-semibold text-theme">{Math.round(momentumBreakdown.restDiscipline)}</p>
+              </div>
+              <div className="bg-theme-tertiary rounded-lg p-2">
+                <p className="text-xs text-theme-muted">Constance</p>
+                <p className="text-sm font-semibold text-theme">{Math.round(momentumBreakdown.consistency)}</p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Actions */}
         <div className="space-y-3">
