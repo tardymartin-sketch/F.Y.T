@@ -1,5 +1,24 @@
 import { supabase } from '../../supabaseClient';
-import { SessionLog, ExerciseLog, MostUsedExercise, DefaultTemplate, mapSessionLogRowToSessionLog, mapSessionLogToRow } from '../../../types';
+import { SessionLog, ExerciseLog, SetLoad, MostUsedExercise, DefaultTemplate, mapSessionLogRowToSessionLog, mapSessionLogToRow } from '../../../types';
+
+function getLoadWeightKg(load: SetLoad | undefined): number | null {
+  if (!load) return null;
+  switch (load.type) {
+    case 'single':
+    case 'machine':
+      return typeof load.weightKg === 'number' ? load.weightKg : null;
+    case 'double':
+      return typeof load.weightKg === 'number' ? load.weightKg * 2 : null;
+    case 'barbell':
+      return typeof load.barKg === 'number'
+        ? load.barKg + (typeof load.addedKg === 'number' ? load.addedKg : 0)
+        : null;
+    case 'assisted':
+      return typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
+    default:
+      return null;
+  }
+}
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
 
@@ -313,7 +332,9 @@ export const sessionsApi = {
         // Find the last completed set for weight/reps
         const completedSets = ex.sets.filter(s => s.completed);
         const lastSet = completedSets[completedSets.length - 1] ?? ex.sets[ex.sets.length - 1];
-        const weightKg = lastSet ? parseFloat(String(lastSet.weight)) || null : null;
+        const weightKg = lastSet
+          ? (getLoadWeightKg(lastSet.load) ?? (lastSet.weight ? parseFloat(String(lastSet.weight)) || null : null))
+          : null;
         const reps = lastSet ? parseInt(String(lastSet.reps)) || null : null;
 
         return {

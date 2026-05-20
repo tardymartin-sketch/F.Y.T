@@ -27,6 +27,7 @@ import {
   ExecutionMode
 } from '../../../types.ts';
 import { RpeSelector, RpeBadge } from './RpeSelector';
+import { WeightInput } from './WeightInput';
 
 // ===========================================
 // TYPES
@@ -444,41 +445,33 @@ export const SupersetExerciseBlock: React.FC<Props> = ({
     if (set.load?.type === 'barbell') {
       return (
         <div className="flex gap-1">
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="20"
-            value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
-            onChange={(e) => {
-              const raw = e.target.value;
-              const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
+          <WeightInput
+            value={Number.isFinite(set.load.barKg) ? set.load.barKg : null}
+            onChange={(n) => {
               const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
               onUpdateSetLoad(exerciseIndex, currentSetIndex, {
                 type: 'barbell',
                 unit: 'kg',
-                barKg: Number.isFinite(n) ? n : 20,
-                addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null
+                barKg: n ?? 20,
+                addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null,
               });
             }}
+            placeholder="20"
             disabled={isCompleted}
             className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 py-1.5 text-theme text-center text-sm font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] disabled:opacity-50"
           />
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="+0"
-            value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              const n = v === '' ? null : Number(v.replace(',', '.'));
+          <WeightInput
+            value={typeof set.load.addedKg === 'number' ? set.load.addedKg : null}
+            onChange={(n) => {
               const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
               onUpdateSetLoad(exerciseIndex, currentSetIndex, {
                 type: 'barbell',
                 unit: 'kg',
                 barKg: prev.barKg,
-                addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                addedKg: n,
               });
             }}
+            placeholder="+0"
             disabled={isCompleted}
             className="flex-1 min-w-0 bg-theme-tertiary border border-theme rounded px-1 py-1.5 text-theme text-center text-sm font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] disabled:opacity-50"
           />
@@ -487,55 +480,51 @@ export const SupersetExerciseBlock: React.FC<Props> = ({
     }
 
     // Autres types de charge (single, double, machine, assisted, distance)
-    const getValue = () => {
+    const getNumericValue = (): number | null => {
       const load = set.load;
-      if (!load) return '';
+      if (!load) return null;
       if (load.type === 'single' || load.type === 'double' || load.type === 'machine') {
-        return typeof load.weightKg === 'number' ? String(load.weightKg) : '';
+        return typeof load.weightKg === 'number' ? load.weightKg : null;
       }
       if (load.type === 'assisted') {
-        return typeof load.assistanceKg === 'number' ? String(load.assistanceKg) : '';
+        return typeof load.assistanceKg === 'number' ? load.assistanceKg : null;
       }
       if (load.type === 'distance') {
-        return typeof load.distanceValue === 'number' ? String(load.distanceValue) : '';
+        return typeof load.distanceValue === 'number' ? load.distanceValue : null;
       }
-      return '';
+      return null;
     };
 
-    const handleChange = (value: string) => {
-      const n = value === '' ? null : Number(value.replace(',', '.'));
+    const handleNumericChange = (n: number | null) => {
       const type = set.load?.type || 'single';
-
       if (type === 'assisted') {
         onUpdateSetLoad(exerciseIndex, currentSetIndex, {
           type: 'assisted',
           unit: 'kg',
-          assistanceKg: value === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+          assistanceKg: n,
         });
       } else if (type === 'distance') {
         const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
         onUpdateSetLoad(exerciseIndex, currentSetIndex, {
           type: 'distance',
           unit: prev?.unit || 'cm',
-          distanceValue: value === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+          distanceValue: n,
         });
       } else {
         const t = type as 'single' | 'double' | 'machine';
         onUpdateSetLoad(exerciseIndex, currentSetIndex, {
           type: t,
           unit: 'kg',
-          weightKg: value === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+          weightKg: n,
         } as SetLoad);
       }
     };
 
     return (
-      <input
-        type="text"
-        inputMode="decimal"
+      <WeightInput
+        value={getNumericValue()}
+        onChange={handleNumericChange}
         placeholder="0"
-        value={getValue()}
-        onChange={(e) => handleChange(e.target.value)}
         disabled={isCompleted}
         className="w-full bg-theme-tertiary border border-theme rounded px-2 py-1.5 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] disabled:opacity-50"
       />
