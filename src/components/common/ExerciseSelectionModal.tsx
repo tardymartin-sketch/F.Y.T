@@ -41,7 +41,10 @@ export function ExerciseSelectionModal({
     const exerciseResults: { baseName: string; variants: Exercise[] }[] = [];
 
     baseNameMap.forEach((variants, baseName) => {
-      const matches = variants.some(ex => normalizeString(ex.name).includes(normalized));
+      const matches = variants.some(ex =>
+        normalizeString(ex.name).includes(normalized) ||
+        (ex.aliasEn ? normalizeString(ex.aliasEn).includes(normalized) : false),
+      );
       if (matches) {
         exerciseResults.push({ baseName, variants });
       }
