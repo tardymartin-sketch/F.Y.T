@@ -5307,88 +5307,27 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           set.load?.type === "machine" ||
                                           !set.load?.type) && (
                                           <div>
-                                            <input
-                                              type="text"
-                                              inputMode="decimal"
-                                              placeholder="0"
+                                            <WeightInput
                                               value={(() => {
                                                 const load = set.load;
-                                                if (!load) return "";
-                                                if (
-                                                  load.type === "single" ||
-                                                  load.type === "double" ||
-                                                  load.type === "machine"
-                                                ) {
-                                                  return typeof load.weightKg ===
-                                                    "number"
-                                                    ? String(load.weightKg)
-                                                    : "";
+                                                if (!load) return null;
+                                                if (load.type === "single" || load.type === "double" || load.type === "machine") {
+                                                  return typeof load.weightKg === "number" ? load.weightKg : null;
                                                 }
-                                                return "";
+                                                return null;
                                               })()}
-                                              onChange={(e) => {
-                                                const v = e.target.value;
-                                                const n =
-                                                  v === ""
-                                                    ? null
-                                                    : Number(
-                                                        v.replace(",", "."),
-                                                      );
-                                                const t:
-                                                  | "single"
-                                                  | "double"
-                                                  | "machine" =
-                                                  set.load?.type === "double"
-                                                    ? "double"
-                                                    : set.load?.type ===
-                                                        "machine"
-                                                      ? "machine"
-                                                      : "single";
+                                              onChange={(n) => {
+                                                const t: "single" | "double" | "machine" =
+                                                  set.load?.type === "double" ? "double"
+                                                  : set.load?.type === "machine" ? "machine"
+                                                  : "single";
                                                 const next: SetLoad =
-                                                  t === "double"
-                                                    ? {
-                                                        type: "double",
-                                                        unit: "kg",
-                                                        weightKg:
-                                                          v === ""
-                                                            ? null
-                                                            : Number.isFinite(
-                                                                  n as number,
-                                                                )
-                                                              ? (n as number)
-                                                              : null,
-                                                      }
-                                                    : t === "machine"
-                                                      ? {
-                                                          type: "machine",
-                                                          unit: "kg",
-                                                          weightKg:
-                                                            v === ""
-                                                              ? null
-                                                              : Number.isFinite(
-                                                                    n as number,
-                                                                  )
-                                                                ? (n as number)
-                                                                : null,
-                                                        }
-                                                      : {
-                                                          type: "single",
-                                                          unit: "kg",
-                                                          weightKg:
-                                                            v === ""
-                                                              ? null
-                                                              : Number.isFinite(
-                                                                    n as number,
-                                                                  )
-                                                                ? (n as number)
-                                                                : null,
-                                                        };
-                                                updateSetLoadForExercise(
-                                                  exerciseIndex,
-                                                  setIndex,
-                                                  next,
-                                                );
+                                                  t === "double" ? { type: "double", unit: "kg", weightKg: n }
+                                                  : t === "machine" ? { type: "machine", unit: "kg", weightKg: n }
+                                                  : { type: "single", unit: "kg", weightKg: n };
+                                                updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                               }}
+                                              placeholder="0"
                                               className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                             />
                                             <div className="text-xs text-theme-muted text-center mt-1">
@@ -5661,48 +5600,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         {set.load?.type === "barbell" && (
                                           <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                              <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                placeholder="20"
-                                                value={
-                                                  Number.isFinite(
-                                                    set.load.barKg,
-                                                  )
-                                                    ? String(set.load.barKg)
-                                                    : ""
-                                                }
-                                                onChange={(e) => {
-                                                  const raw = e.target.value;
-                                                  const n =
-                                                    raw === ""
-                                                      ? 20
-                                                      : Number(
-                                                          raw.replace(",", "."),
-                                                        );
-                                                  const prev =
-                                                    set.load as Extract<
-                                                      SetLoad,
-                                                      { type: "barbell" }
-                                                    >;
-                                                  const next: SetLoad = {
+                                              <WeightInput
+                                                value={Number.isFinite(set.load.barKg) ? set.load.barKg : null}
+                                                onChange={(n) => {
+                                                  const prev = set.load as Extract<SetLoad, { type: "barbell" }>;
+                                                  updateSetLoadForExercise(exerciseIndex, setIndex, {
                                                     type: "barbell",
                                                     unit: "kg",
-                                                    barKg: Number.isFinite(n)
-                                                      ? n
-                                                      : 20,
-                                                    addedKg:
-                                                      typeof prev.addedKg ===
-                                                      "number"
-                                                        ? prev.addedKg
-                                                        : null,
-                                                  };
-                                                  updateSetLoadForExercise(
-                                                    exerciseIndex,
-                                                    setIndex,
-                                                    next,
-                                                  );
+                                                    barKg: n ?? 20,
+                                                    addedKg: typeof prev.addedKg === "number" ? prev.addedKg : null,
+                                                  });
                                                 }}
+                                                placeholder="20"
                                                 className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                               />
                                               <div className="text-sm text-theme-muted text-center mt-1">
@@ -5710,48 +5619,18 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                               </div>
                                             </div>
                                             <div>
-                                              <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                placeholder="0"
-                                                value={
-                                                  typeof set.load.addedKg ===
-                                                  "number"
-                                                    ? String(set.load.addedKg)
-                                                    : ""
-                                                }
-                                                onChange={(e) => {
-                                                  const v = e.target.value;
-                                                  const n =
-                                                    v === ""
-                                                      ? null
-                                                      : Number(
-                                                          v.replace(",", "."),
-                                                        );
-                                                  const prev =
-                                                    set.load as Extract<
-                                                      SetLoad,
-                                                      { type: "barbell" }
-                                                    >;
-                                                  const next: SetLoad = {
+                                              <WeightInput
+                                                value={typeof set.load.addedKg === "number" ? set.load.addedKg : null}
+                                                onChange={(n) => {
+                                                  const prev = set.load as Extract<SetLoad, { type: "barbell" }>;
+                                                  updateSetLoadForExercise(exerciseIndex, setIndex, {
                                                     type: "barbell",
                                                     unit: "kg",
-                                                    barKg: prev.barKg,
-                                                    addedKg:
-                                                      v === ""
-                                                        ? null
-                                                        : Number.isFinite(
-                                                              n as number,
-                                                            )
-                                                          ? (n as number)
-                                                          : null,
-                                                  };
-                                                  updateSetLoadForExercise(
-                                                    exerciseIndex,
-                                                    setIndex,
-                                                    next,
-                                                  );
+                                                    barKg: prev.barKg ?? 20,
+                                                    addedKg: n,
+                                                  });
                                                 }}
+                                                placeholder="0"
                                                 className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                               />
                                               <div className="text-sm text-theme-muted text-center mt-1">
@@ -5764,44 +5643,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         {/* Assisted: 1 input (assistance en kg) */}
                                         {set.load?.type === "assisted" && (
                                           <div>
-                                            <input
-                                              type="text"
-                                              inputMode="decimal"
-                                              placeholder="0"
-                                              value={
-                                                typeof set.load.assistanceKg ===
-                                                "number"
-                                                  ? String(
-                                                      set.load.assistanceKg,
-                                                    )
-                                                  : ""
-                                              }
-                                              onChange={(e) => {
-                                                const v = e.target.value;
-                                                const n =
-                                                  v === ""
-                                                    ? null
-                                                    : Number(
-                                                        v.replace(",", "."),
-                                                      );
-                                                const next: SetLoad = {
+                                            <WeightInput
+                                              value={typeof set.load.assistanceKg === "number" ? set.load.assistanceKg : null}
+                                              onChange={(n) => {
+                                                updateSetLoadForExercise(exerciseIndex, setIndex, {
                                                   type: "assisted",
                                                   unit: "kg",
-                                                  assistanceKg:
-                                                    v === ""
-                                                      ? null
-                                                      : Number.isFinite(
-                                                            n as number,
-                                                          )
-                                                        ? (n as number)
-                                                        : null,
-                                                };
-                                                updateSetLoadForExercise(
-                                                  exerciseIndex,
-                                                  setIndex,
-                                                  next,
-                                                );
+                                                  assistanceKg: n,
+                                                });
                                               }}
+                                              placeholder="0"
                                               className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                             />
                                             <div className="text-sm text-theme-muted text-center mt-1">
@@ -5813,49 +5664,17 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         {/* Distance: 1 input + sélecteur unité */}
                                         {set.load?.type === "distance" && (
                                           <div>
-                                            <input
-                                              type="text"
-                                              inputMode="decimal"
-                                              placeholder="0"
-                                              value={
-                                                typeof set.load
-                                                  .distanceValue === "number"
-                                                  ? String(
-                                                      set.load.distanceValue,
-                                                    )
-                                                  : ""
-                                              }
-                                              onChange={(e) => {
-                                                const v = e.target.value;
-                                                const n =
-                                                  v === ""
-                                                    ? null
-                                                    : Number(
-                                                        v.replace(",", "."),
-                                                      );
-                                                const prev =
-                                                  set.load as Extract<
-                                                    SetLoad,
-                                                    { type: "distance" }
-                                                  >;
-                                                const next: SetLoad = {
+                                            <WeightInput
+                                              value={typeof set.load.distanceValue === "number" ? set.load.distanceValue : null}
+                                              onChange={(n) => {
+                                                const prev = set.load as Extract<SetLoad, { type: "distance" }>;
+                                                updateSetLoadForExercise(exerciseIndex, setIndex, {
                                                   type: "distance",
                                                   unit: prev.unit,
-                                                  distanceValue:
-                                                    v === ""
-                                                      ? null
-                                                      : Number.isFinite(
-                                                            n as number,
-                                                          )
-                                                        ? (n as number)
-                                                        : null,
-                                                };
-                                                updateSetLoadForExercise(
-                                                  exerciseIndex,
-                                                  setIndex,
-                                                  next,
-                                                );
+                                                  distanceValue: n,
+                                                });
                                               }}
+                                              placeholder="0"
                                               className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                             />
                                             <div className="flex items-center justify-center gap-2 mt-1">
@@ -5865,24 +5684,12 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                               <select
                                                 value={set.load.unit}
                                                 onChange={(e) => {
-                                                  const prev =
-                                                    set.load as Extract<
-                                                      SetLoad,
-                                                      { type: "distance" }
-                                                    >;
-                                                  const next: SetLoad = {
+                                                  const prev = set.load as Extract<SetLoad, { type: "distance" }>;
+                                                  updateSetLoadForExercise(exerciseIndex, setIndex, {
                                                     type: "distance",
-                                                    unit: e.target.value as
-                                                      | "cm"
-                                                      | "m",
-                                                    distanceValue:
-                                                      prev.distanceValue,
-                                                  };
-                                                  updateSetLoadForExercise(
-                                                    exerciseIndex,
-                                                    setIndex,
-                                                    next,
-                                                  );
+                                                    unit: e.target.value as "cm" | "m",
+                                                    distanceValue: prev.distanceValue,
+                                                  });
                                                 }}
                                                 className="bg-theme-tertiary border border-theme rounded-lg px-2 py-1 text-theme text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                               >
@@ -5899,88 +5706,27 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           set.load?.type === "machine" ||
                                           !set.load?.type) && (
                                           <div>
-                                            <input
-                                              type="text"
-                                              inputMode="decimal"
-                                              placeholder="0"
+                                            <WeightInput
                                               value={(() => {
                                                 const load = set.load;
-                                                if (!load) return "";
-                                                if (
-                                                  load.type === "single" ||
-                                                  load.type === "double" ||
-                                                  load.type === "machine"
-                                                ) {
-                                                  return typeof load.weightKg ===
-                                                    "number"
-                                                    ? String(load.weightKg)
-                                                    : "";
+                                                if (!load) return null;
+                                                if (load.type === "single" || load.type === "double" || load.type === "machine") {
+                                                  return typeof load.weightKg === "number" ? load.weightKg : null;
                                                 }
-                                                return "";
+                                                return null;
                                               })()}
-                                              onChange={(e) => {
-                                                const v = e.target.value;
-                                                const n =
-                                                  v === ""
-                                                    ? null
-                                                    : Number(
-                                                        v.replace(",", "."),
-                                                      );
-                                                const t:
-                                                  | "single"
-                                                  | "double"
-                                                  | "machine" =
-                                                  set.load?.type === "double"
-                                                    ? "double"
-                                                    : set.load?.type ===
-                                                        "machine"
-                                                      ? "machine"
-                                                      : "single";
+                                              onChange={(n) => {
+                                                const t: "single" | "double" | "machine" =
+                                                  set.load?.type === "double" ? "double"
+                                                  : set.load?.type === "machine" ? "machine"
+                                                  : "single";
                                                 const next: SetLoad =
-                                                  t === "double"
-                                                    ? {
-                                                        type: "double",
-                                                        unit: "kg",
-                                                        weightKg:
-                                                          v === ""
-                                                            ? null
-                                                            : Number.isFinite(
-                                                                  n as number,
-                                                                )
-                                                              ? (n as number)
-                                                              : null,
-                                                      }
-                                                    : t === "machine"
-                                                      ? {
-                                                          type: "machine",
-                                                          unit: "kg",
-                                                          weightKg:
-                                                            v === ""
-                                                              ? null
-                                                              : Number.isFinite(
-                                                                    n as number,
-                                                                  )
-                                                                ? (n as number)
-                                                                : null,
-                                                        }
-                                                      : {
-                                                          type: "single",
-                                                          unit: "kg",
-                                                          weightKg:
-                                                            v === ""
-                                                              ? null
-                                                              : Number.isFinite(
-                                                                    n as number,
-                                                                  )
-                                                                ? (n as number)
-                                                                : null,
-                                                        };
-                                                updateSetLoadForExercise(
-                                                  exerciseIndex,
-                                                  setIndex,
-                                                  next,
-                                                );
+                                                  t === "double" ? { type: "double", unit: "kg", weightKg: n }
+                                                  : t === "machine" ? { type: "machine", unit: "kg", weightKg: n }
+                                                  : { type: "single", unit: "kg", weightKg: n };
+                                                updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                               }}
+                                              placeholder="0"
                                               className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-8 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                             />
                                             <div className="text-sm text-theme-muted text-center mt-1">
