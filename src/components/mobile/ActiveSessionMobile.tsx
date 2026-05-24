@@ -771,6 +771,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     executionMode: ExecutionMode;
     anchorEl: HTMLElement | null;
   } | null>(null);
+  const [showDeleteExerciseModal, setShowDeleteExerciseModal] = useState<number | null>(null);
 
   // Refs for Popover anchors (used on desktop)
   const historyAnchorRef = useRef<HTMLElement | null>(null);
@@ -2097,6 +2098,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   }, [clearLocalStorage, onCancel]);
 
   // ─── Add exercise mid-session ─────────────────────────────────────────────
+  const handleDeleteExercise = useCallback((index: number) => {
+    setLogs(prev => prev.filter((_, i) => i !== index));
+    setShowDeleteExerciseModal(null);
+  }, []);
+
   const handleAddExercises = useCallback(
     (picks: PickedExercise[]) => {
       const newLogs: ExerciseLog[] = picks.map(picked => ({
@@ -4961,6 +4967,16 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                     </>
                                   )}
                                 </div>
+                              {isExpanded && (
+                                <button
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowDeleteExerciseModal(exerciseIndex); }}
+                                  className="p-2 rounded-xl text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 flex-shrink-0 transition-colors"
+                                  type="button"
+                                  aria-label="Supprimer l'exercice"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                               </div>
                             </div>
                           </button>
@@ -6731,6 +6747,39 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
           onConfirm={handleAddExercises}
           onClose={() => setShowAddExercisePicker(false)}
         />
+      )}
+
+      {/* ─── Delete exercise modal ─── */}
+      {showDeleteExerciseModal !== null && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-theme-secondary border border-theme rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-[var(--color-danger)]/20 rounded-xl flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-[var(--color-danger)]" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-theme">Supprimer l'exercice ?</h3>
+                <p className="text-sm text-theme-muted">{logs[showDeleteExerciseModal]?.exerciseName}</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteExerciseModal(null)}
+                className="flex-1 py-3 bg-theme-tertiary hover:bg-theme-secondary text-theme rounded-xl font-medium transition-colors"
+                type="button"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleDeleteExercise(showDeleteExerciseModal)}
+                className="flex-1 py-3 bg-[var(--color-danger)] hover:opacity-90 text-white rounded-xl font-medium transition-colors"
+                type="button"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

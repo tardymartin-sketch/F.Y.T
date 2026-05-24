@@ -825,6 +825,16 @@ export const AddSession: React.FC<Props> = ({
                                   </div>
                                 )}
                               </div>
+                              {isExpanded && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setShowDeleteExerciseModal(exerciseIndex); }}
+                                  className="p-2 rounded-xl text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 flex-shrink-0 transition-colors"
+                                  type="button"
+                                  aria-label="Supprimer l'exercice"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </button>
@@ -1140,15 +1150,6 @@ export const AddSession: React.FC<Props> = ({
                                 />
                               </div>
 
-                              {/* Delete Exercise Button */}
-                              <button
-                                onClick={() => setShowDeleteExerciseModal(exerciseIndex)}
-                                className="w-full flex items-center justify-center gap-2 py-3 mt-4 border border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 rounded-xl font-medium transition-colors"
-                                type="button"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Supprimer l'exercice
-                              </button>
                             </div>
                           </>
                         )}
