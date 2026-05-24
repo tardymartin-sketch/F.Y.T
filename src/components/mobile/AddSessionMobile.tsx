@@ -21,6 +21,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { RpeSelector, SessionRpeModal } from '../common/RpeSelector';
+import { WeightInput } from '../common/WeightInput';
 import { Card, CardContent } from '../shared/Card';
 import { setLocalStorageWithEvent, removeLocalStorageWithEvent } from '../../utils/localStorageEvents';
 
@@ -954,45 +955,37 @@ export const AddSession: React.FC<Props> = ({
                                   {set.load?.type === 'barbell' && (
                                     <div className="grid grid-cols-2 gap-3">
                                       <div>
-                                        <input
-                                          type="text"
-                                          inputMode="decimal"
-                                          placeholder="20"
-                                          value={Number.isFinite(set.load.barKg) ? String(set.load.barKg) : ''}
-                                          onChange={(e) => {
-                                            const raw = e.target.value;
-                                            const n = raw === '' ? 20 : Number(raw.replace(',', '.'));
+                                        <WeightInput
+                                          value={Number.isFinite(set.load.barKg) ? set.load.barKg : null}
+                                          onChange={(n) => {
                                             const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
                                             const next: SetLoad = {
                                               type: 'barbell',
                                               unit: 'kg',
-                                              barKg: Number.isFinite(n) ? n : 20,
+                                              barKg: n ?? 20,
                                               addedKg: typeof prev.addedKg === 'number' ? prev.addedKg : null
                                             };
                                             updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                           }}
+                                          placeholder="20"
                                           className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                         />
                                         <div className="text-sm text-theme-muted text-center mt-1">Barre</div>
                                       </div>
                                       <div>
-                                        <input
-                                          type="text"
-                                          inputMode="decimal"
-                                          placeholder="0"
-                                          value={typeof set.load.addedKg === 'number' ? String(set.load.addedKg) : ''}
-                                          onChange={(e) => {
-                                            const v = e.target.value;
-                                            const n = v === '' ? null : Number(v.replace(',', '.'));
+                                        <WeightInput
+                                          value={typeof set.load.addedKg === 'number' ? set.load.addedKg : null}
+                                          onChange={(n) => {
                                             const prev = set.load as Extract<SetLoad, { type: 'barbell' }>;
                                             const next: SetLoad = {
                                               type: 'barbell',
                                               unit: 'kg',
                                               barKg: prev.barKg,
-                                              addedKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                              addedKg: n
                                             };
                                             updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                           }}
+                                          placeholder="0"
                                           className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                         />
                                         <div className="text-sm text-theme-muted text-center mt-1">Poids ajoutés</div>
@@ -1003,21 +996,17 @@ export const AddSession: React.FC<Props> = ({
                                   {/* Type: Assisted */}
                                   {set.load?.type === 'assisted' && (
                                     <div>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="10"
-                                        value={typeof set.load.assistanceKg === 'number' ? String(set.load.assistanceKg) : ''}
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      <WeightInput
+                                        value={typeof set.load.assistanceKg === 'number' ? set.load.assistanceKg : null}
+                                        onChange={(n) => {
                                           const next: SetLoad = {
                                             type: 'assisted',
                                             unit: 'kg',
-                                            assistanceKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                            assistanceKg: n
                                           };
                                           updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                         }}
+                                        placeholder="10"
                                         className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                       />
                                       <div className="text-sm text-theme-muted text-center mt-1">Assistance (kg retirés)</div>
@@ -1027,22 +1016,18 @@ export const AddSession: React.FC<Props> = ({
                                   {/* Type: Distance */}
                                   {set.load?.type === 'distance' && (
                                     <div>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="50"
-                                        value={typeof set.load.distanceValue === 'number' ? String(set.load.distanceValue) : ''}
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      <WeightInput
+                                        value={typeof set.load.distanceValue === 'number' ? set.load.distanceValue : null}
+                                        onChange={(n) => {
                                           const prev = set.load as Extract<SetLoad, { type: 'distance' }>;
                                           const next: SetLoad = {
                                             type: 'distance',
                                             unit: prev.unit,
-                                            distanceValue: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null)
+                                            distanceValue: n
                                           };
                                           updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                         }}
+                                        placeholder="50"
                                         className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                       />
                                       <div className="flex items-center justify-center gap-2 mt-1">
@@ -1070,22 +1055,18 @@ export const AddSession: React.FC<Props> = ({
                                   {/* Types: Single, Double, Machine */}
                                   {(set.load?.type === 'single' || set.load?.type === 'double' || set.load?.type === 'machine') && (
                                     <div>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="0"
-                                        value={typeof set.load.weightKg === 'number' ? String(set.load.weightKg) : ''}
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
+                                      <WeightInput
+                                        value={typeof set.load.weightKg === 'number' ? set.load.weightKg : null}
+                                        onChange={(n) => {
                                           const t = set.load?.type as 'single' | 'double' | 'machine';
                                           const next: SetLoad = t === 'double'
-                                            ? { type: 'double', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
+                                            ? { type: 'double', unit: 'kg', weightKg: n }
                                             : t === 'machine'
-                                              ? { type: 'machine', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) }
-                                              : { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
+                                              ? { type: 'machine', unit: 'kg', weightKg: n }
+                                              : { type: 'single', unit: 'kg', weightKg: n };
                                           updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                         }}
+                                        placeholder="0"
                                         className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                       />
                                       <div className="text-sm text-theme-muted text-center mt-1">
@@ -1097,17 +1078,13 @@ export const AddSession: React.FC<Props> = ({
                                   {/* Fallback si pas de load défini */}
                                   {!set.load && (
                                     <div>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="0"
-                                        value=""
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          const n = v === '' ? null : Number(v.replace(',', '.'));
-                                          const next: SetLoad = { type: 'single', unit: 'kg', weightKg: v === '' ? null : (Number.isFinite(n as number) ? (n as number) : null) };
+                                      <WeightInput
+                                        value={null}
+                                        onChange={(n) => {
+                                          const next: SetLoad = { type: 'single', unit: 'kg', weightKg: n };
                                           updateSetLoadForExercise(exerciseIndex, setIndex, next);
                                         }}
+                                        placeholder="0"
                                         className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                                       />
                                       <div className="text-sm text-theme-muted text-center mt-1">Haltère / Kettlebell</div>
