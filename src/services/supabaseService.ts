@@ -2918,13 +2918,15 @@ export async function fetchExerciseById(exerciseId: string): Promise<Exercise | 
 }
 
 /**
- * Recherche des exercices par nom (partiel).
+ * Recherche des exercices par nom FR ou alias EN (partiel).
+ * Un même exercice peut s'appeler "Tractions" (FR) ou "Pull-ups" (EN) —
+ * les deux termes retournent le même enregistrement.
  */
 export async function searchExercises(searchTerm: string): Promise<Exercise[]> {
   const { data, error } = await supabase
     .from('exercises')
     .select('*')
-    .ilike('name', `%${searchTerm}%`)
+    .or(`name.ilike.%${searchTerm}%,alias_en.ilike.%${searchTerm}%`)
     .order('name', { ascending: true })
     .limit(20);
 

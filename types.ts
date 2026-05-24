@@ -201,6 +201,7 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
 export interface ExerciseRow {
   id: string;                      // UUID
   name: string;
+  alias_en: string | null;
   muscle_group: string | null;
   video_url: string | null;
   coach_instructions: string | null;
@@ -218,6 +219,8 @@ export interface ExerciseRow {
 export interface Exercise {
   id: string;
   name: string;
+  /** Nom anglais de l'exercice. Utilisé pour la recherche bilingue FR/EN. */
+  aliasEn?: string;
   muscleGroup?: string;
   videoUrl?: string;
   coachInstructions?: string;
@@ -236,6 +239,7 @@ export function mapExerciseRowToExercise(row: ExerciseRow): Exercise {
   return {
     id: row.id,
     name: row.name,
+    aliasEn: row.alias_en ?? undefined,
     muscleGroup: row.muscle_group ?? undefined,
     videoUrl: row.video_url ?? undefined,
     coachInstructions: row.coach_instructions ?? undefined,
@@ -255,6 +259,7 @@ export function mapExerciseToRow(exercise: Partial<Exercise>): Partial<ExerciseR
   return {
     ...(exercise.id && { id: exercise.id }),
     ...(exercise.name && { name: exercise.name }),
+    ...(exercise.aliasEn !== undefined && { alias_en: exercise.aliasEn || null }),
     ...(exercise.muscleGroup !== undefined && { muscle_group: exercise.muscleGroup || null }),
     ...(exercise.videoUrl !== undefined && { video_url: exercise.videoUrl || null }),
     ...(exercise.coachInstructions !== undefined && { coach_instructions: exercise.coachInstructions || null }),

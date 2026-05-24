@@ -20,6 +20,7 @@ export function ExerciseForm({
   onClose,
 }: ExerciseFormProps) {
   const [name, setName] = useState(exercise?.name || '');
+  const [aliasEn, setAliasEn] = useState(exercise?.aliasEn || '');
   const [videoUrl, setVideoUrl] = useState(exercise?.videoUrl || '');
   const [primaryMuscleGroupId, setPrimaryMuscleGroupId] = useState(exercise?.primaryMuscleGroupId || '');
   const [movementPatternId, setMovementPatternId] = useState(exercise?.movementPatternId || '');
@@ -50,6 +51,7 @@ export function ExerciseForm({
     try {
       await onSave({
         name: name.trim(),
+        aliasEn: aliasEn.trim() || undefined,
         videoUrl: videoUrl.trim() || undefined,
         primaryMuscleGroupId,
         movementPatternId: movementPatternId || undefined,
@@ -114,6 +116,23 @@ export function ExerciseForm({
               className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
               placeholder="Ex: Developpe couche"
             />
+          </div>
+
+          {/* Alias EN */}
+          <div>
+            <label className="block text-sm font-medium text-theme mb-1">
+              Alias anglais
+            </label>
+            <input
+              type="text"
+              value={aliasEn}
+              onChange={(e) => setAliasEn(e.target.value)}
+              className="w-full px-3 py-2 bg-theme border border-theme rounded-lg text-theme placeholder-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
+              placeholder="Ex: Bench Press"
+            />
+            <p className="mt-1 text-xs text-theme-muted">
+              Permet la recherche en anglais. L'historique reste partagé.
+            </p>
           </div>
 
           {/* Video URL */}
