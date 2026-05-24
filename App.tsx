@@ -389,53 +389,68 @@ const App: React.FC = () => {
   };
 
   const handleResumeSession = () => {
+    // Fast path: Zustand already has session data (no page refresh) — just navigate.
+    if (activeSessionData !== null) {
+      setCurrentView('active');
+      return;
+    }
+
+    // Restore path: Zustand was reset (page refresh) — rebuild from localStorage.
     const savedSession = localStorage.getItem('F.Y.T_active_session');
-    if (savedSession) {
-      try {
-        const parsed = JSON.parse(savedSession);
+    if (!savedSession) return;
 
-        // Si en mode édition, restaurer la séance depuis l'historique
-        if (parsed.isEditMode && parsed.editingSessionId) {
-          const session = history.find(s => s.id === parsed.editingSessionId);
-          if (session) {
-            // Récupérer les données de session depuis parsed.sessionData
-            let sessionData: WorkoutRow[] | null = null;
-            if (parsed.sessionData) {
-              sessionData = trainingData.filter(d => {
-                return parsed.sessionData.some((s: any) =>
-                  s.seance === d.seance &&
-                  s.annee === d.annee &&
-                  s.moisNum === d.moisNum &&
-                  s.semaine === d.semaine
-                );
-              });
-              if (sessionData.length === 0) sessionData = null;
-            }
-            // Set both at once to avoid stale closure bug
-            setActiveSession(sessionData, session);
-            setCurrentView('active');
-            return;
-          }
-        }
+    try {
+      const parsed = JSON.parse(savedSession);
 
-        // Sinon, comportement normal (nouvelle séance)
-        if (parsed.sessionData) {
-          const sessionData = trainingData.filter(d => {
-            return parsed.sessionData.some((s: any) =>
-              s.seance === d.seance &&
-              s.annee === d.annee &&
-              s.moisNum === d.moisNum &&
-              s.semaine === d.semaine
+      // Edit mode: session exists in history (editing a past completed session).
+      if (parsed.isEditMode && parsed.editingSessionId) {
+        const session = history.find(s => s.id === parsed.editingSessionId);
+        if (session) {
+          let sessionData: WorkoutRow[] | null = null;
+          if (parsed.sessionData) {
+            const found = trainingData.filter(d =>
+              parsed.sessionData.some((s: any) =>
+                s.seance === d.seance &&
+                s.annee === d.annee &&
+                s.moisNum === d.moisNum &&
+                s.semaine === d.semaine
+              )
             );
-          });
-          if (sessionData.length > 0) {
-            setActiveSession(sessionData, null);
-            setCurrentView('active');
+            if (found.length > 0) sessionData = found;
           }
+          setActiveSession(sessionData, session);
+          setCurrentView('active');
+          return;
         }
-      } catch (e) {
-        console.error('Erreur reprise session:', e);
+        // Not in history = new in-progress session, fall through to log-based restore.
       }
+
+      // Normal session: reconstruct exercises from training plan.
+      if (parsed.sessionData && parsed.sessionData.length > 0) {
+        const sessionData = trainingData.filter(d =>
+          parsed.sessionData.some((s: any) =>
+            s.seance === d.seance &&
+            s.annee === d.annee &&
+            s.moisNum === d.moisNum &&
+            s.semaine === d.semaine
+          )
+        );
+        if (sessionData.length > 0) {
+          setActiveSession(sessionData, null);
+          setCurrentView('active');
+          return;
+        }
+      }
+
+      // Fallback: blank/template session, or training plan changed since session started.
+      // Navigate with empty sessionData — ActiveSessionMobile restores logs from localStorage
+      // (the empty-vs-empty sessionData comparison in its useEffect will match and restore).
+      if (parsed.logs && parsed.logs.length > 0) {
+        setActiveSession([], null);
+        setCurrentView('active');
+      }
+    } catch (e) {
+      console.error('Erreur reprise session:', e);
     }
   };
 
