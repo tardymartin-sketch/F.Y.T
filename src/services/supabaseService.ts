@@ -1447,7 +1447,7 @@ export async function fetchCategoryDistribution(
   categoryMap.forEach((data, category) => {
     result.push({
       category: category as AnalyticsCategory,
-      totalVolume: Math.round(data.totalVolume),
+      totalVolume: data.totalVolume,
       sessionCount: data.sessions.size,
       percentage: grandTotal > 0 ? Math.round((data.totalVolume / grandTotal) * 100) : 0,
     });
