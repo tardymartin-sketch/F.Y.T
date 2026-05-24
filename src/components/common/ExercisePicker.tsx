@@ -277,11 +277,14 @@ export function ExercisePicker({ userId, onConfirm, onClose }: Props) {
     return () => obs.disconnect();
   }, [loading]); // re-run after loading to measure real available space
 
-  // Build rows
+  // Build rows — recherche bilingue FR + EN via alias_en
   const filteredExercises = useMemo(() => {
     if (!searchTerm.trim()) return exercises;
     const q = normalize(searchTerm);
-    return exercises.filter(ex => normalize(ex.name).includes(q));
+    return exercises.filter(ex =>
+      normalize(ex.name).includes(q) ||
+      (ex.aliasEn ? normalize(ex.aliasEn).includes(q) : false),
+    );
   }, [exercises, searchTerm]);
 
   const rows = useMemo<Row[]>(() => {

@@ -838,9 +838,11 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   // ===========================================
 
   useEffect(() => {
-    // Vérifier s'il y a une session en cours dans localStorage
+    // Vérifier s'il y a une session en cours dans localStorage.
+    // On lit toujours localStorage (même si initialLog est défini) car l'utilisateur
+    // peut avoir quitté une séance en cours (blank ou édition) et vouloir la reprendre.
     const savedSession = localStorage.getItem("F.Y.T_active_session");
-    if (savedSession && !initialLog) {
+    if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
         if (parsed.logs && parsed.sessionData) {
@@ -853,7 +855,15 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
             .sort()
             .join(",");
 
-          if (savedSessionIds === currentSessionIds) {
+          // Vérification supplémentaire sur l'ID de session pour éviter de restaurer
+          // la mauvaise séance : si localStorage a un editingSessionId, il doit
+          // correspondre à initialLog.id (ou l'un des deux est absent).
+          const editingIdMatch =
+            !parsed.editingSessionId ||
+            !initialLog ||
+            parsed.editingSessionId === initialLog.id;
+
+          if (savedSessionIds === currentSessionIds && editingIdMatch) {
             setLogs(normalizeExerciseLogs(parsed.logs));
             setPhase("focus"); // Toujours démarrer directement en mode saisie
             setCurrentExerciseIndex(parsed.currentExerciseIndex || 0);

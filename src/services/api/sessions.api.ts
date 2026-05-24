@@ -173,6 +173,7 @@ export const sessionsApi = {
       exercise_name: ex.exerciseName,
       sets_detail: ex.sets,
       notes: ex.notes,
+      rpe: ex.rpe ?? null,
       date: log.date,
       year: parseInt(log.sessionKey.annee) || now.getFullYear(),
       week: parseInt(log.sessionKey.semaine) || getISOWeek(now),
