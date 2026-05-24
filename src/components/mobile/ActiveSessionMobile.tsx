@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // F.Y.T - ACTIVE SESSION ATHLETE (Mobile-First Mode Focus)
 // src/components/athlete/ActiveSessionAthlete.tsx
 // Séance en deux phases: Récapitulatif → Mode Focus
@@ -3116,7 +3116,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                         exerciseIndex,
                                         setIndex,
                                         "reps",
-                                        e.target.value,
+                                        e.target.value.replace(/[^0-9]/g, ""),
                                       )
                                     }
                                     className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
@@ -3844,7 +3844,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                                 exerciseIndex,
                                                 supersetSetIdx,
                                                 "reps",
-                                                e.target.value,
+                                                e.target.value.replace(/[^0-9]/g, ""),
                                               )
                                             }
                                             className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
@@ -4475,7 +4475,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                           exerciseIndex,
                                           setIndex,
                                           "reps",
-                                          e.target.value,
+                                          e.target.value.replace(/[^0-9]/g, ""),
                                         )
                                       }
                                       className="w-full flex-1 bg-theme-tertiary border border-theme rounded px-2 text-theme text-center text-lg font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
@@ -5084,7 +5084,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                               exerciseIndex,
                                               setIndex,
                                               "reps",
-                                              e.target.value,
+                                              e.target.value.replace(/[^0-9]/g, ""),
                                             )
                                           }
                                           className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-4 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
@@ -5558,7 +5558,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                                               exerciseIndex,
                                               setIndex,
                                               "reps",
-                                              e.target.value,
+                                              e.target.value.replace(/[^0-9]/g, ""),
                                             )
                                           }
                                           className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"

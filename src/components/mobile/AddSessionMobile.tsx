@@ -933,7 +933,7 @@ export const AddSession: React.FC<Props> = ({
                                     inputMode="numeric"
                                     placeholder="8"
                                     value={set.reps}
-                                    onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value)}
+                                    onChange={(e) => updateSetForExercise(exerciseIndex, setIndex, 'reps', e.target.value.replace(/[^0-9]/g, ''))}
                                     className="w-full bg-theme-tertiary border border-theme rounded-xl px-3 py-3 text-theme text-center text-xl font-bold placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent"
                                   />
                                 </div>

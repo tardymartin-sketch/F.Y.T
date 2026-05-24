@@ -334,7 +334,7 @@ export const SupersetExerciseBlock: React.FC<Props> = ({
                         inputMode="numeric"
                         placeholder={exerciseData?.repsDuree?.replace(/[^0-9]/g, '') || '8'}
                         value={set.reps}
-                        onChange={(e) => onUpdateSet(exerciseIndex, currentSetIndex, 'reps', e.target.value)}
+                        onChange={(e) => onUpdateSet(exerciseIndex, currentSetIndex, 'reps', e.target.value.replace(/[^0-9]/g, ''))}
                         disabled={set.completed}
                         className="w-full bg-theme-tertiary border border-theme rounded px-2 py-1.5 text-theme text-center text-base font-bold placeholder:text-theme-muted focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] disabled:opacity-50"
                       />
