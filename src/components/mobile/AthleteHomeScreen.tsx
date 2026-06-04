@@ -1,6 +1,6 @@
 // ============================================================
-// F.Y.T - ATHLETE HOME SCREEN (Phase 1)
-// 3-tab layout: Active | Récents | Templates
+// F.Y.T - ATHLETE HOME SCREEN
+// 4-tab layout: Active | Récents | Templates | Mon programme
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -11,10 +11,11 @@ import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import { SetAsTemplateModal } from './SetAsTemplateModal';
 import { DraftConflictModal } from './DraftConflictModal';
 import { RelaunchConfirmModal } from '../common/history/RelaunchConfirmModal';
+import { MyProgramTab } from './MyProgramTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type HomeTab = 'active' | 'recent' | 'templates';
+type HomeTab = 'active' | 'recent' | 'templates' | 'program';
 
 interface Props {
   user: User;
@@ -54,6 +55,7 @@ function TabBar({ active, onChange }: { active: HomeTab; onChange: (t: HomeTab) 
     { key: 'active', label: 'Active' },
     { key: 'recent', label: 'Récents' },
     { key: 'templates', label: 'Templates' },
+    { key: 'program', label: 'Programme' },
   ];
   return (
     <div
@@ -987,6 +989,15 @@ export function AthleteHomeScreen({ user, history, hasActiveSession, onResumeSes
               </>
             )}
           </>
+        )}
+
+        {/* ─── Onglet Mon programme ─── */}
+        {tab === 'program' && (
+          <MyProgramTab
+            userId={user.id}
+            hasActiveSession={hasActiveSession}
+            onStartNewSession={onStartNewSession}
+          />
         )}
       </div>
 
