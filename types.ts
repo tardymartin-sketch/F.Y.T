@@ -130,6 +130,8 @@ export interface TrainingPlanRow {
   execution_mode: string | null;     // 'straight' | 'superset' | 'triset' | etc.
   execution_group_id: string | null; // UUID partagé par les exercices d'un groupe
   execution_group_position: number | null; // Position dans le groupe (0, 1, 2...)
+  program_name: string | null;       // Nom du programme (NULL = séance standalone)
+  source_template_id: string | null; // FK vers session_templates.id
 }
 
 // Type utilisé dans l'application (camelCase, valeurs par défaut)
@@ -159,6 +161,8 @@ export interface WorkoutRow {
   executionMode?: ExecutionMode;       // Défaut: 'straight'
   executionGroupId?: string;           // UUID partagé par les exercices d'un groupe
   executionGroupPosition?: number;     // Position dans le groupe (0, 1, 2...)
+  programName?: string;                // Nom du programme (undefined = séance standalone)
+  sourceTemplateId?: string;           // FK vers session_templates.id
 }
 
 // Alias pour compatibilité
@@ -190,6 +194,8 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     executionMode: (row.execution_mode as ExecutionMode) ?? 'straight',
     executionGroupId: row.execution_group_id ?? undefined,
     executionGroupPosition: row.execution_group_position ?? undefined,
+    programName: row.program_name ?? undefined,
+    sourceTemplateId: row.source_template_id ?? undefined,
   };
 }
 
@@ -1564,6 +1570,31 @@ export interface Program {
   exercises: SessionExercise[];  // Conservé pour compatibilité
   items?: SessionItem[];         // Liste ordonnée
   sourceTemplateId?: string;     // Référence au template source (session_templates.id)
+}
+
+// ===========================================
+// TYPES PROGRAMME ATHLÈTE (onglet "Mon programme")
+// ===========================================
+
+/** Une séance dans un programme, identifiée par son seance_type et ses exercices */
+export interface ProgramSession {
+  seanceType: string;
+  rows: WorkoutRow[];
+  sourceTemplateId?: string;
+}
+
+/** Une semaine dans un programme, avec ses séances */
+export interface ProgramWeek {
+  weekStartDate: string;        // "2026-01-06"
+  weekEndDate: string | null;   // "2026-01-12"
+  weekLabel: string;            // "6 jan – 12 jan"
+  sessions: ProgramSession[];
+}
+
+/** Un programme tel que vu par l'athlète */
+export interface AthleteProgram {
+  programName: string;
+  weeks: ProgramWeek[];
 }
 
 // Variante d'exercice (exercices avec même nom mais données primaires différentes)
