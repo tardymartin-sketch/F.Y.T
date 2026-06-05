@@ -96,6 +96,8 @@ import { sessionsApi } from "../../services/api/sessions.api";
 import { SetAsTemplateModal } from "./SetAsTemplateModal";
 import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
 import { useAthletePreferences } from "./AthleteSettings";
+import { useQuery } from "@tanstack/react-query";
+import { programsApi } from "../../services/api/programs.api";
 
 // ===========================================
 // DND HELPERS
@@ -670,6 +672,67 @@ function getGhostModeData(
 // COMPONENT
 // ===========================================
 
+// ===========================================
+// TEXT BLOCK BANNER (instructions coach, lecture seule)
+// ===========================================
+
+const TextBlockBanner: React.FC<{ templateId: string | null }> = ({
+  templateId,
+}) => {
+  const { data: blocks } = useQuery({
+    queryKey: ["textBlocks", templateId],
+    queryFn: () => programsApi.getSessionTextBlocks(templateId as string),
+    enabled: !!templateId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (!blocks || blocks.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block) => (
+        <div
+          key={block.id}
+          style={{
+            background: "var(--color-surface-2)",
+            border: "1px solid var(--color-accent)",
+            borderLeft: "3px solid var(--color-accent)",
+            borderRadius: 12,
+            padding: "14px 16px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <MessageSquare size={15} color="var(--color-accent)" />
+            <span
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--color-accent)",
+              }}
+            >
+              Note du coach
+            </span>
+          </div>
+          <RichTextDisplay
+            html={block.content}
+            className="text-theme-secondary"
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const ActiveSessionAthlete: React.FC<Props> = ({
   sessionData,
   history,
@@ -690,6 +753,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [phase, setPhase] = useState<SessionPhase>("focus");
   const [logs, setLogs] = useState<ExerciseLog[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Template source (pour afficher les blocs de texte coach en lecture seule)
+  const currentTemplateId = useActiveSessionStore((s) => s.currentTemplateId);
 
   // Momentum score
   const previousSession = useMemo(() => {
@@ -2215,6 +2281,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
       {/* Content */}
       <div className="p-4 space-y-4">
+        {/* Notes du coach (blocs de texte, lecture seule) */}
+        <TextBlockBanner templateId={currentTemplateId} />
+
         {/* Exercise List */}
         <div className="space-y-3">
           <h2 className="text-sm font-medium text-theme-muted flex items-center gap-2">
@@ -2814,6 +2883,10 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
 
         {/* Main Content */}
         <div className="flex-1 p-4 overflow-y-auto" ref={scrollContainerRef}>
+          {/* Notes du coach (blocs de texte, lecture seule) */}
+          <div className="mb-4">
+            <TextBlockBanner templateId={currentTemplateId} />
+          </div>
           {/* Desktop: grille de tuiles carrées (max 4 colonnes) / Mobile: liste verticale */}
           <DndContext
             sensors={dndSensors}

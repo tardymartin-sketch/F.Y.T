@@ -6,6 +6,7 @@ import { programsApi } from '../../services/api/programs.api';
 import { workoutRowsToExerciseLogs } from '../../utils/workoutToExerciseLogs';
 import { getCurrentWeekIndex } from '../../utils/programUtils';
 import { ProgramSessionCard } from './ProgramSessionCard';
+import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -379,6 +380,7 @@ interface Props {
 
 export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Props) {
   const [selectedProgram, setSelectedProgram] = useState<AthleteProgram | null>(null);
+  const setCurrentTemplateId = useActiveSessionStore(s => s.setCurrentTemplateId);
 
   const { data: programs, isLoading, isError, refetch } = useQuery({
     queryKey: ['athleteProgram', userId],
@@ -387,6 +389,8 @@ export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Pr
   });
 
   const handleLaunch = (session: ProgramSession) => {
+    // Propage le template source pour permettre l'affichage des blocs de texte coach
+    setCurrentTemplateId(session.sourceTemplateId ?? null);
     const exercises = workoutRowsToExerciseLogs(session.rows);
     onStartNewSession(exercises);
   };

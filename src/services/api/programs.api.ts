@@ -1,5 +1,10 @@
 import { supabase } from '../../supabaseClient';
-import { AthleteProgram, TrainingPlanRow, mapTrainingPlanToWorkout } from '../../../types';
+import {
+  AthleteProgram,
+  TrainingPlanRow,
+  SessionTextBlockRow,
+  mapTrainingPlanToWorkout,
+} from '../../../types';
 import { groupByProgram } from '../../utils/programUtils';
 
 export const programsApi = {
@@ -39,5 +44,19 @@ export const programsApi = {
     });
 
     return groupByProgram(rows);
+  },
+
+  /** Récupère les blocs de texte (instructions coach) d'un template de séance,
+   *  ordonnés par position. Lecture seule côté athlète (RLS : READ coach + athlète). */
+  async getSessionTextBlocks(templateId: string): Promise<SessionTextBlockRow[]> {
+    const { data, error } = await supabase
+      .from('session_text_blocks')
+      .select('*')
+      .eq('session_template_id', templateId)
+      .order('position', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []) as SessionTextBlockRow[];
   },
 };
