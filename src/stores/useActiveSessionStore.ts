@@ -31,6 +31,9 @@ interface ActiveSessionState {
   editingSession: SessionLog | null;
   hasActiveSession: boolean;
 
+  // Template source de la séance active (pour afficher les blocs de texte coach)
+  currentTemplateId: string | null;
+
   // Session lifecycle (Feature 8 — state machine)
   sessionStatus: SessionStatus;
 
@@ -49,6 +52,7 @@ interface ActiveSessionState {
   // ─── Actions ──────────────────────────────────────────────────────────────
 
   setActiveSession: (data: WorkoutRow[] | null, initialLog?: SessionLog | null) => void;
+  setCurrentTemplateId: (id: string | null) => void;
   clearActiveSession: () => void;
   syncWithLocalStorage: () => void;
 
@@ -78,6 +82,7 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => ({
   activeSessionData: null,
   editingSession: null,
   hasActiveSession: false,
+  currentTemplateId: null,
   sessionStatus: 'draft',
   exerciseIndex: 0,
   setIndex: 0,
@@ -99,6 +104,8 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => ({
     get().autoSaveSession();
   },
 
+  setCurrentTemplateId: (id) => set({ currentTemplateId: id }),
+
   clearActiveSession: () => {
     removeLocalStorageWithEvent('F.Y.T_active_session');
     removeLocalStorageWithEvent('F.Y.T_momentum_autosave');
@@ -107,6 +114,7 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => ({
       activeSessionData: null,
       editingSession: null,
       hasActiveSession: false,
+      currentTemplateId: null,
       sessionStatus: 'draft',
       exerciseIndex: 0,
       setIndex: 0,

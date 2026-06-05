@@ -311,7 +311,7 @@ html, body, #root {
   font-weight: 700;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .rich-text-display h2 {
@@ -319,7 +319,7 @@ html, body, #root {
   font-weight: 600;
   margin-top: 0.75rem;
   margin-bottom: 0.5rem;
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .rich-text-display h3 {
@@ -327,19 +327,19 @@ html, body, #root {
   font-weight: 600;
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .rich-text-display p {
   margin-bottom: 0.5rem;
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .rich-text-display ul,
 .rich-text-display ol {
   padding-left: 1.5rem;
   margin-bottom: 0.5rem;
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .rich-text-display ul {
@@ -356,7 +356,7 @@ html, body, #root {
 
 .rich-text-display strong {
   font-weight: 700;
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .rich-text-display em {
