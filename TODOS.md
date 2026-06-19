@@ -49,3 +49,22 @@
 **Dépendances** : La feature "Mon programme" côté athlète doit être stable avant d'attaquer ce chantier. L'API d'assignation doit exposer un endpoint mobile-friendly.
 
 **Effort** : ~3–5 jours humains / ~1 h CC
+
+---
+
+## 4. UI d'édition des notes du coach par semaine
+
+**Quoi** : Surface coach pour créer/éditer les notes (blocs-texte) d'une séance pour une semaine donnée d'un programme, sans passer par une insertion DB manuelle.
+
+**Pourquoi** : La feature "notes par semaine" (`feat/coach-notes-per-week`, plan `docs/PLAN_NOTES_COACH_PAR_SEMAINE.md`) découple les notes du template et les stocke par semaine dans `training_plans` (`is_text_block` + `text_block_content` HTML). Mais l'authoring est volontairement bypassé : le coach insère les notes directement en DB. Il manque l'UI pour le faire dans l'app.
+
+**Comment** :
+- Réutiliser `TextBlockCard` + `LexicalEditor` (déjà en HTML I/O) dans un contexte "séance-semaine" au lieu de "template".
+- Cible une ligne `training_plans` identifiée par (`program_name`, `week_start_date`, `seance_type`). Édition = update ciblé du `text_block_content` de la/les ligne(s) `is_text_block=true`, ou pattern delete+recreate comme `createProgram`.
+- Voir les marqueurs `// TODO(coach-edit)` posés dans `createProgram` (supabaseService.ts) et le rendu (ActiveSessionMobile) + la recette d'INSERT manuel documentée à côté.
+
+**Dépendances** : Plan `feat/coach-notes-per-week` livré (modèle de données + rendu). Pas de surface d'édition programme par semaine aujourd'hui (à créer).
+
+**Effort** : ~2–3 jours humains / ~45 min CC
+
+**Priorité** : P2 (différé sciemment — insertion DB manuelle en attendant).

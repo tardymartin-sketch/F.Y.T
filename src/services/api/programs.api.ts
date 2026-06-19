@@ -2,7 +2,6 @@ import { supabase } from '../../supabaseClient';
 import {
   AthleteProgram,
   TrainingPlanRow,
-  SessionTextBlockRow,
   mapTrainingPlanToWorkout,
 } from '../../../types';
 import { groupByProgram } from '../../utils/programUtils';
@@ -46,17 +45,11 @@ export const programsApi = {
     return groupByProgram(rows);
   },
 
-  /** Récupère les blocs de texte (instructions coach) d'un template de séance,
-   *  ordonnés par position. Lecture seule côté athlète (RLS : READ coach + athlète). */
-  async getSessionTextBlocks(templateId: string): Promise<SessionTextBlockRow[]> {
-    const { data, error } = await supabase
-      .from('session_text_blocks')
-      .select('*')
-      .eq('session_template_id', templateId)
-      .order('position', { ascending: true });
-
-    if (error) throw error;
-
-    return (data || []) as SessionTextBlockRow[];
-  },
+  // NOTE: getSessionTextBlocks() retiré (feat/coach-notes-per-week).
+  // Les notes du coach sont désormais découplées du template et stockées par
+  // semaine dans training_plans (is_text_block + text_block_content). Elles
+  // arrivent donc directement dans les WorkoutRow via getAthleteProgramSessions
+  // ci-dessus, et sont rendues par TextBlockBanner depuis sessionData.
+  // La table session_text_blocks reste en base (legacy/template) mais n'est
+  // plus lue par l'app.
 };

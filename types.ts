@@ -112,8 +112,10 @@ export interface TrainingPlanRow {
   week: number | null;
   seance_type: string | null;
   exercise_name: string | null;      // Conservé pour compatibilité
-  exercise_id: string;               // FK vers exercises.id (NOT NULL)
+  exercise_id: string | null;        // FK vers exercises.id (NULL pour les blocs-texte)
   order_index: number | null;
+  is_text_block: boolean | null;     // true = ligne bloc-texte (note coach), pas un exercice
+  text_block_content: string | null; // HTML de la note du coach (si is_text_block)
   target_sets: string | null;
   target_reps: string | null;
   rest_time_sec: number | null;
@@ -146,6 +148,7 @@ export interface WorkoutRow {
   exercice: string;            // Nom de l'exercice (conservé pour compatibilité)
   exerciseId?: string;         // UUID de l'exercice (undefined = fallback/legacy)
   isTextBlock?: boolean;       // Indicateur pour bloc de texte riche (instructions)
+  textBlockContent?: string;   // HTML de la note du coach (si isTextBlock)
   series: string;
   repsDuree: string;
   repos: string;
@@ -179,7 +182,9 @@ export function mapTrainingPlanToWorkout(row: TrainingPlanRow): WorkoutRow {
     seance: row.seance_type ?? '',
     ordre: row.order_index ?? 0,
     exercice: row.exercise_name ?? '',
-    exerciseId: row.exercise_id,
+    exerciseId: row.exercise_id ?? undefined,
+    isTextBlock: row.is_text_block ?? false,
+    textBlockContent: row.text_block_content ?? undefined,
     series: row.target_sets ?? '',
     repsDuree: row.target_reps ?? '',
     repos: row.rest_time_sec?.toString() ?? '',
