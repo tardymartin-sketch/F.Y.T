@@ -1,6 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { workoutRowsToExerciseLogs } from './workoutToExerciseLogs';
-import { WorkoutRow } from '../../types';
+import { workoutRowsToExerciseLogs, exerciseLogsToWorkoutRows } from './workoutToExerciseLogs';
+import { WorkoutRow, ExerciseLog } from '../../types';
+
+function makeLog(overrides: Partial<ExerciseLog> = {}): ExerciseLog {
+  return {
+    exerciseId: 'uuid-bench',
+    exerciseName: 'Bench Press',
+    sets: [
+      { setNumber: 1, reps: '8', weight: '60', completed: true },
+      { setNumber: 2, reps: '8', weight: '60', completed: true },
+      { setNumber: 3, reps: '6', weight: '62.5', completed: true },
+    ],
+    executionMode: 'straight',
+    ...overrides,
+  };
+}
 
 function makeRow(overrides: Partial<WorkoutRow> = {}): WorkoutRow {
   return {
@@ -118,5 +132,66 @@ describe('program-launch metadata join (active session)', () => {
     expect(meta?.repsDuree).toBe('8-12'); // was "?" when rows were dropped
     expect(meta?.repos).toBe('90');       // rest time, previously hidden
     expect(meta?.video).toBe('https://youtu.be/abc'); // camera icon source
+  });
+});
+
+// ─── Regression: history-relaunch / default-template → metadata recovery ──────
+// Bug: relaunching a past session from Récents (or launching a default template)
+// showed "?" for reps because the new draft has NO WorkoutRow source — it's
+// rebuilt from ExerciseLog[] — and was launched with setActiveSession([], ...).
+// Fix: synthesize a minimal WorkoutRow[] from the logged exercises so the active
+// session's `sessionData.find(d => d.exercice === ex.exerciseName)` recovers
+// reps (sets[0].reps) and séries (sets.length). repos/video are unavailable.
+describe('exerciseLogsToWorkoutRows', () => {
+  it('returns [] for empty input', () => {
+    expect(exerciseLogsToWorkoutRows([])).toEqual([]);
+  });
+
+  it('synthesizes reps from sets[0].reps and séries from sets.length', () => {
+    const rows = exerciseLogsToWorkoutRows([makeLog()]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].repsDuree).toBe('8');     // was "?" when sessionData was []
+    expect(rows[0].series).toBe('3');        // 3 logged sets
+  });
+
+  it('preserves the exercice ↔ exerciseName join key', () => {
+    const rows = exerciseLogsToWorkoutRows([makeLog({ exerciseName: 'Squat' })]);
+    expect(rows[0].exercice).toBe('Squat');
+  });
+
+  it('carries exerciseId and execution-group metadata for supersets', () => {
+    const rows = exerciseLogsToWorkoutRows([
+      makeLog({ exerciseName: 'Squat', executionMode: 'superset', executionGroupId: 'g1', executionGroupPosition: 1 }),
+    ]);
+    expect(rows[0].exerciseId).toBe('uuid-bench');
+    expect(rows[0].executionMode).toBe('superset');
+    expect(rows[0].executionGroupId).toBe('g1');
+    expect(rows[0].executionGroupPosition).toBe(1);
+  });
+
+  it('leaves repos and video empty (unavailable from an ExerciseLog)', () => {
+    const rows = exerciseLogsToWorkoutRows([makeLog()]);
+    expect(rows[0].repos).toBe('');
+    expect(rows[0].video).toBe('');
+  });
+
+  it('handles an exercise with no sets without crashing', () => {
+    const rows = exerciseLogsToWorkoutRows([makeLog({ sets: [] })]);
+    expect(rows[0].repsDuree).toBe('');
+    expect(rows[0].series).toBe('');
+  });
+
+  it('threads the session key into seance/annee for localStorage restore consistency', () => {
+    const rows = exerciseLogsToWorkoutRows([makeLog()], {
+      annee: '2026', moisNum: '6', semaine: '3', seance: 'Push A',
+    });
+    expect(rows[0]).toMatchObject({ annee: '2026', moisNum: '6', semaine: '3', seance: 'Push A' });
+  });
+
+  it('the synthesized rows resolve via the active-session lookup', () => {
+    const logs = [makeLog({ exerciseName: 'Deadlift' })];
+    const rows = exerciseLogsToWorkoutRows(logs);
+    const meta = rows.find(d => d.exercice === 'Deadlift');
+    expect(meta?.repsDuree).toBe('8'); // recovered, no longer "?"
   });
 });

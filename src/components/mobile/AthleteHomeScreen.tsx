@@ -8,6 +8,7 @@ import { Plus, Play, Dumbbell, AlertCircle, RotateCcw, RefreshCw } from 'lucide-
 import { SessionLog, User, ExerciseLog, DefaultTemplate, WorkoutRow } from '../../../types';
 import { sessionsApi } from '../../services/api/sessions.api';
 import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
+import { exerciseLogsToWorkoutRows } from '../../utils/workoutToExerciseLogs';
 import { SetAsTemplateModal } from './SetAsTemplateModal';
 import { DraftConflictModal } from './DraftConflictModal';
 import { RelaunchConfirmModal } from '../common/history/RelaunchConfirmModal';
@@ -637,7 +638,12 @@ export function AthleteHomeScreen({ user, history, hasActiveSession, onResumeSes
         })),
         notes: ex.notes,
       }));
-      onStartNewSession(blankExercises);
+      // Prescription synthétisée depuis les exercices loggés d'origine (avant
+      // blanking des reps) pour que l'active session affiche reps/séries réels.
+      onStartNewSession(
+        blankExercises,
+        exerciseLogsToWorkoutRows(session.exercises, session.sessionKey),
+      );
     },
     [onStartNewSession],
   );
@@ -658,7 +664,12 @@ export function AthleteHomeScreen({ user, history, hasActiveSession, onResumeSes
           completed: false,
         })),
       }));
-      onStartNewSession(blankExercises);
+      // Prescription synthétisée depuis le template (reps prescrites conservées)
+      // pour alimenter l'affichage reps/séries de l'active session.
+      onStartNewSession(
+        blankExercises,
+        exerciseLogsToWorkoutRows(template.exercises),
+      );
     },
     [onStartNewSession],
   );

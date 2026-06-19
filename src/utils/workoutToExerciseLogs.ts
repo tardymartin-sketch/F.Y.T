@@ -1,4 +1,4 @@
-import { WorkoutRow, ExerciseLog, SetLog } from '../../types';
+import { WorkoutRow, ExerciseLog, SetLog, SessionKey } from '../../types';
 
 /** Convertit des rows training_plans (WorkoutRow[]) en ExerciseLog[] prêts pour onStartNewSession.
  *  Champs diffés contre supabaseService.ts:3783 (createProgram) pour exhaustivité. */
@@ -28,4 +28,39 @@ export function workoutRowsToExerciseLogs(rows: WorkoutRow[]): ExerciseLog[] {
 
       return log;
     });
+}
+
+/** Inverse de workoutRowsToExerciseLogs : reconstruit une prescription minimale
+ *  (WorkoutRow[]) à partir d'ExerciseLog[].
+ *
+ *  Utilisé pour relancer une séance passée ou un template par défaut : ces séances
+ *  n'ont PAS de source training_plans (elles sont reconstruites depuis les logs),
+ *  donc on synthétise les rows que l'active session lit pour afficher reps/séries.
+ *  La clé de jointure reste `exercice === exerciseName` (cf. workoutToExerciseLogs.test).
+ *
+ *  Limites assumées : `repos` et `video` n'existent pas sur un ExerciseLog → ''. */
+export function exerciseLogsToWorkoutRows(
+  exercises: ExerciseLog[],
+  sessionKey?: Partial<SessionKey>,
+): WorkoutRow[] {
+  return exercises.map((ex, idx) => ({
+    id: idx,
+    annee: sessionKey?.annee ?? '',
+    moisNom: '',
+    moisNum: sessionKey?.moisNum ?? '',
+    semaine: sessionKey?.semaine ?? '',
+    seance: sessionKey?.seance ?? '',
+    ordre: idx + 1,
+    exercice: ex.exerciseName,
+    exerciseId: ex.exerciseId,
+    series: ex.sets.length > 0 ? String(ex.sets.length) : '',
+    repsDuree: ex.sets[0]?.reps ?? '',
+    repos: '',          // indisponible depuis un ExerciseLog
+    tempoRpe: '',
+    notes: ex.notes ?? '',
+    video: '',          // indisponible depuis un ExerciseLog
+    executionMode: ex.executionMode ?? 'straight',
+    executionGroupId: ex.executionGroupId,
+    executionGroupPosition: ex.executionGroupPosition,
+  }));
 }
