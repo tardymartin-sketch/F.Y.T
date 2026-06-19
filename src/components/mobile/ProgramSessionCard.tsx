@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Dumbbell } from 'lucide-react';
+import { Dumbbell, Video } from 'lucide-react';
 import { ProgramSession } from '../../../types';
+import { VideoModal } from '../common/VideoModal';
 
 interface Props {
   session: ProgramSession;
@@ -10,6 +11,7 @@ interface Props {
 
 export function ProgramSessionCard({ session, onLaunch, disabled = false }: Props) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [videoModal, setVideoModal] = useState<{ url: string; name: string } | null>(null);
 
   const exercises = session.rows.filter(r => !r.isTextBlock);
   const exerciseCount = exercises.length;
@@ -129,6 +131,31 @@ export function ProgramSessionCard({ session, onLaunch, disabled = false }: Prop
                 <span style={{ fontSize: 13, color: 'var(--color-text-primary)', flex: 1 }}>
                   {row.exercice}
                 </span>
+                {row.video && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      setVideoModal({ url: row.video, name: row.exercice });
+                    }}
+                    aria-label={`Voir la vidéo de ${row.exercice}`}
+                    title="Voir la vidéo"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      marginLeft: 8,
+                      padding: 4,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--color-accent)',
+                      lineHeight: 0,
+                    }}
+                  >
+                    <Video size={16} />
+                  </button>
+                )}
                 <span style={{ fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8 }}>
                   {row.series || '—'} × {row.repsDuree || '—'}
                 </span>
@@ -136,6 +163,14 @@ export function ProgramSessionCard({ session, onLaunch, disabled = false }: Prop
             ))
           )}
         </div>
+      )}
+
+      {videoModal && (
+        <VideoModal
+          url={videoModal.url}
+          exerciseName={videoModal.name}
+          onClose={() => setVideoModal(null)}
+        />
       )}
     </div>
   );
