@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Dumbbell, AlertCircle, RotateCcw } from 'lucide-react';
-import { AthleteProgram, ProgramSession, ExerciseLog } from '../../../types';
+import { AthleteProgram, ProgramSession, ExerciseLog, WorkoutRow } from '../../../types';
 import { programsApi } from '../../services/api/programs.api';
 import { workoutRowsToExerciseLogs } from '../../utils/workoutToExerciseLogs';
 import { getCurrentWeekIndex } from '../../utils/programUtils';
@@ -375,7 +375,7 @@ function ProgramDetailView({
 interface Props {
   userId: string;
   hasActiveSession: boolean;
-  onStartNewSession: (exercises: ExerciseLog[]) => void;
+  onStartNewSession: (exercises: ExerciseLog[], sessionData?: WorkoutRow[]) => void;
 }
 
 export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Props) {
@@ -392,7 +392,10 @@ export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Pr
     // Propage le template source pour permettre l'affichage des blocs de texte coach
     setCurrentTemplateId(session.sourceTemplateId ?? null);
     const exercises = workoutRowsToExerciseLogs(session.rows);
-    onStartNewSession(exercises);
+    // Propage aussi les WorkoutRow : ils portent la prescription (séries, reps,
+    // repos, vidéo, tempo) que l'active session lit via sessionData.find(...).
+    // Sans ça, l'active session affichait "?" aux reps et masquait vidéo/repos.
+    onStartNewSession(exercises, session.rows);
   };
 
   // Loading
