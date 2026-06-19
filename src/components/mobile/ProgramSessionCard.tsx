@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Dumbbell, Video } from 'lucide-react';
+import { Dumbbell, Video, MessageSquare } from 'lucide-react';
 import { ProgramSession } from '../../../types';
 import { VideoModal } from '../common/VideoModal';
+import { RichTextDisplay } from '../common/RichTextDisplay';
 
 interface Props {
   session: ProgramSession;
@@ -15,6 +16,11 @@ export function ProgramSessionCard({ session, onLaunch, disabled = false }: Prop
 
   const exercises = session.rows.filter(r => !r.isTextBlock);
   const exerciseCount = exercises.length;
+
+  // Notes du coach par semaine (lignes bloc-texte du programme)
+  const textBlocks = session.rows
+    .filter(r => r.isTextBlock && (r.textBlockContent ?? '').trim() !== '')
+    .sort((a, b) => a.ordre - b.ordre);
 
   return (
     <div
@@ -109,9 +115,41 @@ export function ProgramSessionCard({ session, onLaunch, disabled = false }: Prop
         </div>
       </div>
 
-      {/* ── Contenu déplié : liste des exercices ── */}
+      {/* ── Contenu déplié : notes du coach + liste des exercices ── */}
       {isExpanded && (
         <div style={{ borderTop: '1px solid var(--color-border)', padding: '10px 16px 14px' }}>
+          {textBlocks.map((block) => (
+            <div
+              key={block.id}
+              style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-accent)',
+                borderLeft: '3px solid var(--color-accent)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <MessageSquare size={13} color="var(--color-accent)" />
+                <span
+                  style={{
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-accent)',
+                  }}
+                >
+                  Note du coach
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                <RichTextDisplay html={block.textBlockContent ?? ''} />
+              </div>
+            </div>
+          ))}
           {exercises.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', padding: '8px 0' }}>
               Aucun exercice

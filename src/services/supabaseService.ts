@@ -3813,6 +3813,65 @@ export async function createProgram(
     console.error('Error creating program:', error);
     throw error;
   }
+
+  // ── Notes du coach (blocs-texte) par semaine ──────────────────────────────
+  // On copie les blocs-texte du template (session_text_blocks) en lignes
+  // training_plans is_text_block, pour CETTE assignation/semaine uniquement.
+  // Découplage : chaque semaine reçoit sa copie, éditable indépendamment du
+  // template (et des autres semaines qui réutilisent le même template).
+  //
+  // TODO(coach-edit): il n'existe pas encore d'UI pour créer/éditer ces notes
+  // par semaine (voir TODOS.md §4 + docs/PLAN_NOTES_COACH_PAR_SEMAINE.md).
+  // Pour ajouter/modifier une note à la main en attendant, insérer une ligne
+  // training_plans bloc-texte :
+  //   INSERT INTO training_plans
+  //     (is_text_block, text_block_content, program_name, week_start_date,
+  //      seance_type, source_template_id, athlete_target, coach_id, order_index, year)
+  //   VALUES (true, '<p>…HTML…</p>', '<program_name>', '<YYYY-MM-DD>',
+  //           '<seance_type>', '<template_uuid>',
+  //           ARRAY['<athlete_uuid>']::uuid[], '<coach_uuid>', 100, <year>);
+  if (sessionTemplate.id) {
+    const { data: templateBlocks, error: blocksFetchError } = await supabase
+      .from('session_text_blocks')
+      .select('content, position')
+      .eq('session_template_id', sessionTemplate.id)
+      .order('position', { ascending: true });
+
+    if (blocksFetchError) {
+      // Non bloquant : le programme est créé, la copie des notes est best-effort
+      console.error('Error fetching template text blocks:', blocksFetchError);
+    } else if (templateBlocks && templateBlocks.length > 0) {
+      const blockRows = templateBlocks.map(
+        (b: { content: string | null; position: number | null }, i: number) => ({
+          coach_id: coachId,
+          seance_type: sessionTemplate.seanceType,
+          exercise_id: null,
+          exercise_name: null,
+          is_text_block: true,
+          text_block_content: b.content ?? '',
+          order_index: b.position ?? i,
+          year,
+          week: week || null,
+          Month_num: monthNum || null,
+          week_start_date: sessionTemplate.startDate || null,
+          week_end_date: sessionTemplate.endDate || null,
+          athlete_target: athleteTarget,
+          group_target: groupTarget && groupTarget.length > 0 ? groupTarget : null,
+          program_name: programName || null,
+          source_template_id: sessionTemplate.id || null,
+          execution_mode: 'straight',
+        }),
+      );
+
+      const { error: blocksInsertError } = await supabase
+        .from('training_plans')
+        .insert(blockRows);
+      if (blocksInsertError) {
+        // Non bloquant : le programme et ses exercices existent déjà
+        console.error('Error creating program text blocks:', blocksInsertError);
+      }
+    }
+  }
 }
 
 /**

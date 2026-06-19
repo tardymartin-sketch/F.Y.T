@@ -90,14 +90,11 @@ import { SupersetExerciseBlock } from "../common/SupersetExerciseBlock";
 import { WeightInput } from "../common/WeightInput";
 import { useDemoTour } from "../../contexts/DemoTourContext";
 import { MomentumRing } from "../common/MomentumRing";
-import { useActiveSessionStore } from "../../stores/useActiveSessionStore";
 import { useMomentumScore } from "../../hooks/useMomentumScore";
 import { sessionsApi } from "../../services/api/sessions.api";
 import { SetAsTemplateModal } from "./SetAsTemplateModal";
 import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
 import { useAthletePreferences } from "./AthleteSettings";
-import { useQuery } from "@tanstack/react-query";
-import { programsApi } from "../../services/api/programs.api";
 
 // ===========================================
 // DND HELPERS
@@ -676,17 +673,22 @@ function getGhostModeData(
 // TEXT BLOCK BANNER (instructions coach, lecture seule)
 // ===========================================
 
-const TextBlockBanner: React.FC<{ templateId: string | null }> = ({
-  templateId,
+const TextBlockBanner: React.FC<{ sessionData: WorkoutRow[] }> = ({
+  sessionData,
 }) => {
-  const { data: blocks } = useQuery({
-    queryKey: ["textBlocks", templateId],
-    queryFn: () => programsApi.getSessionTextBlocks(templateId as string),
-    enabled: !!templateId,
-    staleTime: 5 * 60 * 1000,
-  });
+  // Notes du coach PAR SEMAINE : lignes bloc-texte du programme (training_plans,
+  // is_text_block), portées dans sessionData. Découplé du template — chaque
+  // semaine a ses propres notes (ou aucune). Remplace l'ancien fetch
+  // template-keyé (session_text_blocks). Voir feat/coach-notes-per-week.
+  //
+  // TODO(coach-edit): pas d'UI d'édition par semaine pour l'instant — les notes
+  // s'insèrent à la main en DB (training_plans is_text_block=true). Voir la
+  // recette dans createProgram() (supabaseService.ts) + TODOS.md §4.
+  const blocks = sessionData
+    .filter((r) => r.isTextBlock && (r.textBlockContent ?? "").trim() !== "")
+    .sort((a, b) => a.ordre - b.ordre);
 
-  if (!blocks || blocks.length === 0) return null;
+  if (blocks.length === 0) return null;
 
   return (
     <div className="space-y-3">
@@ -724,7 +726,7 @@ const TextBlockBanner: React.FC<{ templateId: string | null }> = ({
             </span>
           </div>
           <RichTextDisplay
-            html={block.content}
+            html={block.textBlockContent ?? ""}
             className="text-theme-secondary"
           />
         </div>
@@ -755,7 +757,6 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
 
   // Template source (pour afficher les blocs de texte coach en lecture seule)
-  const currentTemplateId = useActiveSessionStore((s) => s.currentTemplateId);
 
   // Momentum score
   const previousSession = useMemo(() => {
@@ -2282,7 +2283,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
       {/* Content */}
       <div className="p-4 space-y-4">
         {/* Notes du coach (blocs de texte, lecture seule) */}
-        <TextBlockBanner templateId={currentTemplateId} />
+        <TextBlockBanner sessionData={sessionData} />
 
         {/* Exercise List */}
         <div className="space-y-3">
@@ -2885,7 +2886,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
         <div className="flex-1 p-4 overflow-y-auto" ref={scrollContainerRef}>
           {/* Notes du coach (blocs de texte, lecture seule) */}
           <div className="mb-4">
-            <TextBlockBanner templateId={currentTemplateId} />
+            <TextBlockBanner sessionData={sessionData} />
           </div>
           {/* Desktop: grille de tuiles carrées (max 4 colonnes) / Mobile: liste verticale */}
           <DndContext

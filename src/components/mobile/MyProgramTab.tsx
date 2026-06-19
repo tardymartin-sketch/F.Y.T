@@ -6,7 +6,6 @@ import { programsApi } from '../../services/api/programs.api';
 import { workoutRowsToExerciseLogs } from '../../utils/workoutToExerciseLogs';
 import { getCurrentWeekIndex } from '../../utils/programUtils';
 import { ProgramSessionCard } from './ProgramSessionCard';
-import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -380,7 +379,6 @@ interface Props {
 
 export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Props) {
   const [selectedProgram, setSelectedProgram] = useState<AthleteProgram | null>(null);
-  const setCurrentTemplateId = useActiveSessionStore(s => s.setCurrentTemplateId);
 
   const { data: programs, isLoading, isError, refetch } = useQuery({
     queryKey: ['athleteProgram', userId],
@@ -389,12 +387,11 @@ export function MyProgramTab({ userId, hasActiveSession, onStartNewSession }: Pr
   });
 
   const handleLaunch = (session: ProgramSession) => {
-    // Propage le template source pour permettre l'affichage des blocs de texte coach
-    setCurrentTemplateId(session.sourceTemplateId ?? null);
     const exercises = workoutRowsToExerciseLogs(session.rows);
-    // Propage aussi les WorkoutRow : ils portent la prescription (séries, reps,
-    // repos, vidéo, tempo) que l'active session lit via sessionData.find(...).
-    // Sans ça, l'active session affichait "?" aux reps et masquait vidéo/repos.
+    // Propage les WorkoutRow : ils portent la prescription (séries, reps, repos,
+    // vidéo, tempo) ET les notes du coach par semaine (lignes is_text_block) que
+    // l'active session lit depuis sessionData. Sans ça, l'active session
+    // affichait "?" aux reps et masquait vidéo/repos/notes.
     onStartNewSession(exercises, session.rows);
   };
 
