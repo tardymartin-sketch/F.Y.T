@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Play, Dumbbell, AlertCircle, RotateCcw, RefreshCw } from 'lucide-react';
-import { SessionLog, User, ExerciseLog, DefaultTemplate } from '../../../types';
+import { SessionLog, User, ExerciseLog, DefaultTemplate, WorkoutRow } from '../../../types';
 import { sessionsApi } from '../../services/api/sessions.api';
 import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import { SetAsTemplateModal } from './SetAsTemplateModal';
@@ -22,8 +22,13 @@ interface Props {
   history: SessionLog[];
   hasActiveSession: boolean;
   onResumeSession?: () => void;
-  /** Called with the exercises to start a new blank session */
-  onStartNewSession: (exercises: ExerciseLog[]) => void;
+  /**
+   * Called with the exercises to start a new session.
+   * `sessionData` (WorkoutRow[]) carries the prescription metadata (séries,
+   * reps, repos, vidéo, tempo) read by the active session. Omit it for blank
+   * sessions that have no prescription.
+   */
+  onStartNewSession: (exercises: ExerciseLog[], sessionData?: WorkoutRow[]) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

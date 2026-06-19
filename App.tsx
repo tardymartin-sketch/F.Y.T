@@ -940,7 +940,7 @@ const App: React.FC = () => {
                         history={history}
                         hasActiveSession={hasActiveSession}
                         onResumeSession={handleResumeSession}
-                        onStartNewSession={(exercises) => {
+                        onStartNewSession={(exercises, sessionData) => {
                           const today = new Date().toISOString().split('T')[0];
                           const sessionLog = {
                             id: crypto.randomUUID(),
@@ -950,7 +950,10 @@ const App: React.FC = () => {
                             exercises,
                             status: 'draft' as const,
                           };
-                          setActiveSession([], sessionLog);
+                          // sessionData (WorkoutRow[]) porte la prescription (séries/reps/
+                          // repos/vidéo/tempo) lue par l'active session. Vide pour une
+                          // séance blanche, renseigné quand on lance depuis un programme.
+                          setActiveSession(sessionData ?? [], sessionLog);
                           setCurrentView('active');
                         }}
                       />

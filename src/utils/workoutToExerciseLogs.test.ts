@@ -81,3 +81,42 @@ describe('workoutRowsToExerciseLogs', () => {
     expect(logs[0].notes).toBeUndefined();
   });
 });
+
+// ─── Regression: program-launch → active-session metadata join ────────────────
+// Bug: launching a séance from "Mon programme" showed "?" for reps and hid the
+// vidéo + repos in the active session. Root cause: the WorkoutRow[] prescription
+// was dropped at launch (setActiveSession([], ...)), so the active session's
+// lookup `sessionData.find(d => d.exercice === ex.exerciseName)` never matched.
+// The fix threads session.rows through as sessionData. These tests lock the join
+// key: the converter's exerciseName MUST equal the source row's `exercice`, and
+// the rows must still carry reps/repos/video for the lookup to recover them.
+describe('program-launch metadata join (active session)', () => {
+  // Mirror of the lookup ActiveSessionMobile performs against sessionData.
+  const findMeta = (rows: WorkoutRow[], exerciseName: string) =>
+    rows.find(d => d.exercice === exerciseName);
+
+  it('every converted exercise resolves its source row by name', () => {
+    const rows = [
+      makeRow({ exercice: 'Bench Press', repsDuree: '8-12', repos: '90', video: 'https://youtu.be/abc' }),
+      makeRow({ exercice: 'Squat', repsDuree: '5', repos: '120', video: '' }),
+      makeRow({ exercice: 'Coach note', isTextBlock: true }),
+    ];
+    const logs = workoutRowsToExerciseLogs(rows);
+
+    for (const log of logs) {
+      expect(findMeta(rows, log.exerciseName)).toBeDefined();
+    }
+  });
+
+  it('recovers reps / repos / video from the threaded rows', () => {
+    const rows = [
+      makeRow({ exercice: 'Bench Press', repsDuree: '8-12', repos: '90', video: 'https://youtu.be/abc' }),
+    ];
+    const log = workoutRowsToExerciseLogs(rows)[0];
+    const meta = findMeta(rows, log.exerciseName);
+
+    expect(meta?.repsDuree).toBe('8-12'); // was "?" when rows were dropped
+    expect(meta?.repos).toBe('90');       // rest time, previously hidden
+    expect(meta?.video).toBe('https://youtu.be/abc'); // camera icon source
+  });
+});
