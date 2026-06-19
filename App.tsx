@@ -56,6 +56,7 @@ import {
 import { useDeviceDetect } from './src/hooks/useDeviceDetect';
 import { useScrollPersistence } from './src/hooks/useUIState';
 import { removeLocalStorageWithEvent } from './src/utils/localStorageEvents';
+import { exerciseLogsToWorkoutRows } from './src/utils/workoutToExerciseLogs';
 
 // Stores Zustand & React Query Hooks
 import { useAuthStore } from './src/stores/useAuthStore';
@@ -1056,7 +1057,16 @@ const App: React.FC = () => {
                             exercises: blankExercises,
                             status: 'draft' as const,
                           };
-                          setActiveSession([], sessionLog);
+                          // La séance relancée n'a pas de source WorkoutRow : on
+                          // synthétise la prescription depuis les exercices loggés
+                          // (reps = sets[0].reps, séries = sets.length) pour que
+                          // l'active session affiche de vrais nombres au lieu de "?".
+                          // repos/vidéo indisponibles depuis un ExerciseLog.
+                          const prescription = exerciseLogsToWorkoutRows(
+                            session.exercises,
+                            sessionLog.sessionKey,
+                          );
+                          setActiveSession(prescription, sessionLog);
                           setCurrentView('active');
                         }}
                         userId={currentUser.id}
