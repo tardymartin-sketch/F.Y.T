@@ -95,6 +95,7 @@ import { sessionsApi } from "../../services/api/sessions.api";
 import { SetAsTemplateModal } from "./SetAsTemplateModal";
 import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
 import { useAthletePreferences } from "./AthleteSettings";
+import { useExerciseFamilyMap } from "../../hooks/useSessions";
 
 // ===========================================
 // DND HELPERS
@@ -533,6 +534,40 @@ function getLastExerciseHistory(
 }
 
 /**
+ * Returns all historical entries for an exercise across sessions, ordered newest first.
+ * When familyMap has a family for the exercise, includes variants from the same family.
+ * At most one entry per session (the first matching exercise in that session).
+ */
+function getAllExerciseHistory(
+  exerciseName: string,
+  history: SessionLog[],
+  familyMap: Record<string, string>,
+): Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> {
+  const family = familyMap[exerciseName.toLowerCase()] ?? null;
+  const results: Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> = [];
+
+  for (const session of history) {
+    for (const ex of session.exercises) {
+      const matches = family
+        ? familyMap[ex.exerciseName.toLowerCase()] === family
+        : ex.exerciseName.toLowerCase() === exerciseName.toLowerCase();
+
+      if (matches && ex.sets.length > 0) {
+        results.push({
+          date: session.date,
+          exerciseName: ex.exerciseName,
+          sets: ex.sets,
+          rpe: ex.rpe,
+        });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
  * Calcule le message Ghost Mode basé sur le tonnage
  *
  * Logique:
@@ -749,6 +784,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const isDesktop = layout === "desktop";
   // Preferences (e.g. showTempo)
   const { showTempo } = useAthletePreferences();
+  const { data: familyMap = {} } = useExerciseFamilyMap();
   // ===========================================
   // STATE
   // ===========================================
@@ -820,6 +856,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [showHistoryModal, setShowHistoryModal] = useState<{
     index: number;
     anchorEl: HTMLElement | null;
+    historyPage?: number;
   } | null>(null);
   const [showConsignesModal, setShowConsignesModal] = useState<{
     index: number;
@@ -6341,49 +6378,95 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     const exercise = logs[showHistoryModal.index];
     if (!exercise) return null;
 
-    const lastHistory = getLastExerciseHistory(exercise.exerciseName, history);
+    const allHistory = getAllExerciseHistory(exercise.exerciseName, history, familyMap);
+    const total = allHistory.length;
+    const currentPage = Math.min(showHistoryModal.historyPage ?? 0, Math.max(0, total - 1));
+    const currentHistory = allHistory[currentPage] ?? null;
     const isDesktop = layout === "desktop";
     const anchorEl = showHistoryModal.anchorEl;
 
     // Update ref for Popover
     historyAnchorRef.current = anchorEl;
 
+    const isVariant = currentHistory && currentHistory.exerciseName.toLowerCase() !== exercise.exerciseName.toLowerCase();
+
     // Contenu partagé
     const content = (
       <>
-        <div className="flex items-center justify-between mb-4 px-5 pt-5">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-theme">
+        <div className="flex items-center justify-between mb-3 px-5 pt-5">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <h3 className="text-lg font-bold text-theme truncate">
               Historique {getExerciseDisplayName(exercise.exerciseName)}
             </h3>
-            {typeof lastHistory?.rpe === "number" && (
-              <RpeBadge rpe={lastHistory.rpe} size="sm" />
+            {isVariant && (
+              <span className="text-xs text-theme-muted truncate">
+                {currentHistory.exerciseName}
+              </span>
             )}
           </div>
-          {!(isDesktop && anchorEl) && (
-            <button
-              onClick={() => setShowHistoryModal(null)}
-              className="p-2 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
-              type="button"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            {typeof currentHistory?.rpe === "number" && (
+              <RpeBadge rpe={currentHistory.rpe} size="sm" />
+            )}
+            {!(isDesktop && anchorEl) && (
+              <button
+                onClick={() => setShowHistoryModal(null)}
+                className="p-2 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
+                type="button"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="px-5 pb-5">
-          {lastHistory ? (
+          {total > 0 && currentHistory ? (
             <div>
-              <p className="text-sm text-theme-muted mb-4">
-                Dernière exécution{" "}
-                {new Date(lastHistory.date).toLocaleDateString("fr-FR", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </p>
+              {/* Carousel navigation */}
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  onClick={() =>
+                    setShowHistoryModal((prev) =>
+                      prev ? { ...prev, historyPage: Math.max(0, currentPage - 1) } : null,
+                    )
+                  }
+                  disabled={currentPage === 0}
+                  className="p-1.5 rounded-lg text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  type="button"
+                  aria-label="Séance précédente"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="text-center">
+                  <p className="text-sm text-theme-muted">
+                    {new Date(currentHistory.date).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </p>
+                  <p className="text-xs text-theme-muted/60 mt-0.5">
+                    {currentPage + 1} / {total}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setShowHistoryModal((prev) =>
+                      prev ? { ...prev, historyPage: Math.min(total - 1, currentPage + 1) } : null,
+                    )
+                  }
+                  disabled={currentPage === total - 1}
+                  className="p-1.5 rounded-lg text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  type="button"
+                  aria-label="Séance suivante"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
               <div className="space-y-2">
-                {lastHistory.sets.map((set, idx) => (
+                {currentHistory.sets.map((set, idx) => (
                   <div
                     key={idx}
                     className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3"

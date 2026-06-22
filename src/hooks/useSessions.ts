@@ -31,6 +31,14 @@ export const useSaveSessionMutation = () => {
   });
 };
 
+export const useExerciseFamilyMap = () => {
+  return useQuery({
+    queryKey: ['exerciseFamilyMap'],
+    queryFn: () => sessionsApi.getExerciseFamilyMap(),
+    staleTime: Infinity,
+  });
+};
+
 export const useDeleteSessionMutation = () => {
   const queryClient = useQueryClient();
   
