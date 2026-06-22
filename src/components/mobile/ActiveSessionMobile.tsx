@@ -6385,46 +6385,42 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     const isDesktop = layout === "desktop";
     const anchorEl = showHistoryModal.anchorEl;
 
-    // Update ref for Popover
     historyAnchorRef.current = anchorEl;
 
-    const isVariant = currentHistory && currentHistory.exerciseName.toLowerCase() !== exercise.exerciseName.toLowerCase();
+    const isIdentical =
+      currentHistory?.exerciseName.toLowerCase() === exercise.exerciseName.toLowerCase();
 
-    // Contenu partagé
     const content = (
       <>
-        <div className="flex items-center justify-between mb-3 px-5 pt-5">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <h3 className="text-lg font-bold text-theme truncate">
-              Historique {getExerciseDisplayName(exercise.exerciseName)}
-            </h3>
-            {isVariant && (
-              <span className="text-xs text-theme-muted truncate">
-                {currentHistory.exerciseName}
+        {/* ── Section A : exercice à effectuer ── */}
+        <div className="px-5 pt-5 pb-4 border-b border-theme">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="block text-[10px] font-bold tracking-[0.12em] uppercase text-theme-primary mb-1 font-mono">
+                À effectuer
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-            {typeof currentHistory?.rpe === "number" && (
-              <RpeBadge rpe={currentHistory.rpe} size="sm" />
-            )}
+              <h3 className="text-[19px] font-bold text-theme leading-tight tracking-tight">
+                {getExerciseDisplayName(exercise.exerciseName)}
+              </h3>
+            </div>
             {!(isDesktop && anchorEl) && (
               <button
                 onClick={() => setShowHistoryModal(null)}
-                className="p-2 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
+                className="flex-shrink-0 mt-0.5 p-1.5 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
                 type="button"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
         </div>
 
-        <div className="px-5 pb-5">
+        {/* ── Section B : entrée historique ── */}
+        <div className="px-5 pt-4 pb-5">
           {total > 0 && currentHistory ? (
-            <div>
-              {/* Carousel navigation */}
-              <div className="flex items-center justify-between mb-4">
+            <>
+              {/* Ligne de navigation */}
+              <div className="flex items-center gap-3 mb-4">
                 <button
                   onClick={() =>
                     setShowHistoryModal((prev) =>
@@ -6432,24 +6428,37 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     )
                   }
                   disabled={currentPage === 0}
-                  className="p-1.5 rounded-lg text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse"
                   type="button"
                   aria-label="Séance précédente"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div className="text-center">
-                  <p className="text-sm text-theme-muted">
+
+                <div className="flex-1 min-w-0 flex flex-col items-center gap-1.5">
+                  <span className="text-[15px] font-semibold text-theme text-center leading-snug w-full text-center truncate">
+                    {getExerciseDisplayName(currentHistory.exerciseName)}
+                  </span>
+                  {isIdentical ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[0.06em] uppercase bg-[color:var(--color-success)]/10 text-[color:var(--color-success)]">
+                      ✓ Identique
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[0.06em] uppercase bg-blue-500/10 text-blue-500">
+                      ↔ Variante
+                    </span>
+                  )}
+                  <span className="font-mono text-[11px] text-theme-muted tracking-wide">
                     {new Date(currentHistory.date).toLocaleDateString("fr-FR", {
                       day: "numeric",
                       month: "long",
                       year: "numeric",
                     })}
-                  </p>
-                  <p className="text-xs text-theme-muted/60 mt-0.5">
-                    {currentPage + 1} / {total}
-                  </p>
+                    {" · "}
+                    {currentPage + 1}/{total}
+                  </span>
                 </div>
+
                 <button
                   onClick={() =>
                     setShowHistoryModal((prev) =>
@@ -6457,7 +6466,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                     )
                   }
                   disabled={currentPage === total - 1}
-                  className="p-1.5 rounded-lg text-theme-muted hover:text-theme hover:bg-theme-tertiary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse-delay"
                   type="button"
                   aria-label="Séance suivante"
                 >
@@ -6465,28 +6474,45 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 </button>
               </div>
 
-              <div className="space-y-2">
+              {/* Lignes de séries */}
+              <div className="space-y-1.5 mb-3">
                 {currentHistory.sets.map((set, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3"
+                    className="grid items-center bg-theme-tertiary rounded-xl px-3.5 py-2.5"
+                    style={{ gridTemplateColumns: "20px 1fr auto auto auto", gap: "10px" }}
                   >
-                    <span className="text-sm text-theme-muted">
-                      Série {set.setNumber}
+                    <span className="font-mono text-[11px] font-semibold text-theme-muted text-center tabular-nums">
+                      {idx + 1}
                     </span>
-                    <span className="text-theme font-medium">
-                      {set.reps || "-"}
+                    <span />
+                    <span className="font-mono text-sm font-semibold text-theme tabular-nums">
+                      {set.reps || "—"}
                     </span>
-                    <span className="text-theme-muted">×</span>
-                    <span className="text-[var(--color-success)] font-medium">
+                    <span className="font-mono text-xs text-theme-muted">×</span>
+                    <span className="font-mono text-sm font-semibold text-[color:var(--color-success)] tabular-nums text-right">
                       {formatSetWeight(set)}
                     </span>
                   </div>
                 ))}
               </div>
-            </div>
+
+              {/* RPE compact */}
+              {typeof currentHistory.rpe === "number" && (
+                <div className="flex justify-end">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-theme-tertiary border border-theme">
+                    <span className="font-mono text-[10px] font-bold tracking-[0.1em] uppercase text-theme-muted">
+                      RPE
+                    </span>
+                    <span className="font-mono text-sm font-bold text-theme-primary">
+                      {currentHistory.rpe}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
-            <p className="text-theme-muted text-center py-8">
+            <p className="text-theme-muted text-sm text-center py-8">
               Aucun historique pour cet exercice
             </p>
           )}

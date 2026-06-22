@@ -255,6 +255,17 @@ html, body, #root {
      100% { opacity: 1; transform: translateY(0); }
    }
 
+@keyframes nav-pulse {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0   color-mix(in srgb, var(--color-primary) 40%, transparent); }
+  50%  { transform: scale(1.14); box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-primary) 0%,  transparent); }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0   transparent; }
+}
+.animate-nav-pulse       { animation: nav-pulse 480ms ease-out        1 both; }
+.animate-nav-pulse-delay { animation: nav-pulse 480ms ease-out 180ms  1 both; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-nav-pulse, .animate-nav-pulse-delay { animation: none; }
+}
+
 /* Custom utilities */
 @layer utilities {
   .glass {
