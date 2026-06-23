@@ -95,6 +95,7 @@ import { sessionsApi } from "../../services/api/sessions.api";
 import { SetAsTemplateModal } from "./SetAsTemplateModal";
 import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
 import { useAthletePreferences } from "./AthleteSettings";
+import { useExerciseFamilyMap } from "../../hooks/useSessions";
 
 // ===========================================
 // DND HELPERS
@@ -533,6 +534,40 @@ function getLastExerciseHistory(
 }
 
 /**
+ * Returns all historical entries for an exercise across sessions, ordered newest first.
+ * When familyMap has a family for the exercise, includes variants from the same family.
+ * At most one entry per session (the first matching exercise in that session).
+ */
+function getAllExerciseHistory(
+  exerciseName: string,
+  history: SessionLog[],
+  familyMap: Record<string, string>,
+): Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> {
+  const family = familyMap[exerciseName.toLowerCase()] ?? null;
+  const results: Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> = [];
+
+  for (const session of history) {
+    for (const ex of session.exercises) {
+      const matches = family
+        ? familyMap[ex.exerciseName.toLowerCase()] === family
+        : ex.exerciseName.toLowerCase() === exerciseName.toLowerCase();
+
+      if (matches && ex.sets.length > 0) {
+        results.push({
+          date: session.date,
+          exerciseName: ex.exerciseName,
+          sets: ex.sets,
+          rpe: ex.rpe,
+        });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
  * Calcule le message Ghost Mode basé sur le tonnage
  *
  * Logique:
@@ -749,6 +784,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const isDesktop = layout === "desktop";
   // Preferences (e.g. showTempo)
   const { showTempo } = useAthletePreferences();
+  const { data: familyMap = {} } = useExerciseFamilyMap();
   // ===========================================
   // STATE
   // ===========================================
@@ -820,6 +856,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
   const [showHistoryModal, setShowHistoryModal] = useState<{
     index: number;
     anchorEl: HTMLElement | null;
+    historyPage?: number;
   } | null>(null);
   const [showConsignesModal, setShowConsignesModal] = useState<{
     index: number;
@@ -6341,69 +6378,141 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     const exercise = logs[showHistoryModal.index];
     if (!exercise) return null;
 
-    const lastHistory = getLastExerciseHistory(exercise.exerciseName, history);
+    const allHistory = getAllExerciseHistory(exercise.exerciseName, history, familyMap);
+    const total = allHistory.length;
+    const currentPage = Math.min(showHistoryModal.historyPage ?? 0, Math.max(0, total - 1));
+    const currentHistory = allHistory[currentPage] ?? null;
     const isDesktop = layout === "desktop";
     const anchorEl = showHistoryModal.anchorEl;
 
-    // Update ref for Popover
     historyAnchorRef.current = anchorEl;
 
-    // Contenu partagé
+    const isIdentical =
+      currentHistory?.exerciseName.toLowerCase() === exercise.exerciseName.toLowerCase();
+
     const content = (
       <>
-        <div className="flex items-center justify-between mb-4 px-5 pt-5">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-theme">
-              Historique {getExerciseDisplayName(exercise.exerciseName)}
-            </h3>
-            {typeof lastHistory?.rpe === "number" && (
-              <RpeBadge rpe={lastHistory.rpe} size="sm" />
+        {/* ── Section A : exercice à effectuer ── */}
+        <div className="px-5 pt-5 pb-4 border-b border-theme">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="block text-[10px] font-bold tracking-[0.12em] uppercase text-theme-primary mb-1 font-mono">
+                À effectuer
+              </span>
+              <h3 className="text-[19px] font-bold text-theme leading-tight tracking-tight">
+                {getExerciseDisplayName(exercise.exerciseName)}
+              </h3>
+            </div>
+            {!(isDesktop && anchorEl) && (
+              <button
+                onClick={() => setShowHistoryModal(null)}
+                className="flex-shrink-0 mt-0.5 p-1.5 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
+                type="button"
+              >
+                <X className="w-4 h-4" />
+              </button>
             )}
           </div>
-          {!(isDesktop && anchorEl) && (
-            <button
-              onClick={() => setShowHistoryModal(null)}
-              className="p-2 text-theme-muted hover:text-theme hover:bg-theme-tertiary rounded-lg transition-colors"
-              type="button"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
         </div>
 
-        <div className="px-5 pb-5">
-          {lastHistory ? (
-            <div>
-              <p className="text-sm text-theme-muted mb-4">
-                Dernière exécution{" "}
-                {new Date(lastHistory.date).toLocaleDateString("fr-FR", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </p>
-              <div className="space-y-2">
-                {lastHistory.sets.map((set, idx) => (
+        {/* ── Section B : entrée historique ── */}
+        <div className="px-5 pt-4 pb-5">
+          {total > 0 && currentHistory ? (
+            <>
+              {/* Ligne de navigation */}
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={() =>
+                    setShowHistoryModal((prev) =>
+                      prev ? { ...prev, historyPage: Math.min(total - 1, currentPage + 1) } : null,
+                    )
+                  }
+                  disabled={currentPage === total - 1}
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse"
+                  type="button"
+                  aria-label="Séance plus ancienne"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex-1 min-w-0 flex flex-col items-center gap-1.5">
+                  <div className="flex items-start justify-center gap-1.5 w-full min-w-0">
+                    <span
+                      className={`text-theme text-center font-semibold leading-snug line-clamp-2 break-words min-w-0 ${
+                        currentHistory.exerciseName.length > 40
+                          ? "text-[12px]"
+                          : currentHistory.exerciseName.length > 28
+                            ? "text-[13px]"
+                            : "text-[15px]"
+                      }`}
+                      title={currentHistory.exerciseName}
+                    >
+                      {getExerciseDisplayName(currentHistory.exerciseName)}
+                    </span>
+                    {isIdentical ? (
+                      <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-[color:var(--color-success)]" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-theme-muted" />
+                    )}
+                  </div>
+                  <span className="font-mono text-[11px] text-theme-muted tracking-wide text-center">
+                    {new Date(currentHistory.date).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                    {" · "}
+                    {currentPage + 1}/{total}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() =>
+                    setShowHistoryModal((prev) =>
+                      prev ? { ...prev, historyPage: Math.max(0, currentPage - 1) } : null,
+                    )
+                  }
+                  disabled={currentPage === 0}
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse-delay"
+                  type="button"
+                  aria-label="Séance plus récente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Lignes de séries */}
+              <div className="space-y-1.5 mb-3">
+                {currentHistory.sets.map((set, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-4 bg-theme-tertiary rounded-lg p-3"
+                    className="grid items-center bg-theme-tertiary rounded-xl px-3.5 py-2.5"
+                    style={{ gridTemplateColumns: "20px 1fr auto auto auto", gap: "10px" }}
                   >
-                    <span className="text-sm text-theme-muted">
-                      Série {set.setNumber}
+                    <span className="font-mono text-[11px] font-semibold text-theme-muted text-center tabular-nums">
+                      {idx + 1}
                     </span>
-                    <span className="text-theme font-medium">
-                      {set.reps || "-"}
+                    <span />
+                    <span className="font-mono text-sm font-semibold text-theme tabular-nums">
+                      {set.reps || "—"}
                     </span>
-                    <span className="text-theme-muted">×</span>
-                    <span className="text-[var(--color-success)] font-medium">
+                    <span className="font-mono text-xs text-theme-muted">×</span>
+                    <span className="font-mono text-sm font-semibold text-[color:var(--color-success)] tabular-nums text-right">
                       {formatSetWeight(set)}
                     </span>
                   </div>
                 ))}
               </div>
-            </div>
+
+              {/* RPE compact */}
+              {typeof currentHistory.rpe === "number" && (
+                <div className="flex justify-end">
+                  <RpeBadge rpe={currentHistory.rpe} showLabel={false} size="sm" />
+                </div>
+              )}
+            </>
           ) : (
-            <p className="text-theme-muted text-center py-8">
+            <p className="text-theme-muted text-sm text-center py-8">
               Aucun historique pour cet exercice
             </p>
           )}

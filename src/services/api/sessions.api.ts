@@ -381,6 +381,28 @@ export const sessionsApi = {
   },
 
   /**
+   * Fetch the exercise_family map: exerciseName (lowercase) → family slug.
+   * Only returns exercises with a non-null exercise_family.
+   * Intended to be cached indefinitely (static reference data).
+   */
+  async getExerciseFamilyMap(): Promise<Record<string, string>> {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('name, exercise_family')
+      .not('exercise_family', 'is', null)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    const map: Record<string, string> = {};
+    for (const row of (data ?? [])) {
+      if (row.exercise_family) {
+        map[(row.name as string).toLowerCase()] = row.exercise_family as string;
+      }
+    }
+    return map;
+  },
+
+  /**
    * Fetch the user's most-used exercises.
    * Query: top 20 rows by recency, deduplicate by exercise_name in JS.
    * Returns up to 8 unique exercises.
