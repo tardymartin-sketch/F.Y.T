@@ -6436,17 +6436,26 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 </button>
 
                 <div className="flex-1 min-w-0 flex flex-col items-center gap-1.5">
-                  <div className="flex items-center justify-center gap-1.5 w-full min-w-0">
-                    <span className="text-[15px] font-semibold text-theme text-center leading-snug truncate">
+                  <div className="flex items-start justify-center gap-1.5 w-full min-w-0">
+                    <span
+                      className={`text-theme text-center font-semibold leading-snug line-clamp-2 break-words min-w-0 ${
+                        currentHistory.exerciseName.length > 40
+                          ? "text-[12px]"
+                          : currentHistory.exerciseName.length > 28
+                            ? "text-[13px]"
+                            : "text-[15px]"
+                      }`}
+                      title={currentHistory.exerciseName}
+                    >
                       {getExerciseDisplayName(currentHistory.exerciseName)}
                     </span>
                     {isIdentical ? (
-                      <Check className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--color-success)]" />
+                      <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-[color:var(--color-success)]" />
                     ) : (
-                      <Link2 className="w-3.5 h-3.5 flex-shrink-0 text-theme-muted" />
+                      <Link2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-theme-muted" />
                     )}
                   </div>
-                  <span className="font-mono text-[11px] text-theme-muted tracking-wide">
+                  <span className="font-mono text-[11px] text-theme-muted tracking-wide text-center">
                     {new Date(currentHistory.date).toLocaleDateString("fr-FR", {
                       day: "numeric",
                       month: "long",
