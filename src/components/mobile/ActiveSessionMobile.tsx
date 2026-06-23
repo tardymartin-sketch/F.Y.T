@@ -6424,30 +6424,28 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 <button
                   onClick={() =>
                     setShowHistoryModal((prev) =>
-                      prev ? { ...prev, historyPage: Math.max(0, currentPage - 1) } : null,
+                      prev ? { ...prev, historyPage: Math.min(total - 1, currentPage + 1) } : null,
                     )
                   }
-                  disabled={currentPage === 0}
+                  disabled={currentPage === total - 1}
                   className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse"
                   type="button"
-                  aria-label="Séance précédente"
+                  aria-label="Séance plus ancienne"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
                 <div className="flex-1 min-w-0 flex flex-col items-center gap-1.5">
-                  <span className="text-[15px] font-semibold text-theme text-center leading-snug w-full text-center truncate">
-                    {getExerciseDisplayName(currentHistory.exerciseName)}
-                  </span>
-                  {isIdentical ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[0.06em] uppercase bg-[color:var(--color-success)]/10 text-[color:var(--color-success)]">
-                      ✓ Identique
+                  <div className="flex items-center justify-center gap-1.5 w-full min-w-0">
+                    <span className="text-[15px] font-semibold text-theme text-center leading-snug truncate">
+                      {getExerciseDisplayName(currentHistory.exerciseName)}
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[0.06em] uppercase bg-blue-500/10 text-blue-500">
-                      ↔ Variante
-                    </span>
-                  )}
+                    {isIdentical ? (
+                      <Check className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--color-success)]" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5 flex-shrink-0 text-theme-muted" />
+                    )}
+                  </div>
                   <span className="font-mono text-[11px] text-theme-muted tracking-wide">
                     {new Date(currentHistory.date).toLocaleDateString("fr-FR", {
                       day: "numeric",
@@ -6462,13 +6460,13 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
                 <button
                   onClick={() =>
                     setShowHistoryModal((prev) =>
-                      prev ? { ...prev, historyPage: Math.min(total - 1, currentPage + 1) } : null,
+                      prev ? { ...prev, historyPage: Math.max(0, currentPage - 1) } : null,
                     )
                   }
-                  disabled={currentPage === total - 1}
+                  disabled={currentPage === 0}
                   className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl border border-theme bg-theme-tertiary text-theme-muted hover:border-[color:var(--color-primary)] hover:text-theme-primary transition-all disabled:opacity-25 disabled:cursor-not-allowed animate-nav-pulse-delay"
                   type="button"
-                  aria-label="Séance suivante"
+                  aria-label="Séance plus récente"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -6500,14 +6498,7 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
               {/* RPE compact */}
               {typeof currentHistory.rpe === "number" && (
                 <div className="flex justify-end">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-theme-tertiary border border-theme">
-                    <span className="font-mono text-[10px] font-bold tracking-[0.1em] uppercase text-theme-muted">
-                      RPE
-                    </span>
-                    <span className="font-mono text-sm font-bold text-theme-primary">
-                      {currentHistory.rpe}
-                    </span>
-                  </div>
+                  <RpeBadge rpe={currentHistory.rpe} showLabel={false} size="sm" />
                 </div>
               )}
             </>
