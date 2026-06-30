@@ -32,7 +32,27 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: 'jsdom',
-      exclude: ['**/node_modules/**', '**/dist/**', '**/tests/**'],
+      // On ne scanne QUE les tests unitaires du code source.
+      // `include` ancré sur src/ exclut d'office les copies de worktree
+      // (.claude/worktrees/*/src) et l'outillage gstack (.agents).
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/tests/**', // tests/ = E2E Playwright (runner séparé)
+        '**/.agents/**', // outillage gstack (bun:test, hors périmètre)
+        '**/.claude/**', // worktrees Claude (copies dupliquées)
+      ],
+      coverage: {
+        provider: 'v8',
+        reportsDirectory: './coverage',
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: [
+          'src/**/*.{test,spec}.{ts,tsx}',
+          'src/**/*.stories.{ts,tsx}',
+          'src/**/*.d.ts',
+        ],
+      },
     }
   };
 });
