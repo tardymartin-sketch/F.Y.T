@@ -46,3 +46,6 @@ storybook-static
 /playwright/.cache/
 /playwright/.auth/
 .gstack/
+
+# Agent tooling (gstack skills, local binaries)
+.agents/
