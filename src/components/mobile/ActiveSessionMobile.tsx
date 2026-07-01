@@ -96,6 +96,7 @@ import { SetAsTemplateModal } from "./SetAsTemplateModal";
 import { ExercisePicker, PickedExercise } from "../common/ExercisePicker";
 import { useAthletePreferences } from "./AthleteSettings";
 import { useExerciseFamilyMap } from "../../hooks/useSessions";
+import { normalizeExerciseName } from "../../utils/exerciseFamily";
 
 // ===========================================
 // DND HELPERS
@@ -543,14 +544,16 @@ function getAllExerciseHistory(
   history: SessionLog[],
   familyMap: Record<string, string>,
 ): Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> {
-  const family = familyMap[exerciseName.toLowerCase()] ?? null;
+  const normalizedTarget = normalizeExerciseName(exerciseName);
+  const family = familyMap[normalizedTarget] ?? null;
   const results: Array<{ date: string; exerciseName: string; sets: SetLog[]; rpe?: number }> = [];
 
   for (const session of history) {
     for (const ex of session.exercises) {
+      const normalizedEx = normalizeExerciseName(ex.exerciseName);
       const matches = family
-        ? familyMap[ex.exerciseName.toLowerCase()] === family
-        : ex.exerciseName.toLowerCase() === exerciseName.toLowerCase();
+        ? familyMap[normalizedEx] === family
+        : normalizedEx === normalizedTarget;
 
       if (matches && ex.sets.length > 0) {
         results.push({
@@ -6388,7 +6391,9 @@ export const ActiveSessionAthlete: React.FC<Props> = ({
     historyAnchorRef.current = anchorEl;
 
     const isIdentical =
-      currentHistory?.exerciseName.toLowerCase() === exercise.exerciseName.toLowerCase();
+      !!currentHistory &&
+      normalizeExerciseName(currentHistory.exerciseName) ===
+        normalizeExerciseName(exercise.exerciseName);
 
     const content = (
       <>

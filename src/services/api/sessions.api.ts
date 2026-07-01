@@ -1,5 +1,6 @@
 import { supabase } from '../../supabaseClient';
 import { SessionLog, ExerciseLog, SetLoad, MostUsedExercise, DefaultTemplate, mapSessionLogRowToSessionLog, mapSessionLogToRow } from '../../../types';
+import { normalizeExerciseName, mergeFamilyAliases } from '../../utils/exerciseFamily';
 
 function getLoadWeightKg(load: SetLoad | undefined): number | null {
   if (!load) return null;
@@ -381,8 +382,11 @@ export const sessionsApi = {
   },
 
   /**
-   * Fetch the exercise_family map: exerciseName (lowercase) → family slug.
-   * Only returns exercises with a non-null exercise_family.
+   * Fetch the exercise_family map: normalized exerciseName → family slug.
+   * Only returns exercises with a non-null exercise_family, then merges the
+   * alias table (EN/short-form names not present verbatim in the library).
+   * Keys are normalized via normalizeExerciseName so lookups tolerate accents,
+   * casing, punctuation and the " :: variante" suffix.
    * Intended to be cached indefinitely (static reference data).
    */
   async getExerciseFamilyMap(): Promise<Record<string, string>> {
@@ -396,10 +400,10 @@ export const sessionsApi = {
     const map: Record<string, string> = {};
     for (const row of (data ?? [])) {
       if (row.exercise_family) {
-        map[(row.name as string).toLowerCase()] = row.exercise_family as string;
+        map[normalizeExerciseName(row.name as string)] = row.exercise_family as string;
       }
     }
-    return map;
+    return mergeFamilyAliases(map);
   },
 
   /**
